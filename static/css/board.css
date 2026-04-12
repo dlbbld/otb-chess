@@ -1,0 +1,148 @@
+/* Chessboard */
+.board {
+  display: grid;
+  grid-template-columns: repeat(8, 64px);
+  grid-template-rows: repeat(8, 64px);
+  border: 2px solid #333;
+  user-select: none;
+}
+
+.square {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  font-size: 44px;
+  line-height: 1;
+}
+
+.square.light {
+  background-color: #f0d9b5;
+}
+
+.square.dark {
+  background-color: #b58863;
+}
+
+.square.highlight {
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 0, 0.6);
+}
+
+.square.check {
+  box-shadow: inset 0 0 0 3px rgba(255, 0, 0, 0.7);
+}
+
+.square.opponent-touch {
+  box-shadow: inset 0 0 0 3px rgba(100, 149, 237, 0.7);
+}
+
+.square .piece {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  z-index: 1;
+}
+
+.square .piece svg {
+  width: 56px;
+  height: 56px;
+}
+
+.square .piece.dragging {
+  opacity: 0.4;
+}
+
+.square .coord {
+  position: absolute;
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.square .coord.file-label {
+  bottom: 1px;
+  right: 3px;
+}
+
+.square .coord.rank-label {
+  top: 1px;
+  left: 3px;
+}
+
+/* Dragging piece floating */
+.floating-piece {
+  position: fixed;
+  pointer-events: none;
+  z-index: 1000;
+  width: 60px;
+  height: 60px;
+  transform: translate(-50%, -50%);
+}
+
+.floating-piece svg {
+  width: 60px;
+  height: 60px;
+}
+
+/* Side areas */
+.side-area {
+  min-width: 80px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.side-area-label {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.side-area-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.side-piece {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.side-piece svg {
+  width: 32px;
+  height: 32px;
+}
+
+.side-piece:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.side-area-divider {
+  width: 100%;
+  height: 1px;
+  background: #ccc;
+  margin: 4px 0;
+}
+
+.board-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}

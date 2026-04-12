@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dumb Chessboard - Game</title>
+  <link rel="stylesheet" href="css/board.css">
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+  <div class="game-layout">
+    <!-- Left column: side area + board + buttons below -->
+    <div class="board-column">
+      <div class="board-row">
+        <!-- Left side area (opponent's off-board pieces) -->
+        <div class="side-area" id="leftSideArea">
+          <div class="side-area-label" id="leftSideLabel"></div>
+          <div class="side-area-pieces" id="leftSidePieces"></div>
+        </div>
+
+        <!-- The chessboard -->
+        <div class="board" id="board"></div>
+
+        <!-- Right side area (own off-board pieces) -->
+        <div class="side-area" id="rightSideArea">
+          <div class="side-area-label" id="rightSideLabel"></div>
+          <div class="side-area-pieces" id="rightSidePieces"></div>
+        </div>
+
+        <!-- Chess clock (to the right of the board) -->
+        <div class="chess-clock">
+          <!-- Top half: opponent clock -->
+          <div class="clock-half">
+            <div class="clock-display" id="topClockDisplay">
+              <span class="clock-time" id="topClockTime">30:00</span>
+              <span class="clock-side-label" id="topClockLabel"></span>
+            </div>
+            <div class="clock-lever-btn" id="topClockBtn">
+              <div class="lever-surface"></div>
+            </div>
+          </div>
+          <!-- Divider -->
+          <div class="clock-divider"></div>
+          <!-- Bottom half: own clock -->
+          <div class="clock-half">
+            <div class="clock-display" id="bottomClockDisplay">
+              <span class="clock-time" id="bottomClockTime">30:00</span>
+              <span class="clock-side-label" id="bottomClockLabel"></span>
+            </div>
+            <div class="clock-lever-btn" id="bottomClockBtn">
+              <div class="lever-surface"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action buttons below the board -->
+      <div class="action-buttons">
+        <button id="offerDrawBtn" class="action-btn" disabled>Offer Draw</button>
+        <button id="resignBtn" class="action-btn" disabled>Resign</button>
+        <button id="requestPieceBtn" class="action-btn" disabled>Request Piece</button>
+      </div>
+
+      <div class="claim-buttons">
+        <button id="claimThreefoldBtn" class="action-btn small-btn" disabled>Claim Threefold</button>
+        <button id="claimFiftyMoveBtn" class="action-btn small-btn" disabled>Claim 50-Move</button>
+        <button id="exportPgnBtn" class="action-btn small-btn">Display PGN</button>
+        <button id="flipBoardBtn" class="action-btn small-btn">Flip Board</button>
+      </div>
+    </div>
+
+    <!-- Right: game info panel -->
+    <div class="info-panel">
+      <!-- Arbiter message -->
+      <div class="arbiter-panel" id="arbiterPanel">
+        <div class="arbiter-message" id="arbiterMessage">Welcome. Waiting for opponent...</div>
+        <div class="arbiter-buttons" id="arbiterButtons"></div>
+      </div>
+
+      <!-- Game result -->
+      <div id="gameResultPanel" class="game-result-panel" style="display:none;">
+        <div class="game-result-score" id="gameResultScore"></div>
+        <div class="game-result-reason" id="gameResultReason"></div>
+        <button id="newGameBtn" class="action-btn">New Game</button>
+      </div>
+
+      <!-- Draw offer received -->
+      <div id="drawOfferPanel" class="inline-panel" style="display:none;">
+        <span>Your opponent offers a draw.</span>
+        <button id="acceptDrawBtn" class="action-btn">Accept</button>
+        <button id="rejectDrawBtn" class="action-btn">Reject</button>
+      </div>
+
+      <!-- Inline confirmation panel -->
+      <div id="confirmPanel" class="inline-panel" style="display:none;">
+        <span id="confirmMessage"></span>
+        <button id="confirmYesBtn" class="action-btn">Yes</button>
+        <button id="confirmNoBtn" class="action-btn">No</button>
+      </div>
+
+      <!-- Inline SAN input for draw claims -->
+      <div id="sanInputPanel" class="inline-panel" style="display:none;">
+        <button id="claimOnBoardBtn" class="action-btn">Claim on board</button>
+        <span>or enter move:</span>
+        <input type="text" id="sanInput" class="san-input" placeholder="e.g. Nf3">
+        <button id="claimWithMoveBtn" class="action-btn">Claim with move</button>
+        <button id="cancelClaimBtn" class="action-btn">Cancel</button>
+      </div>
+
+      <!-- Inline promotion piece selection -->
+      <div id="promotionPanel" class="inline-panel" style="display:none;">
+        <span>Select a piece:</span>
+        <div class="promotion-pieces" id="promotionPieces"></div>
+      </div>
+
+      <!-- PGN display panel -->
+      <div id="pgnDialog" class="pgn-panel" style="display:none;">
+        <h3>PGN</h3>
+        <textarea id="pgnText" readonly></textarea>
+        <button id="closePgnBtn" class="action-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/board.js"></script>
+  <script src="js/websocket.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

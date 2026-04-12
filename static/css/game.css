@@ -1,0 +1,392 @@
+/* General */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #e8e4df;
+  color: #333;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px;
+}
+
+/* === Lobby === */
+.lobby {
+  max-width: 500px; margin-top: 40px; padding: 40px;
+  background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+}
+.lobby h1 { text-align: center; margin-bottom: 8px; color: #5d4037; }
+.lobby > p { text-align: center; color: #777; margin-bottom: 24px; }
+.lobby-section { margin-bottom: 24px; padding: 16px; background: #f5f0eb; border-radius: 8px; }
+.lobby-section h2 { font-size: 16px; margin-bottom: 12px; color: #5d4037; }
+.lobby-section label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
+.radio-group { display: flex; gap: 16px; margin-bottom: 12px; }
+.radio-group label { display: inline; cursor: pointer; color: #333; }
+.preset-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.preset-btn {
+  padding: 6px 12px; border: 1px solid #ccc; background: #fff;
+  color: #333; border-radius: 4px; cursor: pointer; font-size: 13px;
+}
+.preset-btn:hover { background: #f0e6d8; }
+.preset-btn.selected { background: #b58863; color: #fff; border-color: #b58863; }
+.custom-time { display: flex; gap: 12px; margin-bottom: 12px; }
+.custom-time label { display: flex; align-items: center; gap: 6px; }
+.custom-time input { width: 60px; padding: 4px 6px; border: 1px solid #ccc; background: #fff; color: #333; border-radius: 4px; }
+input[type="text"] {
+  width: 100%; padding: 8px; border: 1px solid #ccc; background: #fff; color: #333;
+  border-radius: 4px; margin-bottom: 12px; font-size: 16px; text-align: center; letter-spacing: 2px;
+}
+.primary-btn {
+  width: 100%; padding: 10px; background: #b58863; color: #fff;
+  border: none; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: 600;
+}
+.primary-btn:hover { background: #a07050; }
+
+/* === Game Layout === */
+.game-layout {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 16px;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.board-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+
+/* === Chess Clock (to the right of the board) === */
+.chess-clock {
+  display: flex;
+  flex-direction: column;
+  /* Total height = board height = 8 * 64px = 512px */
+  height: 512px;
+  margin-left: 8px;
+}
+
+.clock-half {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clock-divider {
+  height: 2px;
+  background: #999;
+  margin: 2px 0;
+}
+
+/* Clock time display — horizontal, to the left of the lever */
+.clock-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 90px;
+}
+
+.clock-time {
+  font-family: "Courier New", monospace;
+  font-size: 24px;
+  font-weight: bold;
+  color: #555;
+}
+
+.clock-display.active .clock-time {
+  color: #333;
+}
+
+.clock-display.low-time .clock-time {
+  color: #c0392b;
+  animation: pulse-red 1s infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.clock-side-label {
+  font-size: 10px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* Clock lever — taller than wide, 3D push button. 50% bigger than original. */
+.clock-lever-btn {
+  width: 84px;
+  height: 180px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+/* 3D push button surface — inner raised/sunken surface */
+.lever-surface {
+  width: 68px;
+  height: 164px;
+  border-radius: 8px;
+  transition: all 0.12s ease;
+}
+
+/* Neutral (before game starts): grey, unpressed, disabled */
+.clock-lever-btn.neutral {
+  background: linear-gradient(180deg, #b0b0b0 0%, #909090 100%);
+  border: 2px solid #808080;
+  box-shadow:
+    0 5px 0 #707070,
+    0 7px 10px rgba(0,0,0,0.2),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+  cursor: not-allowed;
+}
+.clock-lever-btn.neutral .lever-surface {
+  background: linear-gradient(180deg, #c0c0c0 0%, #a0a0a0 100%);
+  box-shadow:
+    inset 0 2px 3px rgba(255,255,255,0.3),
+    inset 0 -2px 3px rgba(0,0,0,0.15);
+}
+
+/* Unpressed and enabled (player can press this): raised, prominent 3D */
+.clock-lever-btn.unpressed {
+  background: linear-gradient(180deg, #e0e0e0 0%, #b8b8b8 100%);
+  border: 2px solid #a0a0a0;
+  box-shadow:
+    0 8px 0 #808080,
+    0 10px 16px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.4);
+  transform: translateY(-3px);
+  cursor: pointer;
+}
+.clock-lever-btn.unpressed .lever-surface {
+  background: linear-gradient(180deg, #f0f0f0 0%, #d0d0d0 100%);
+  box-shadow:
+    inset 0 3px 4px rgba(255,255,255,0.5),
+    inset 0 -3px 4px rgba(0,0,0,0.1),
+    0 1px 2px rgba(0,0,0,0.1);
+}
+.clock-lever-btn.unpressed:hover {
+  box-shadow:
+    0 9px 0 #808080,
+    0 12px 18px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.4);
+  transform: translateY(-4px);
+}
+.clock-lever-btn.unpressed:active {
+  box-shadow:
+    0 2px 0 #808080,
+    0 3px 6px rgba(0,0,0,0.15);
+  transform: translateY(2px);
+}
+
+/* Pressed down (this side already pressed): sunken, deep 3D inset */
+.clock-lever-btn.pressed {
+  background: linear-gradient(180deg, #808080 0%, #909090 100%);
+  border: 2px solid #606060;
+  box-shadow:
+    inset 0 4px 8px rgba(0,0,0,0.35),
+    inset 0 -1px 2px rgba(255,255,255,0.1),
+    0 1px 0 #505050;
+  transform: translateY(3px);
+  cursor: not-allowed;
+}
+.clock-lever-btn.pressed .lever-surface {
+  background: linear-gradient(180deg, #707070 0%, #8a8a8a 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(0,0,0,0.3),
+    inset 0 -1px 2px rgba(255,255,255,0.05);
+}
+
+/* Low time: red tint */
+.clock-lever-btn.low-time.pressed .lever-surface {
+  background: linear-gradient(180deg, #903030 0%, #b04040 100%);
+}
+.clock-lever-btn.low-time.unpressed .lever-surface {
+  background: linear-gradient(180deg, #e88888 0%, #cc6666 100%);
+}
+
+/* === Info Panel === */
+.info-panel {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  gap: 8px;
+}
+
+/* Arbiter message */
+.arbiter-panel {
+  background: #302e2c;
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 80px;
+}
+
+.arbiter-message {
+  font-size: 14px;
+  color: #f0f0f0;
+  line-height: 1.5;
+}
+
+.arbiter-message.error {
+  color: #ff6b6b;
+  font-weight: 600;
+}
+
+.arbiter-message.info {
+  color: #ffd93d;
+}
+
+.arbiter-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.arbiter-buttons .action-btn {
+  background: #4a4744;
+  color: #e0e0e0;
+  border-color: #666;
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.arbiter-buttons .action-btn:hover:not(:disabled) {
+  background: #6a6764;
+}
+
+.game-code-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e0e0e0;
+  font-size: 13px;
+}
+
+.game-code-value {
+  font-family: "Courier New", monospace;
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffd93d;
+  letter-spacing: 2px;
+  user-select: all;
+}
+
+/* Game result */
+.game-result-panel {
+  background: #302e2c;
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+}
+
+.game-result-score {
+  font-size: 28px;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.game-result-reason {
+  font-size: 13px;
+  color: #bababa;
+  font-style: italic;
+  margin-bottom: 10px;
+}
+
+/* === Action Buttons (below the board) === */
+.action-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.action-btn {
+  padding: 6px 14px;
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #333;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: #f0e6d8;
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.claim-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.small-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+/* === Inline panels === */
+.inline-panel {
+  background: #3d3a37;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 8px 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  color: #bababa;
+  font-size: 13px;
+}
+
+.inline-panel .action-btn {
+  background: #4a4744; color: #bababa; border-color: #555; font-size: 12px; padding: 4px 10px;
+}
+.inline-panel .action-btn:hover:not(:disabled) { background: #5a5754; }
+
+.san-input {
+  width: 70px; padding: 3px 6px; border: 1px solid #555; background: #2b2b2b;
+  color: #e0e0e0; border-radius: 3px; font-size: 13px; text-align: center; font-family: monospace;
+}
+
+.promotion-pieces { display: flex; gap: 4px; }
+.promotion-pieces .promo-piece {
+  width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border: 1px solid #555; border-radius: 3px; background: #3d3a37;
+}
+.promotion-pieces .promo-piece:hover { background: #5a5754; }
+.promotion-pieces .promo-piece svg { width: 32px; height: 32px; }
+
+/* PGN panel */
+.pgn-panel { background: #3d3a37; border: 1px solid #555; border-radius: 4px; padding: 8px; }
+.pgn-panel h3 { margin-bottom: 4px; color: #bababa; font-size: 13px; }
+.pgn-panel textarea {
+  width: 100%; height: 120px; background: #2b2b2b; color: #e0e0e0;
+  border: 1px solid #555; border-radius: 3px; padding: 6px; font-family: monospace;
+  font-size: 11px; margin: 4px 0; resize: vertical;
+}

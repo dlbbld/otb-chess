@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dumb Chessboard</title>
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+  <div class="lobby">
+    <h1>Dumb Chessboard</h1>
+    <p>An educational chessboard that simulates physical board play.</p>
+
+    <div class="lobby-section">
+      <h2>Create a Game</h2>
+
+      <label>Play as:</label>
+      <div class="radio-group">
+        <label><input type="radio" name="side" value="white" checked> White</label>
+        <label><input type="radio" name="side" value="black"> Black</label>
+      </div>
+
+      <label>Time Control:</label>
+      <div class="preset-buttons">
+        <button class="preset-btn" data-time="180000" data-inc="0">3+0</button>
+        <button class="preset-btn" data-time="180000" data-inc="2000">3+2</button>
+        <button class="preset-btn" data-time="300000" data-inc="0">5+0</button>
+        <button class="preset-btn" data-time="300000" data-inc="3000">5+3</button>
+        <button class="preset-btn" data-time="900000" data-inc="0">15+0</button>
+        <button class="preset-btn" data-time="900000" data-inc="10000">15+10</button>
+        <button class="preset-btn selected" data-time="1800000" data-inc="0">30+0</button>
+      </div>
+
+      <div class="custom-time">
+        <label>Minutes: <input type="number" id="customMinutes" value="30" min="1" max="180"></label>
+        <label>Increment (sec): <input type="number" id="customIncrement" value="0" min="0" max="60"></label>
+      </div>
+
+      <button id="createGameBtn" class="primary-btn">Create Game</button>
+    </div>
+
+    <div class="lobby-section">
+      <h2>Join a Game</h2>
+      <label>Game Code:</label>
+      <input type="text" id="gameCodeInput" placeholder="Enter game code">
+      <button id="joinGameBtn" class="primary-btn">Join Game</button>
+    </div>
+  </div>
+
+  <script>
+    let selectedTime = 1800000;
+    let selectedInc = 0;
+
+    // Preset buttons
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedTime = parseInt(btn.dataset.time);
+        selectedInc = parseInt(btn.dataset.inc);
+        document.getElementById('customMinutes').value = Math.floor(selectedTime / 60000);
+        document.getElementById('customIncrement').value = Math.floor(selectedInc / 1000);
+      });
+    });
+
+    document.getElementById('customMinutes').addEventListener('change', () => {
+      selectedTime = parseInt(document.getElementById('customMinutes').value) * 60000;
+      selectedInc = parseInt(document.getElementById('customIncrement').value) * 1000;
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
+    });
+    document.getElementById('customIncrement').addEventListener('change', () => {
+      selectedTime = parseInt(document.getElementById('customMinutes').value) * 60000;
+      selectedInc = parseInt(document.getElementById('customIncrement').value) * 1000;
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
+    });
+
+    // Create game — just redirect to game.html with params, game.js handles the WebSocket
+    document.getElementById('createGameBtn').addEventListener('click', () => {
+      const side = document.querySelector('input[name="side"]:checked').value;
+      window.location.href = '/game.html?creator=true&side=' + side
+        + '&time=' + selectedTime + '&inc=' + selectedInc;
+    });
+
+    // Join game
+    function joinGame() {
+      const gameId = document.getElementById('gameCodeInput').value.trim();
+      if (!gameId) {
+        document.getElementById('gameCodeInput').style.borderColor = '#c0392b';
+        return;
+      }
+      window.location.href = '/game.html?gameId=' + gameId;
+    }
+
+    document.getElementById('joinGameBtn').addEventListener('click', joinGame);
+    document.getElementById('gameCodeInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') joinGame();
+    });
+
+    // Auto-fill last game ID for easy testing
+    const lastGameId = localStorage.getItem('lastGameId');
+    if (lastGameId) {
+      document.getElementById('gameCodeInput').value = lastGameId;
+    }
+  </script>
+</body>
+</html>

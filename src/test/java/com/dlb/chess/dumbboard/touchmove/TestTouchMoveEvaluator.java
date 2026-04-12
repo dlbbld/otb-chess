@@ -1,0 +1,261 @@
+package com.dlb.chess.dumbboard.touchmove;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Optional;
+
+import org.junit.jupiter.api.Test;
+
+import com.dlb.chess.board.Board;
+import com.dlb.chess.board.enums.Piece;
+import com.dlb.chess.board.enums.Side;
+import com.dlb.chess.board.enums.Square;
+import com.dlb.chess.common.interfaces.ApiBoard;
+import com.dlb.chess.dumbboard.event.ActionSequence;
+import com.dlb.chess.dumbboard.event.BoardEvent;
+
+class TestTouchMoveEvaluator {
+
+  @Test
+  void testTouchOwnPieceWithLegalMoves() {
+    final ApiBoard board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Player clicks the knight on g1 — it has legal moves (Nf3, Nh3)
+    sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.G1, obligation.get().square());
+    assertEquals(Piece.WHITE_KNIGHT, obligation.get().piece());
+  }
+
+  @Test
+  void testTouchOwnPieceWithoutLegalMoves() {
+    final ApiBoard board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Player clicks the rook on a1 — in starting position it has no legal moves
+    sequence.addEvent(BoardEvent.click(Square.A1, Piece.WHITE_ROOK, 0));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertFalse(obligation.isPresent());
+  }
+
+  @Test
+  void testTouchOpponentCapturablePiece() {
+    final ApiBoard board = new Board();
+    // Play 1.e4 d5 so the black pawn on d5 can be captured by exd5
+    board.performMove("e4");
+    board.performMove("d5");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Player clicks the opponent pawn on d5 — it can be captured
+    sequence.addEvent(BoardEvent.click(Square.D5, Piece.BLACK_PAWN, 0));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OPPONENT_PIECE, obligation.get().type());
+    assertEquals(Square.D5, obligation.get().square());
+  }
+
+  @Test
+  void testTouchOpponentNonCapturablePiece() {
+    final ApiBoard board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Player clicks the opponent pawn on a7 — no white piece can capture it in starting position
+    sequence.addEvent(BoardEvent.click(Square.A7, Piece.BLACK_PAWN, 0));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertFalse(obligation.isPresent());
+  }
+
+  @Test
+  void testFirstObligationWins() {
+    final ApiBoard board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Player touches the knight on g1 first (has legal moves), then the knight on b1
+    sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.click(Square.B1, Piece.WHITE_KNIGHT, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(Square.G1, obligation.get().square());
+  }
+
+  @Test
+  void testSkipNonObligatoryThenFindObligation() {
+    final ApiBoard board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Player touches the rook on a1 (no legal moves), then the knight on g1 (has legal moves)
+    sequence.addEvent(BoardEvent.click(Square.A1, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(Square.G1, obligation.get().square());
+    assertEquals(Piece.WHITE_KNIGHT, obligation.get().piece());
+  }
+
+  @Test
+  void testDragMoveCreatesObligation() {
+    final ApiBoard board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Player drags the pawn from e2 to e4
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.E2, obligation.get().square());
+  }
+
+  @Test
+  void testRestoreEventDoesNotCreateObligation() {
+    final ApiBoard board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Player restores a piece from side area — no touch-move
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.E4, Piece.BLACK_PAWN, 0));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertFalse(obligation.isPresent());
+  }
+
+  @Test
+  void testEmptySequence() {
+    final ApiBoard board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertFalse(obligation.isPresent());
+  }
+
+  @Test
+  void testSatisfiesObligationOwnPiece() {
+    final ApiBoard board = new Board();
+
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.OWN_PIECE, Square.G1,
+        Piece.WHITE_KNIGHT);
+
+    // Find the Nf3 legal move
+    final var nf3 = board.getLegalMoveSet().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.G1 && m.moveSpecification().toSquare() == Square.F3)
+        .findFirst().orElseThrow();
+
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation, nf3));
+  }
+
+  @Test
+  void testDoesNotSatisfyObligationOwnPieceDifferentPiece() {
+    final ApiBoard board = new Board();
+
+    // Obligation: must move knight on g1
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.OWN_PIECE, Square.G1,
+        Piece.WHITE_KNIGHT);
+
+    // Find the e4 pawn move (different piece)
+    final var e4 = board.getLegalMoveSet().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.E2 && m.moveSpecification().toSquare() == Square.E4)
+        .findFirst().orElseThrow();
+
+    assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation, e4));
+  }
+
+  @Test
+  void testSatisfiesObligationOpponentPiece() {
+    final ApiBoard board = new Board();
+    board.performMove("e4");
+    board.performMove("d5");
+
+    // Obligation: must capture the pawn on d5
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.OPPONENT_PIECE, Square.D5,
+        Piece.BLACK_PAWN);
+
+    // Find exd5
+    final var exd5 = board.getLegalMoveSet().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.E4 && m.moveSpecification().toSquare() == Square.D5)
+        .findFirst().orElseThrow();
+
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation, exd5));
+  }
+
+  @Test
+  void testDoesNotSatisfyObligationOpponentPieceDifferentMove() {
+    final ApiBoard board = new Board();
+    board.performMove("e4");
+    board.performMove("d5");
+
+    // Obligation: must capture the pawn on d5
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.OPPONENT_PIECE, Square.D5,
+        Piece.BLACK_PAWN);
+
+    // Find Nf3 (does not capture on d5)
+    final var nf3 = board.getLegalMoveSet().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.G1 && m.moveSpecification().toSquare() == Square.F3)
+        .findFirst().orElseThrow();
+
+    assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation, nf3));
+  }
+
+  @Test
+  void testCastlingSatisfiesKingTouchObligation() {
+    final ApiBoard board = new Board();
+    // Set up kingside castling for white
+    board.performMove("e4");
+    board.performMove("e5");
+    board.performMove("Nf3");
+    board.performMove("Nc6");
+    board.performMove("Be2");
+    board.performMove("Nf6");
+
+    // Obligation: must move the king (touched on e1)
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.OWN_PIECE, Square.E1,
+        Piece.WHITE_KING);
+
+    // Find the castling move
+    final var castling = board.getLegalMoveSet().stream()
+        .filter(m -> m.moveSpecification().castlingMove() != com.dlb.chess.board.enums.CastlingMove.NONE)
+        .findFirst().orElseThrow();
+
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation, castling));
+  }
+
+  @Test
+  void testTouchKingCreatesObligationWhenCastlingAvailable() {
+    final ApiBoard board = new Board();
+    // Set up kingside castling for white
+    board.performMove("e4");
+    board.performMove("e5");
+    board.performMove("Nf3");
+    board.performMove("Nc6");
+    board.performMove("Be2");
+    board.performMove("Nf6");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.E1, obligation.get().square());
+  }
+}

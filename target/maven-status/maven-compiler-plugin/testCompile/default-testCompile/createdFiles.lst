@@ -1,0 +1,8 @@
+com\dlb\chess\dumbboard\server\message\TestMessageConverter.class
+com\dlb\chess\dumbboard\touchmove\TestTouchMoveEvaluator.class
+com\dlb\chess\dumbboard\arbiter\TestArbiterEngineEdgeCases.class
+com\dlb\chess\dumbboard\arbiter\TestArbiterEngine.class
+com\dlb\chess\dumbboard\game\TestGameSession.class
+com\dlb\chess\dumbboard\core\TestPositionComparator.class
+com\dlb\chess\dumbboard\core\TestPositionComparatorEdgeCases.class
+com\dlb\chess\dumbboard\game\TestGameSessionFlow.class
