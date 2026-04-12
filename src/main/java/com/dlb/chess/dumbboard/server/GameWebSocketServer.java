@@ -41,6 +41,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
   public GameWebSocketServer(int port) {
     super(new InetSocketAddress(port));
+    setTcpNoDelay(true); // Disable Nagle's algorithm for low-latency messaging
   }
 
   @Override

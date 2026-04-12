@@ -98,6 +98,10 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  /* DEBUG: visible border to verify side areas are rendered */
+  border: 1px dashed #ccc;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .side-area-label {

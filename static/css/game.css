@@ -64,6 +64,13 @@ input[type="text"] {
   gap: 0;
 }
 
+/* When viewing from Black's side, the clock moves to the left of the board */
+.board-row.clock-on-left .chess-clock {
+  order: -1;
+  margin-left: 0;
+  margin-right: 8px;
+}
+
 /* === Chess Clock (to the right of the board) === */
 .chess-clock {
   display: flex;

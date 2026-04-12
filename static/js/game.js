@@ -47,8 +47,8 @@ class Game {
   }
 
   // === Clock buttons ===
-  // Bottom lever = this player's side, Top lever = opponent's side.
-  // This is fixed regardless of board flip — the clock is a physical device.
+  // The clock rotates with the board for testing, so the lever nearest the
+  // player's pieces is always treated as that player's clock.
 
   setupClockButtons() {
     document.getElementById('topClockBtn').addEventListener('click', () => {
@@ -62,29 +62,41 @@ class Game {
   }
 
   updateClockLabels() {
-    // Bottom lever = own side, Top lever = opponent's side. Always.
-    const ownColor = this.side || 'white';
-    const opponentColor = ownColor === 'white' ? 'black' : 'white';
+    // The bottom lever is always near the pieces at the bottom of the board.
+    // When board is NOT flipped: White pieces at bottom → bottom lever = White
+    // When board IS flipped: Black pieces at bottom → bottom lever = Black
+    const whiteOnBottom = !this.board.flipped;
+
+    this.bottomClockColor = whiteOnBottom ? 'white' : 'black';
+    this.topClockColor = whiteOnBottom ? 'black' : 'white';
 
     document.getElementById('bottomClockLabel').textContent =
-      ownColor === 'white' ? 'White' : 'Black';
+      this.bottomClockColor === 'white' ? 'White' : 'Black';
     document.getElementById('topClockLabel').textContent =
-      opponentColor === 'white' ? 'White' : 'Black';
+      this.topClockColor === 'white' ? 'White' : 'Black';
 
-    // Clock color mapping: bottom = own, top = opponent
-    this.bottomClockColor = ownColor;
-    this.topClockColor = opponentColor;
+    // Physical clock position: always on White's right side of the board.
+    // When viewing as White (not flipped): clock on the right.
+    // When viewing as Black (flipped): clock on the left.
+    const whiteView = !this.board.flipped;
+    const boardRow = document.querySelector('.board-row');
+    if (boardRow) {
+      if (whiteView) {
+        boardRow.classList.remove('clock-on-left');
+      } else {
+        boardRow.classList.add('clock-on-left');
+      }
+    }
   }
 
   onClockButtonPressed(position) {
     if (!this.gameActive) return;
 
-    // Bottom = own side, Top = opponent's side
-    if (position === 'bottom') {
-      // Press own clock = submit move
+    const pressedColor = position === 'bottom' ? this.bottomClockColor : this.topClockColor;
+
+    if (pressedColor === this.side) {
       this.ws.sendClockPress(this.board.getBoardState());
     } else {
-      // Press opponent's clock = arbiter intervenes
       this.ws.send({ type: 'opponentClockPressed' });
     }
   }
@@ -379,7 +391,11 @@ class Game {
 
     document.getElementById('flipBoardBtn').addEventListener('click', () => {
       this.board.flip();
-      // Clock labels don't change on flip — the clock is a separate physical device
+      this.renderSideAreas();
+      this.updateClockLabels();
+      if (this._lastClockData) {
+        this.updateClocks(this._lastClockData);
+      }
     });
 
     document.getElementById('newGameBtn').addEventListener('click', () => {
@@ -461,6 +477,11 @@ class Game {
       this.sideAreaPieces.push({ piece: p, originalSquare: 'NONE' });
     }
 
+    const whitePieces = this.sideAreaPieces.filter(p => p.piece.startsWith('WHITE')).map(p => p.piece);
+    const blackPieces = this.sideAreaPieces.filter(p => p.piece.startsWith('BLACK')).map(p => p.piece);
+    console.log('[SIDE-AREA] recompute: WHITE=[' + whitePieces.join(',') + '] BLACK=[' + blackPieces.join(',') + '] extras=[' + (this.extraPieces||[]).join(',') + ']');
+    // Trace who called this
+    console.trace('[SIDE-AREA] recompute caller');
     this.renderSideAreas();
   }
 
@@ -482,17 +503,29 @@ class Game {
   }
 
   renderSideAreas() {
-    // Left = opponent's pieces, Right = own pieces (matches physical board)
-    const leftColor = this.side === 'white' ? 'BLACK' : 'WHITE';
-    const rightColor = this.side === 'white' ? 'WHITE' : 'BLACK';
+    // The side areas follow the current board view.
+    // White view: left = Black pieces, right = White pieces.
+    // Black view: left = White pieces, right = Black pieces.
+    const isWhiteView = !this.board.flipped;
+    const leftColor = isWhiteView ? 'BLACK' : 'WHITE';
+    const rightColor = isWhiteView ? 'WHITE' : 'BLACK';
 
     document.getElementById('leftSideLabel').textContent = leftColor === 'WHITE' ? 'White' : 'Black';
     document.getElementById('rightSideLabel').textContent = rightColor === 'WHITE' ? 'White' : 'Black';
 
     const leftEl = document.getElementById('leftSidePieces');
     const rightEl = document.getElementById('rightSidePieces');
+
+    if (!leftEl || !rightEl) {
+      console.error('[SIDE-AREA] DOM elements not found! leftEl=' + !!leftEl + ' rightEl=' + !!rightEl);
+      return;
+    }
+
     leftEl.innerHTML = '';
     rightEl.innerHTML = '';
+
+    let leftCount = 0;
+    let rightCount = 0;
 
     this.sideAreaPieces.forEach((item, index) => {
       const el = document.createElement('div');
@@ -508,10 +541,15 @@ class Game {
       });
       if (item.piece.startsWith(leftColor)) {
         leftEl.appendChild(el);
+        leftCount++;
       } else {
         rightEl.appendChild(el);
+        rightCount++;
       }
     });
+
+    console.log('[SIDE-AREA] render: view=' + (isWhiteView ? 'White' : 'Black') +
+      ' left(' + leftColor + ')=' + leftCount + ' right(' + rightColor + ')=' + rightCount);
   }
 
   // === Inline panels ===
@@ -567,7 +605,6 @@ class Game {
     this._lastClockData = data;
     this.clockRunning = data.running;
 
-    // Bottom = own side, Top = opponent's side
     const bottomColor = this.bottomClockColor || this.side || 'white';
     const topColor = this.topClockColor || (this.side === 'white' ? 'black' : 'white');
 

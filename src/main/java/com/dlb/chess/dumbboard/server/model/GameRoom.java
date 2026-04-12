@@ -102,7 +102,7 @@ public class GameRoom {
     if (clockTickFuture != null) {
       clockTickFuture.cancel(false);
     }
-    clockTickFuture = executor.scheduleAtFixedRate(tickAction, 100, 100, TimeUnit.MILLISECONDS);
+    clockTickFuture = executor.scheduleAtFixedRate(tickAction, 1000, 1000, TimeUnit.MILLISECONDS);
   }
 
   public void stopClockTicker() {
