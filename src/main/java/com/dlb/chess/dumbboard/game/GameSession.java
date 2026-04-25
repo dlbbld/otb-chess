@@ -150,6 +150,50 @@ public class GameSession {
     return handleArbiterResponse(response, side, false);
   }
 
+  /**
+   * Triggered after each board event during play. If the current physical position corresponds
+   * to a legal move that immediately ends the game (checkmate, stalemate, dead position,
+   * fivefold repetition, 75-move rule), the move is accepted and the game is ended without
+   * waiting for a clock press. For any non-ending move, this returns empty and the player must
+   * still press the clock as usual.
+   */
+  public synchronized Optional<ArbiterResponse> evaluateForAutoEnd(Side side, StaticPosition afterPosition) {
+    if (state != GameState.IN_PROGRESS) {
+      return Optional.empty();
+    }
+    if (side != board.getHavingMove()) {
+      return Optional.empty();
+    }
+    // Skip during the patient-loop recovery from a rejected draw claim — that path requires the
+    // mustExecuteMove flow at clock press, not auto-end.
+    if (mustExecuteMove != null) {
+      return Optional.empty();
+    }
+
+    final ArbiterResponse response = arbiter.evaluateClockPress(board, afterPosition, currentSequence);
+    if (response.type() != ArbiterResponseType.MOVE_ACCEPTED) {
+      return Optional.empty();
+    }
+
+    // Speculatively perform the matched move and check whether the resulting position ends the game.
+    final MoveSpecification spec = response.acceptedMove().get().moveSpecification();
+    board.performMove(spec);
+    final Optional<GameResult> ending = checkAutomaticEndings();
+    if (ending.isEmpty()) {
+      // Not a game-ending move — leave evaluation to the clock press, undo our speculative move.
+      board.unperformMove();
+      return Optional.empty();
+    }
+
+    // Game-ending move: keep the move performed and finalize state (mirrors MOVE_ACCEPTED in
+    // handleArbiterResponse, but without starting a new turn since the game is over).
+    clock.switchClock();
+    drawOfferManager.clearOffer();
+    endGame(ending.get());
+    startNewTurn();
+    return Optional.of(response);
+  }
+
   private ArbiterResponse handleArbiterResponse(ArbiterResponse response, Side side, boolean keepDrawOffer) {
     switch (response.type()) {
       case MOVE_ACCEPTED -> {
@@ -198,11 +242,16 @@ public class GameSession {
 
   private ArbiterResponse evaluateMustExecuteMove(StaticPosition afterPosition) {
     // Compute expected position after the specified move
-    final StaticPosition expectedPosition = Board.createPositionAfterMove(positionBeforeTurn, mustExecuteMove);
+    final StaticPosition expectedPosition = Board.createPositionAfterMove(positionBeforeTurn, board.getHavingMove(),
+        mustExecuteMove);
 
     if (expectedPosition.equals(afterPosition)) {
       // Correct — perform the move
       final MoveSpecification executedMove = mustExecuteMove;
+      final com.dlb.chess.model.LegalMove matchedLegalMove = board.getLegalMoveSet().stream()
+          .filter(lm -> lm.moveSpecification().equals(executedMove))
+          .findFirst()
+          .orElseThrow(() -> new IllegalStateException("Specified move is not in the legal move set"));
       board.performMove(executedMove);
       mustExecuteMove = null;
       clock.switchClock();
@@ -213,7 +262,7 @@ public class GameSession {
       }
 
       startNewTurn();
-      return ArbiterResponse.moveAccepted(new com.dlb.chess.model.LegalMove(executedMove));
+      return ArbiterResponse.moveAccepted(matchedLegalMove);
     }
 
     // Incorrect — instruct to revert

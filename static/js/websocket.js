@@ -63,8 +63,8 @@ class GameWebSocket {
     this.send({ type: 'joinGame', gameId: gameId });
   }
 
-  sendBoardEvent(event) {
-    this.send({ type: 'boardEvent', event: event });
+  sendBoardEvent(event, boardState) {
+    this.send({ type: 'boardEvent', event: event, boardState: boardState });
   }
 
   sendClockPress(boardState) {

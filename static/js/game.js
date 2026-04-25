@@ -418,7 +418,9 @@ class Game {
   }
 
   onBoardEvent(event) {
-    this.ws.sendBoardEvent(event);
+    // Send the current physical board state with every event so the server can detect
+    // game-ending moves (checkmate/stalemate/etc.) without waiting for a clock press.
+    this.ws.sendBoardEvent(event, this.board.getBoardState());
   }
 
   highlightKingInCheck() {

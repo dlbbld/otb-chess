@@ -19,7 +19,7 @@ public class PositionComparator {
 
     for (final LegalMove legalMove : board.getLegalMoveSet()) {
       final StaticPosition positionAfterMove = Board.createPositionAfterMove(beforePosition,
-          legalMove.moveSpecification());
+          legalMove.havingMove(), legalMove.moveSpecification());
       if (positionAfterMove.equals(afterPosition)) {
         matchingMoves.add(legalMove);
       }

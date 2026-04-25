@@ -46,7 +46,7 @@ public class MessageConverter {
    */
   public static Map<String, String> fromStaticPosition(StaticPosition position) {
     final Map<String, String> result = new java.util.LinkedHashMap<>();
-    for (final Square square : Square.BOARD_SQUARE_LIST) {
+    for (final Square square : Square.REAL) {
       result.put(square.getName(), position.get(square).name());
     }
     return result;

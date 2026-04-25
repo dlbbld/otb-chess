@@ -52,6 +52,12 @@ input[type="text"] {
   margin-top: 16px;
 }
 
+/* Left-align the page when the game layout is present, so the leftSideArea stays visible
+   even if the total content width exceeds the viewport. The lobby keeps body centering. */
+body:has(.game-layout) {
+  justify-content: flex-start;
+}
+
 .board-column {
   display: flex;
   flex-direction: column;

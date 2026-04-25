@@ -102,7 +102,8 @@ public class TouchMoveEvaluator {
       }
       // Castling: MoveSpecification has fromSquare = NONE, but the king originates from a specific square
       if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())) {
-        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.moveSpecification());
+        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.havingMove(),
+            legalMove.moveSpecification());
         if (kingFrom == square) {
           return true;
         }
@@ -139,7 +140,8 @@ public class TouchMoveEvaluator {
         }
         // Castling: king originates from the obligation square
         if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())) {
-          final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.moveSpecification());
+          final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.havingMove(),
+              legalMove.moveSpecification());
           yield kingFrom == obligation.square();
         }
         yield false;
