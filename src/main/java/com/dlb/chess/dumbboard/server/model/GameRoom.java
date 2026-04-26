@@ -24,8 +24,13 @@ public class GameRoom {
   private ScheduledFuture<?> clockTickFuture;
 
   public GameRoom(String gameId, TimeControl timeControl) {
+    this(gameId, timeControl,
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES);
+  }
+
+  public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves) {
     this.gameId = gameId;
-    this.session = new GameSession(timeControl);
+    this.session = new GameSession(timeControl, maxIllegalMoves);
     this.timeControl = timeControl;
   }
 

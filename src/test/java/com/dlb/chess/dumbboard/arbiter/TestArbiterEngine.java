@@ -75,7 +75,7 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, response.type());
-    assertTrue(response.message().contains("second illegal move"));
+    assertTrue(response.message().contains("2nd illegal move"));
   }
 
   @Test

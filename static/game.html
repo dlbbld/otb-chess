@@ -26,32 +26,6 @@
           <div class="side-area-label" id="rightSideLabel"></div>
           <div class="side-area-pieces" id="rightSidePieces"></div>
         </div>
-
-        <!-- Chess clock (to the right of the board) -->
-        <div class="chess-clock">
-          <!-- Top half: opponent clock -->
-          <div class="clock-half">
-            <div class="clock-display" id="topClockDisplay">
-              <span class="clock-time" id="topClockTime">30:00</span>
-              <span class="clock-side-label" id="topClockLabel"></span>
-            </div>
-            <div class="clock-lever-btn" id="topClockBtn">
-              <div class="lever-surface"></div>
-            </div>
-          </div>
-          <!-- Divider -->
-          <div class="clock-divider"></div>
-          <!-- Bottom half: own clock -->
-          <div class="clock-half">
-            <div class="clock-display" id="bottomClockDisplay">
-              <span class="clock-time" id="bottomClockTime">30:00</span>
-              <span class="clock-side-label" id="bottomClockLabel"></span>
-            </div>
-            <div class="clock-lever-btn" id="bottomClockBtn">
-              <div class="lever-surface"></div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- Action buttons below the board -->
@@ -69,7 +43,9 @@
       </div>
     </div>
 
-    <!-- Right: game info panel -->
+    <!-- Right column: messages on top, chess clock below (about 1/3 of board height). -->
+    <div class="right-column">
+    <!-- Game info panel (messages, dialogs) -->
     <div class="info-panel">
       <!-- Arbiter message -->
       <div class="arbiter-panel" id="arbiterPanel">
@@ -119,6 +95,31 @@
         <textarea id="pgnText" readonly></textarea>
         <button id="closePgnBtn" class="action-btn">Close</button>
       </div>
+    </div>
+
+    <!-- Chess clock — DGT 3000 inspired, sized to about 1/3 of the board height
+         and centered vertically next to the board, with messages above it. -->
+    <div class="chess-clock" id="chessClock">
+      <div class="clock-displays">
+        <div class="clock-display" id="topClockDisplay">
+          <span class="clock-time" id="topClockTime">30:00</span>
+          <span class="clock-side-label" id="topClockLabel"></span>
+        </div>
+        <div class="clock-divider"></div>
+        <div class="clock-display" id="bottomClockDisplay">
+          <span class="clock-time" id="bottomClockTime">30:00</span>
+          <span class="clock-side-label" id="bottomClockLabel"></span>
+        </div>
+      </div>
+      <div class="clock-rocker">
+        <div class="clock-lever-btn" id="topClockBtn">
+          <div class="lever-surface"></div>
+        </div>
+        <div class="clock-lever-btn" id="bottomClockBtn">
+          <div class="lever-surface"></div>
+        </div>
+      </div>
+    </div>
     </div>
   </div>
 

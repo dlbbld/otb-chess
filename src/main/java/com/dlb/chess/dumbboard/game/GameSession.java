@@ -59,9 +59,13 @@ public class GameSession {
   private boolean blackReady;
 
   public GameSession(TimeControl timeControl) {
+    this(timeControl, com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES);
+  }
+
+  public GameSession(TimeControl timeControl, int maxIllegalMoves) {
     this.board = new Board();
     this.clock = new ClockManager(timeControl);
-    this.arbiter = new ArbiterEngine();
+    this.arbiter = new ArbiterEngine(maxIllegalMoves);
     this.drawOfferManager = new DrawOfferManager();
     this.drawClaimManager = new DrawClaimManager();
     this.timeControl = timeControl;
@@ -156,6 +160,11 @@ public class GameSession {
    * fivefold repetition, 75-move rule), the move is accepted and the game is ended without
    * waiting for a clock press. For any non-ending move, this returns empty and the player must
    * still press the clock as usual.
+   *
+   * <p>This must NOT have side effects on the illegal-move counter — intermediate positions
+   * during piece manipulation are not "moves" and must not be recorded as illegal. Only the
+   * clock press (or an offered draw, etc.) goes through the full {@link ArbiterEngine}
+   * evaluation that records illegal moves.
    */
   public synchronized Optional<ArbiterResponse> evaluateForAutoEnd(Side side, StaticPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
@@ -170,13 +179,28 @@ public class GameSession {
       return Optional.empty();
     }
 
-    final ArbiterResponse response = arbiter.evaluateClockPress(board, afterPosition, currentSequence);
-    if (response.type() != ArbiterResponseType.MOVE_ACCEPTED) {
+    // Position match — pure read, no side effects. Most intermediate positions during piece
+    // manipulation will produce no match and we exit immediately.
+    final java.util.Set<com.dlb.chess.model.LegalMove> matchingMoves =
+        com.dlb.chess.dumbboard.core.PositionComparator.findMatchingMoves(board, afterPosition);
+    if (matchingMoves.isEmpty()) {
+      return Optional.empty();
+    }
+    final com.dlb.chess.model.LegalMove matchedMove = matchingMoves.iterator().next();
+
+    // Touch-move check (also pure read). If the matched move would violate touch-move, leave
+    // detection to the clock press so the existing arbiter feedback flow handles it.
+    final java.util.Optional<com.dlb.chess.dumbboard.touchmove.TouchMoveObligation> obligation =
+        com.dlb.chess.dumbboard.touchmove.TouchMoveEvaluator.findObligation(currentSequence, board);
+    if (obligation.isPresent()
+        && !com.dlb.chess.dumbboard.touchmove.TouchMoveEvaluator.satisfiesObligation(
+            obligation.get(), matchedMove)) {
       return Optional.empty();
     }
 
-    // Speculatively perform the matched move and check whether the resulting position ends the game.
-    final MoveSpecification spec = response.acceptedMove().get().moveSpecification();
+    // Speculatively perform the matched move and check whether the resulting position ends the
+    // game (checkmate, stalemate, dead position, fivefold, 75-move).
+    final MoveSpecification spec = matchedMove.moveSpecification();
     board.performMove(spec);
     final Optional<GameResult> ending = checkAutomaticEndings();
     if (ending.isEmpty()) {
@@ -185,13 +209,12 @@ public class GameSession {
       return Optional.empty();
     }
 
-    // Game-ending move: keep the move performed and finalize state (mirrors MOVE_ACCEPTED in
-    // handleArbiterResponse, but without starting a new turn since the game is over).
+    // Game-ending move: keep the move performed and finalize state.
     clock.switchClock();
     drawOfferManager.clearOffer();
     endGame(ending.get());
     startNewTurn();
-    return Optional.of(response);
+    return Optional.of(ArbiterResponse.moveAccepted(matchedMove));
   }
 
   private ArbiterResponse handleArbiterResponse(ArbiterResponse response, Side side, boolean keepDrawOffer) {

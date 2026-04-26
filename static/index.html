@@ -36,6 +36,21 @@
         <label>Increment (sec): <input type="number" id="customIncrement" value="0" min="0" max="60"></label>
       </div>
 
+      <label>Number of illegal moves causing game loss:</label>
+      <select id="maxIllegalMoves">
+        <option value="1">1</option>
+        <option value="2" selected>2 (FIDE default)</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+        <option value="-1">Unlimited</option>
+      </select>
+
       <button id="createGameBtn" class="primary-btn">Create Game</button>
     </div>
 
@@ -77,8 +92,10 @@
     // Create game — just redirect to game.html with params, game.js handles the WebSocket
     document.getElementById('createGameBtn').addEventListener('click', () => {
       const side = document.querySelector('input[name="side"]:checked').value;
+      const maxIllegal = document.getElementById('maxIllegalMoves').value;
       window.location.href = '/game.html?creator=true&side=' + side
-        + '&time=' + selectedTime + '&inc=' + selectedInc;
+        + '&time=' + selectedTime + '&inc=' + selectedInc
+        + '&maxIllegal=' + encodeURIComponent(maxIllegal);
     });
 
     // Join game

@@ -32,6 +32,10 @@ public class ArbiterEngine {
     this.illegalMoveTracker = new IllegalMoveTracker();
   }
 
+  public ArbiterEngine(int maxIllegalMoves) {
+    this.illegalMoveTracker = new IllegalMoveTracker(maxIllegalMoves);
+  }
+
   public ArbiterEngine(IllegalMoveTracker illegalMoveTracker) {
     this.illegalMoveTracker = illegalMoveTracker;
   }
@@ -85,11 +89,27 @@ public class ArbiterEngine {
 
     if (illegalMoveTracker.isGameLost(sideToMove)) {
       final String sideName = sideToMove == Side.WHITE ? "White" : "Black";
+      final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
+      final String ordinal = ordinalSuffix(count);
       return ArbiterResponse.illegalMoveGameLost(
-          sideName + " loses the game. This was the second illegal move by " + sideName + ".");
+          sideName + " loses the game. This was the " + count + ordinal + " illegal move by "
+              + sideName + ".");
     }
 
     return ArbiterResponse.illegalMove("Illegal move. Please revert the position.");
+  }
+
+  private static String ordinalSuffix(int n) {
+    final int mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 13) {
+      return "th";
+    }
+    return switch (n % 10) {
+      case 1 -> "st";
+      case 2 -> "nd";
+      case 3 -> "rd";
+      default -> "th";
+    };
   }
 
   private ArbiterResponse handleTouchMoveViolation(TouchMoveObligation obligation, Side sideToMove) {

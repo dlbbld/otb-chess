@@ -116,10 +116,13 @@ public class GameWebSocketServer extends WebSocketServer {
     final long initialTimeMs = json.get("initialTimeMs").getAsLong();
     final long incrementMs = json.get("incrementMs").getAsLong();
     final String sideStr = json.get("side").getAsString();
+    // maxIllegalMoves: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
+    final int maxIllegalMoves = json.has("maxIllegalMoves") ? json.get("maxIllegalMoves").getAsInt()
+        : com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES;
 
     final String gameId = UUID.randomUUID().toString().substring(0, 8);
     final TimeControl timeControl = new TimeControl(initialTimeMs, incrementMs);
-    final GameRoom room = new GameRoom(gameId, timeControl);
+    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves);
 
     if ("white".equalsIgnoreCase(sideStr)) {
       room.setWhitePlayer(conn);

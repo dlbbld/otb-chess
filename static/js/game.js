@@ -37,7 +37,9 @@ class Game {
     if (isCreator) {
       const initialTimeMs = parseInt(params.get('time') || '1800000');
       const incrementMs = parseInt(params.get('inc') || '0');
-      this.ws.createGame(this.side, initialTimeMs, incrementMs);
+      // maxIllegal: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
+      const maxIllegalMoves = parseInt(params.get('maxIllegal') || '2');
+      this.ws.createGame(this.side, initialTimeMs, incrementMs, maxIllegalMoves);
     } else {
       this.ws.joinGame(this.gameId);
     }
@@ -76,16 +78,20 @@ class Game {
       this.topClockColor === 'white' ? 'White' : 'Black';
 
     // Physical clock position: always on White's right side of the board.
-    // When viewing as White (not flipped): clock on the right.
-    // When viewing as Black (flipped): clock on the left.
+    // When viewing as White (not flipped): right-column on the right of the board.
+    // When viewing as Black (flipped): right-column moves to the LEFT of the board,
+    // and the clock's internal columns reverse so each player sees their own lever
+    // (and their own LCD) at the bottom — meaning when the OTHER player has the
+    // move, the CURRENT player sees their own lever pressed (flat), and when the
+    // CURRENT player has the move, they see their own lever raised.
     const whiteView = !this.board.flipped;
-    const boardRow = document.querySelector('.board-row');
-    if (boardRow) {
-      if (whiteView) {
-        boardRow.classList.remove('clock-on-left');
-      } else {
-        boardRow.classList.add('clock-on-left');
-      }
+    const gameLayout = document.querySelector('.game-layout');
+    if (gameLayout) {
+      gameLayout.classList.toggle('clock-on-left-view', !whiteView);
+    }
+    const clockEl = document.getElementById('chessClock');
+    if (clockEl) {
+      clockEl.classList.toggle('clock-flipped-view', !whiteView);
     }
   }
 
@@ -94,11 +100,17 @@ class Game {
 
     const pressedColor = position === 'bottom' ? this.bottomClockColor : this.topClockColor;
 
-    if (pressedColor === this.side) {
-      this.ws.sendClockPress(this.board.getBoardState());
-    } else {
-      this.ws.send({ type: 'opponentClockPressed' });
-    }
+    // Only a press of the player's OWN lever while it's their turn does anything —
+    // exactly like a real chess clock where pressing the wrong side does not register.
+    // We intentionally do NOT notify the server about clicks on the opponent's lever
+    // (or on the player's own lever when it's not their turn): no message, no arbiter
+    // intervention, no "do not press the opponent's clock" feedback. Silence keeps
+    // the cursor-and-click behaviour identical for both halves and avoids leaking
+    // which lever belongs to whom.
+    if (pressedColor !== this.side) return;
+    if (!this.isMyTurn) return;
+
+    this.ws.sendClockPress(this.board.getBoardState());
   }
 
   setupMessageHandlers() {
