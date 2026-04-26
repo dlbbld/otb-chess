@@ -182,6 +182,43 @@ class TestGameSessionFlow {
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, valid.type());
   }
 
+  @Test
+  void testTouchMovePawnObligationPersistsAfterRestoration() {
+    final GameSession session = new GameSession(TEST_TIME, 2, false);
+    session.startGame();
+
+    // White touches pawn b2, but plays e4.
+    session.recordEvent(Side.WHITE, BoardEvent.click(Square.B2, Piece.WHITE_PAWN, 0));
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
+    final StaticPosition afterE4 = session.getBoard().getStaticPosition()
+        .createChangedPosition(Square.E2, Piece.NONE)
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+
+    final ArbiterResponse violation = session.pressClockButton(Side.WHITE, afterE4);
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, violation.type());
+    assertTrue(violation.message().contains("pawn on b2"));
+
+    // The restore flow should not clear the touch-move obligation.
+    session.enterWaitingForRestoration();
+    assertTrue(session.isWaitingForRestoration());
+    assertTrue(session.isRestoredPosition(session.getRestorePosition()));
+    session.completeRestoration();
+    assertFalse(session.isWaitingForRestoration());
+    assertTrue(session.isWaitingForReady());
+    session.playerReady(Side.WHITE);
+    session.playerReady(Side.BLACK);
+
+    // White now performs a legal move with the touched b2 pawn.
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.B2, Square.B4, Piece.WHITE_PAWN, 2));
+    final StaticPosition afterB4 = session.getBoard().getStaticPosition()
+        .createChangedPosition(Square.B2, Piece.NONE)
+        .createChangedPosition(Square.B4, Piece.WHITE_PAWN);
+
+    final ArbiterResponse valid = session.pressClockButton(Side.WHITE, afterB4);
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, valid.type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+  }
+
   private void makeSimpleMove(GameSession session, Square from, Square to, Piece piece) {
     final Side side = session.getHavingMove();
     session.recordEvent(side, BoardEvent.dragMove(from, to, piece, System.currentTimeMillis()));

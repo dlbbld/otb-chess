@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
@@ -119,10 +120,12 @@ public class GameWebSocketServer extends WebSocketServer {
     // maxIllegalMoves: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
     final int maxIllegalMoves = json.has("maxIllegalMoves") ? json.get("maxIllegalMoves").getAsInt()
         : com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES;
+    final boolean autoResumeAfterRestore = !json.has("autoResumeAfterRestore")
+        || json.get("autoResumeAfterRestore").getAsBoolean();
 
     final String gameId = UUID.randomUUID().toString().substring(0, 8);
     final TimeControl timeControl = new TimeControl(initialTimeMs, incrementMs);
-    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves);
+    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore);
 
     if ("white".equalsIgnoreCase(sideStr)) {
       room.setWhitePlayer(conn);
@@ -210,6 +213,24 @@ public class GameWebSocketServer extends WebSocketServer {
         eventData.get("piece").getAsString(),
         eventData.get("displacedPiece").getAsString());
 
+    if (room.getSession().isRestorationResumePending()) {
+      return;
+    }
+
+    if (room.getSession().isWaitingForRestoration()) {
+      forwardBoardEventToOpponent(room, side, eventData);
+
+      if (json.has("boardState")) {
+        @SuppressWarnings("unchecked")
+        final Map<String, String> boardStateMap = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
+        final StaticPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
+        if (room.getSession().isRestoredPosition(afterPosition)) {
+          completeRestoration(room);
+        }
+      }
+      return;
+    }
+
     final Optional<ArbiterResponse> midPlayResponse = room.getSession().recordEvent(side, event);
 
     if (midPlayResponse.isPresent()) {
@@ -217,10 +238,7 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     // Forward the event to the opponent for real-time board visibility
-    final JsonObject forwardMsg = new JsonObject();
-    forwardMsg.addProperty("type", "opponentBoardEvent");
-    forwardMsg.add("event", eventData);
-    room.sendToSide(side.getOppositeSide(), GSON.toJson(forwardMsg));
+    forwardBoardEventToOpponent(room, side, eventData);
 
     // Auto-end on game-ending moves (checkmate, stalemate, dead position, fivefold, 75-move):
     // accept the move and end the game without waiting for a clock press.
@@ -426,20 +444,48 @@ public class GameWebSocketServer extends WebSocketServer {
 
     // Send the position before the turn to the player so the client can restore
     final var restorePosition = room.getSession().getRestorePosition();
+    completeRestoration(room, restorePosition);
+  }
+
+  private void completeRestoration(GameRoom room) {
+    completeRestoration(room, room.getSession().getRestorePosition());
+  }
+
+  private void completeRestoration(GameRoom room, StaticPosition restorePosition) {
+    room.getSession().completeRestoration();
+
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "positionRestored");
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(restorePosition)));
-    msg.addProperty("message", "Position restored. Are you ready to continue?");
+    if (room.getSession().isAutoResumeAfterRestore()) {
+      msg.addProperty("message", "Position restored. Restarting the clock shortly. Please be ready.");
+      msg.addProperty("autoResumePending", true);
+    } else {
+      msg.addProperty("message", "Position restored. Are you ready to continue?");
+      msg.addProperty("autoResumePending", false);
+    }
     room.sendToBoth(GSON.toJson(msg));
 
-    // Enter waiting-for-ready state
-    room.getSession().enterWaitingForReady();
+    if (room.getSession().isAutoResumeAfterRestore()) {
+      clockExecutor.schedule(() -> resumeAfterRestorationDelay(room), 1500, TimeUnit.MILLISECONDS);
+      return;
+    }
 
     // Send ready prompt to both players
     final JsonObject readyMsg = new JsonObject();
     readyMsg.addProperty("type", "waitingForReady");
     readyMsg.addProperty("message", "Are you ready to continue?");
     room.sendToBoth(GSON.toJson(readyMsg));
+  }
+
+  private void resumeAfterRestorationDelay(GameRoom room) {
+    room.getSession().resumeAfterRestorationDelay();
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "gameResumed");
+    msg.addProperty("message", "Clock restarted. Game continues.");
+    msg.addProperty("havingMove", room.getSession().getHavingMove().name().toLowerCase());
+    room.sendToBoth(GSON.toJson(msg));
+    sendClockUpdate(room);
   }
 
   private void handleReadyToContinue(WebSocket conn) {
@@ -456,6 +502,7 @@ public class GameWebSocketServer extends WebSocketServer {
       final JsonObject msg = new JsonObject();
       msg.addProperty("type", "gameResumed");
       msg.addProperty("message", "Both players ready. Game continues.");
+      msg.addProperty("havingMove", room.getSession().getHavingMove().name().toLowerCase());
       room.sendToBoth(GSON.toJson(msg));
       sendClockUpdate(room);
     } else {
@@ -493,10 +540,18 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendRestoreInstructions(GameRoom room, Side side) {
+    room.getSession().enterWaitingForRestoration();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "restoreRequired");
     msg.addProperty("message", "Please restore the position to the beginning of the move.");
     room.sendToSide(side, GSON.toJson(msg));
+  }
+
+  private void forwardBoardEventToOpponent(GameRoom room, Side side, JsonObject eventData) {
+    final JsonObject forwardMsg = new JsonObject();
+    forwardMsg.addProperty("type", "opponentBoardEvent");
+    forwardMsg.add("event", eventData);
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(forwardMsg));
   }
 
   // ===== Helper methods =====

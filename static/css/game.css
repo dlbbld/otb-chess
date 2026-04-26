@@ -104,6 +104,13 @@ body:has(.game-layout) {
   justify-self: start;
 }
 
+/* Black's view: the column is left of the board, so the clock body hugs the
+   board edge and the LCD display remains the inner face nearest the board. */
+.game-layout.clock-on-left-view .right-column .chess-clock {
+  justify-self: end;
+  flex-direction: row-reverse;
+}
+
 /* === Chess Clock — DGT 3000 inspired === */
 /* Red wedge-shaped body viewed mostly head-on (no exposed side face), with a slight
    forward tilt for 3D feel. Sized to about 1/3 of the board height so it sits below
@@ -143,16 +150,6 @@ body:has(.game-layout) {
   justify-content: space-between;
   align-items: stretch;
   flex: 0 0 auto;
-}
-
-/* Black's view: top/bottom of both the display column and the rocker reverse so
-   black sees his own LCD at the bottom AND his own lever at the bottom. With
-   white's lever raised on white's bottom and black's lever pressed on black's
-   bottom, the two players see opposite tilts of the rocker — exactly like a real
-   chess clock viewed from each player's side of the board. */
-.chess-clock.clock-flipped-view .clock-displays,
-.chess-clock.clock-flipped-view .clock-rocker {
-  flex-direction: column-reverse;
 }
 
 .clock-divider {

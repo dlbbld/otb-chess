@@ -25,12 +25,16 @@ public class GameRoom {
 
   public GameRoom(String gameId, TimeControl timeControl) {
     this(gameId, timeControl,
-        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES);
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true);
   }
 
   public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves) {
+    this(gameId, timeControl, maxIllegalMoves, true);
+  }
+
+  public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore) {
     this.gameId = gameId;
-    this.session = new GameSession(timeControl, maxIllegalMoves);
+    this.session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore);
     this.timeControl = timeControl;
   }
 

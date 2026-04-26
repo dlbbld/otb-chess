@@ -114,6 +114,32 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testTouchMoveViolationOwnPawnMessageNamesFirstTouchedPiece() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final ApiBoard board = new Board();
+
+    // Player touches pawn b2, but plays e4.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.B2, Piece.WHITE_PAWN, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
+
+    final StaticPosition afterPosition = board.getStaticPosition()
+        .createChangedPosition(Square.E2, Piece.NONE)
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
+    assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+    assertTrue(response.obligation().isPresent());
+    assertEquals(Square.B2, response.obligation().get().square());
+    assertEquals(Piece.WHITE_PAWN, response.obligation().get().piece());
+    assertEquals("Touch-move violation: You have touched the pawn on b2."
+        + " Because this pawn has legal moves, please perform a move with this piece."
+        + " Please revert the position.", response.message());
+  }
+
+  @Test
   void testTouchMoveViolationOpponentPiece() {
     final ArbiterEngine engine = new ArbiterEngine();
     final ApiBoard board = new Board();

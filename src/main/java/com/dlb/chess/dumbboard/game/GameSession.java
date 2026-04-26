@@ -41,6 +41,7 @@ public class GameSession {
   private final DrawOfferManager drawOfferManager;
   private final DrawClaimManager drawClaimManager;
   private final TimeControl timeControl;
+  private final boolean autoResumeAfterRestore;
 
   private GameState state;
   private GameResult result;
@@ -57,18 +58,25 @@ public class GameSession {
   private boolean waitingForReady;
   private boolean whiteReady;
   private boolean blackReady;
+  private boolean waitingForRestoration;
+  private boolean restorationResumePending;
 
   public GameSession(TimeControl timeControl) {
     this(timeControl, com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES);
   }
 
   public GameSession(TimeControl timeControl, int maxIllegalMoves) {
+    this(timeControl, maxIllegalMoves, true);
+  }
+
+  public GameSession(TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore) {
     this.board = new Board();
     this.clock = new ClockManager(timeControl);
     this.arbiter = new ArbiterEngine(maxIllegalMoves);
     this.drawOfferManager = new DrawOfferManager();
     this.drawClaimManager = new DrawClaimManager();
     this.timeControl = timeControl;
+    this.autoResumeAfterRestore = autoResumeAfterRestore;
 
     this.state = GameState.WAITING_FOR_PLAYERS;
     this.result = null;
@@ -79,6 +87,8 @@ public class GameSession {
     this.waitingForReady = false;
     this.whiteReady = false;
     this.blackReady = false;
+    this.waitingForRestoration = false;
+    this.restorationResumePending = false;
   }
 
   /**
@@ -533,6 +543,44 @@ public class GameSession {
   }
 
   /**
+   * Enters the restoration state after an invalid move. Board events are then monitored
+   * until the physical board matches the position before the turn.
+   */
+  public synchronized void enterWaitingForRestoration() {
+    this.waitingForRestoration = true;
+    this.restorationResumePending = false;
+    this.waitingForReady = false;
+    this.whiteReady = false;
+    this.blackReady = false;
+  }
+
+  /**
+   * Marks the restore flow complete and either waits for ready confirmation or resumes later.
+   */
+  public synchronized void completeRestoration() {
+    this.waitingForRestoration = false;
+    if (autoResumeAfterRestore) {
+      this.restorationResumePending = true;
+      this.waitingForReady = false;
+      this.whiteReady = false;
+      this.blackReady = false;
+    } else {
+      this.restorationResumePending = false;
+      enterWaitingForReady();
+    }
+  }
+
+  /**
+   * Restarts the clock after an automatic restoration pause.
+   */
+  public synchronized void resumeAfterRestorationDelay() {
+    if (state == GameState.IN_PROGRESS && restorationResumePending && !waitingForReady && !waitingForRestoration) {
+      restorationResumePending = false;
+      clock.startClock(board.getHavingMove());
+    }
+  }
+
+  /**
    * A player signals readiness to continue after an arbiter intervention.
    *
    * @return true if both players are now ready and the game should continue
@@ -565,6 +613,22 @@ public class GameSession {
 
   public synchronized boolean isWaitingForReady() {
     return waitingForReady;
+  }
+
+  public synchronized boolean isWaitingForRestoration() {
+    return waitingForRestoration;
+  }
+
+  public synchronized boolean isRestorationResumePending() {
+    return restorationResumePending;
+  }
+
+  public synchronized boolean isRestoredPosition(StaticPosition position) {
+    return positionBeforeTurn.equals(position);
+  }
+
+  public synchronized boolean isAutoResumeAfterRestore() {
+    return autoResumeAfterRestore;
   }
 
   // ===== PGN export =====

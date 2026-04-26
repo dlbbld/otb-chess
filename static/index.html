@@ -51,6 +51,12 @@
         <option value="-1">Unlimited</option>
       </select>
 
+      <label>Continue clock without confirmation after restored position:</label>
+      <div class="radio-group">
+        <label><input type="radio" name="autoResumeAfterRestore" value="true" checked> Yes</label>
+        <label><input type="radio" name="autoResumeAfterRestore" value="false"> No</label>
+      </div>
+
       <button id="createGameBtn" class="primary-btn">Create Game</button>
     </div>
 
@@ -93,9 +99,12 @@
     document.getElementById('createGameBtn').addEventListener('click', () => {
       const side = document.querySelector('input[name="side"]:checked').value;
       const maxIllegal = document.getElementById('maxIllegalMoves').value;
+      const autoResumeAfterRestore =
+        document.querySelector('input[name="autoResumeAfterRestore"]:checked').value;
       window.location.href = '/game.html?creator=true&side=' + side
         + '&time=' + selectedTime + '&inc=' + selectedInc
-        + '&maxIllegal=' + encodeURIComponent(maxIllegal);
+        + '&maxIllegal=' + encodeURIComponent(maxIllegal)
+        + '&autoResumeAfterRestore=' + encodeURIComponent(autoResumeAfterRestore);
     });
 
     // Join game

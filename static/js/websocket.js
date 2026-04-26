@@ -50,13 +50,14 @@ class GameWebSocket {
     }
   }
 
-  createGame(side, initialTimeMs, incrementMs, maxIllegalMoves) {
+  createGame(side, initialTimeMs, incrementMs, maxIllegalMoves, autoResumeAfterRestore) {
     this.send({
       type: 'createGame',
       side: side,
       initialTimeMs: initialTimeMs,
       incrementMs: incrementMs,
-      maxIllegalMoves: maxIllegalMoves
+      maxIllegalMoves: maxIllegalMoves,
+      autoResumeAfterRestore: autoResumeAfterRestore
     });
   }
 

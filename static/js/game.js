@@ -39,7 +39,8 @@ class Game {
       const incrementMs = parseInt(params.get('inc') || '0');
       // maxIllegal: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
       const maxIllegalMoves = parseInt(params.get('maxIllegal') || '2');
-      this.ws.createGame(this.side, initialTimeMs, incrementMs, maxIllegalMoves);
+      const autoResumeAfterRestore = params.get('autoResumeAfterRestore') !== 'false';
+      this.ws.createGame(this.side, initialTimeMs, incrementMs, maxIllegalMoves, autoResumeAfterRestore);
     } else {
       this.ws.joinGame(this.gameId);
     }
@@ -78,20 +79,13 @@ class Game {
       this.topClockColor === 'white' ? 'White' : 'Black';
 
     // Physical clock position: always on White's right side of the board.
-    // When viewing as White (not flipped): right-column on the right of the board.
-    // When viewing as Black (flipped): right-column moves to the LEFT of the board,
-    // and the clock's internal columns reverse so each player sees their own lever
-    // (and their own LCD) at the bottom — meaning when the OTHER player has the
-    // move, the CURRENT player sees their own lever pressed (flat), and when the
-    // CURRENT player has the move, they see their own lever raised.
+    // White view keeps the clock on the right; Black view moves it to the left.
+    // Top/bottom DOM positions stay fixed while their assigned colors change,
+    // so the far lever stays far and the near lever stays near.
     const whiteView = !this.board.flipped;
     const gameLayout = document.querySelector('.game-layout');
     if (gameLayout) {
       gameLayout.classList.toggle('clock-on-left-view', !whiteView);
-    }
-    const clockEl = document.getElementById('chessClock');
-    if (clockEl) {
-      clockEl.classList.toggle('clock-flipped-view', !whiteView);
     }
   }
 
@@ -250,6 +244,9 @@ class Game {
       }
       this.showArbiterMessage(data.message, 'info');
       this.clearArbiterButtons();
+      if (data.autoResumePending) {
+        this.board.setEnabled(false);
+      }
     });
 
     this.ws.on('waitingForReady', (data) => {
@@ -269,6 +266,11 @@ class Game {
     this.ws.on('gameResumed', (data) => {
       this.showArbiterMessage(data.message);
       this.clearArbiterButtons();
+      if (data.havingMove) {
+        this.isMyTurn = data.havingMove === this.side;
+        this.board.setEnabled(this.isMyTurn);
+        this.updateButtons();
+      }
     });
 
     this.ws.on('incomplete_move', (data) => {
