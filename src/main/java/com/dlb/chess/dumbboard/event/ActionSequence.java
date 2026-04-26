@@ -13,10 +13,12 @@ public class ActionSequence {
 
   private final List<BoardEvent> events;
   private final Side sideToMove;
+  private int releasedPieceRuleStartIndex;
 
   public ActionSequence(Side sideToMove) {
     this.sideToMove = sideToMove;
     this.events = new ArrayList<>();
+    this.releasedPieceRuleStartIndex = 0;
   }
 
   public void addEvent(BoardEvent event) {
@@ -27,12 +29,21 @@ public class ActionSequence {
     return Collections.unmodifiableList(events);
   }
 
+  public List<BoardEvent> getEventsSinceReleasedPieceRuleReset() {
+    return Collections.unmodifiableList(events.subList(releasedPieceRuleStartIndex, events.size()));
+  }
+
+  public void resetReleasedPieceRule() {
+    releasedPieceRuleStartIndex = events.size();
+  }
+
   public Side getSideToMove() {
     return sideToMove;
   }
 
   public void clear() {
     events.clear();
+    releasedPieceRuleStartIndex = 0;
   }
 
   public boolean isEmpty() {

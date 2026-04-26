@@ -24,6 +24,13 @@ public class DrawOfferManager {
   private boolean drawOffered;
   private Side offeringSide;
   private boolean opponentTouchedPiece;
+  /** True iff the active offer was made at the correct time (offerer on move, after making
+      a move). Used to choose the right "offer-no-longer-acceptable" trigger:
+      correct-time → opponent's TOUCH invalidates the offer (FIDE 9.1.2.1);
+      wrong-time   → opponent's LEGAL RELEASE invalidates the offer instead (player was
+                     mid-thinking when the offer arrived; merely touching a piece while
+                     deciding their move shouldn't penalise them). */
+  private boolean wasOfferedAtCorrectTime;
 
   // Repeated offer tracking (per side, cumulative across the game)
   private int whiteRepeatCount;
@@ -37,6 +44,7 @@ public class DrawOfferManager {
     this.drawOffered = false;
     this.offeringSide = Side.NONE;
     this.opponentTouchedPiece = false;
+    this.wasOfferedAtCorrectTime = false;
     this.whiteRepeatCount = 0;
     this.blackRepeatCount = 0;
     this.whiteWrongTimeCount = 0;
@@ -86,6 +94,7 @@ public class DrawOfferManager {
     this.drawOffered = true;
     this.offeringSide = side;
     this.opponentTouchedPiece = false;
+    this.wasOfferedAtCorrectTime = true;
     return DrawOfferResult.ok();
   }
 
@@ -93,7 +102,12 @@ public class DrawOfferManager {
    * Attempts to offer a draw at the wrong time (not the player's turn, or no move made).
    * The offer is still valid per FIDE 9.1.2.1, but escalating penalties apply per 11.5.
    */
-  public DrawOfferResult offerDrawWrongTime(Side side) {
+  /**
+   * @param offererHasMove whether the offering side has the move (case A: on move but no
+   *     move attempted yet) vs. is not on move (case B: opponent's turn). Used only to choose
+   *     the wording of the first-info message.
+   */
+  public DrawOfferResult offerDrawWrongTime(Side side, boolean offererHasMove) {
     // Check for repeated offer first
     if (drawOffered && offeringSide == side) {
       return handleRepeatedOffer(side);
@@ -101,10 +115,12 @@ public class DrawOfferManager {
 
     final int count = incrementWrongTimeCount(side);
 
-    // Set up the offer (it IS valid, just penalized)
+    // Set up the offer (it IS valid, just penalized). Wrong-time → release-piece-based
+    // invalidation, see wasOfferedAtCorrectTime field doc.
     this.drawOffered = true;
     this.offeringSide = side;
     this.opponentTouchedPiece = false;
+    this.wasOfferedAtCorrectTime = false;
 
     if (count >= PENALTY_GAME_LOST) {
       return DrawOfferResult.wrongTimeGameLost(
@@ -115,10 +131,16 @@ public class DrawOfferManager {
           "You are offering a draw at the wrong time. "
               + "The next wrong-time draw offer will lose the game.");
     }
-    // count == PENALTY_INFO
+    // count == PENALTY_INFO — wording depends on whether the offerer has the move.
+    if (offererHasMove) {
+      return DrawOfferResult.wrongTime(
+          "Please note that when having the move, the draw offer should be made after making"
+              + " your move and before pressing the clock. Not following this procedure could lead"
+              + " to a warning. The offer still counts as a draw offer.");
+    }
     return DrawOfferResult.wrongTime(
-        "A draw offer should be made after completing your move and before pressing the clock. "
-            + "The offer is still valid, but please follow the correct procedure.");
+        "Please note that the draw offer should be made on your own turn. Not following this"
+            + " procedure could lead to a warning. The offer still counts as a draw offer.");
   }
 
   private DrawOfferResult handleRepeatedOffer(Side side) {
@@ -181,6 +203,11 @@ public class DrawOfferManager {
     this.drawOffered = false;
     this.offeringSide = Side.NONE;
     this.opponentTouchedPiece = false;
+    this.wasOfferedAtCorrectTime = false;
+  }
+
+  public boolean wasOfferedAtCorrectTime() {
+    return wasOfferedAtCorrectTime;
   }
 
   /**

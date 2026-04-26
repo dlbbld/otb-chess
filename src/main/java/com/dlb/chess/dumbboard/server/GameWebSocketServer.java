@@ -207,9 +207,21 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Side side = room.getSide(conn);
     final JsonObject eventData = json.getAsJsonObject("event");
+    final String eventType = eventData.get("eventType").getAsString();
+
+    // Cosmetic drag-in-progress events (DRAG_START, DRAG_HOVER) are display-only.
+    // Forward them to the opponent so they can mirror the dragging player's hand,
+    // but do NOT run them through the arbiter, the move recorder, or the auto-end
+    // check — they aren't moves and don't represent any change to the position.
+    if ("DRAG_START".equals(eventType) || "DRAG_HOVER".equals(eventType)) {
+      if (!room.getSession().isRestorationResumePending()) {
+        forwardBoardEventToOpponent(room, side, eventData);
+      }
+      return;
+    }
 
     final BoardEvent event = MessageConverter.toBoardEvent(
-        eventData.get("eventType").getAsString(),
+        eventType,
         eventData.get("square").getAsString(),
         eventData.get("targetSquare").getAsString(),
         eventData.get("piece").getAsString(),
@@ -241,6 +253,41 @@ public class GameWebSocketServer extends WebSocketServer {
         sendRestoreInstructions(room, side, response.message(), "error");
       } else {
         sendArbiterResponse(room, side, response);
+      }
+    }
+
+    // The on-move player just performed a board event while a draw offer is pending against
+    // them. Whether that invalidates the offer depends on how the offer was made:
+    //   - Correct-time offer (FIDE 9.1.2.1): even a TOUCH loses the right to accept, because
+    //     the recipient was waiting and any piece interaction commits them to a move.
+    //   - Wrong-time offer: the recipient was already mid-thinking when the offer arrived;
+    //     touching pieces while deciding is normal play. The offer is invalidated only when
+    //     the recipient has actually MADE THE MOVE — i.e. completed a legal release per
+    //     FIDE 4.7 (released-piece rule).
+    final var drawMgr = room.getSession().getDrawOfferManager();
+    if (drawMgr.isDrawOffered()
+        && drawMgr.getOfferingSide() != side
+        && !drawMgr.hasOpponentTouchedPiece()) {
+
+      final boolean correctTimeTouchInvalidation = drawMgr.wasOfferedAtCorrectTime()
+          && isTouchPieceEvent(event);
+      final boolean wrongTimeReleaseInvalidation = !drawMgr.wasOfferedAtCorrectTime()
+          && room.getSession().hasReleasedPieceCommitment();
+
+      if (correctTimeTouchInvalidation) {
+        drawMgr.recordOpponentTouchedPiece();
+        final JsonObject msg = new JsonObject();
+        msg.addProperty("type", "drawOfferInvalidated");
+        msg.addProperty("message",
+            "The draw offer is no longer valid because you touched a piece.");
+        conn.send(GSON.toJson(msg));
+      } else if (wrongTimeReleaseInvalidation) {
+        drawMgr.recordOpponentTouchedPiece();
+        final JsonObject msg = new JsonObject();
+        msg.addProperty("type", "drawOfferInvalidated");
+        msg.addProperty("message",
+            "The draw offer is no longer valid because you made the move.");
+        conn.send(GSON.toJson(msg));
       }
     }
 
@@ -282,6 +329,16 @@ public class GameWebSocketServer extends WebSocketServer {
       opponentMsg.addProperty("type", "touch_move_violation");
       opponentMsg.addProperty("message", formatOpponentTouchMoveViolation(response.obligation().get()));
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
+    } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
+      final JsonObject opponentMsg = new JsonObject();
+      opponentMsg.addProperty("type", "released_piece_violation");
+      opponentMsg.addProperty("message", formatOpponentReleasedPieceViolation(response.message()));
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
+    } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
+      final JsonObject opponentMsg = new JsonObject();
+      opponentMsg.addProperty("type", "illegal_move");
+      opponentMsg.addProperty("message", formatOpponentIllegalMove(response.message()));
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
     }
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
@@ -289,7 +346,10 @@ public class GameWebSocketServer extends WebSocketServer {
       // Note: opponentMoved (sent by sendArbiterResponse) already includes the board state.
       // Do NOT also send boardUpdate here, as it can overwrite the opponent's in-progress moves.
     } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
-      sendRestoreInstructions(room, side);
+      sendRestoreInstructions(room, side, response.message(), "error");
+    } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
+      sendRestoreInstructions(room, side, response.message(), "error",
+          response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
       sendRestoreInstructions(room, side, response.message(), "error");
     }
@@ -304,50 +364,97 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final Side side = room.getSide(conn);
-    final boolean isCorrectTime = side == room.getSession().getHavingMove();
 
-    if (isCorrectTime) {
-      // Correct time: after making a move — triggers move evaluation
+    // Parse the boardState (it's required for the correct-time validation path).
+    StaticPosition afterPosition = null;
+    if (json.has("boardState")) {
       @SuppressWarnings("unchecked")
       final Map<String, String> boardState = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
-      final StaticPosition afterPosition = MessageConverter.toStaticPosition(boardState);
+      afterPosition = MessageConverter.toStaticPosition(boardState);
+    }
 
-      final ArbiterResponse response = room.getSession().offerDrawCorrectTime(side, afterPosition);
-      sendArbiterResponse(room, side, response);
+    // Correct-time vs. wrong-time per FIDE 9.1.2.1:
+    //   Correct = the offering player has the move AND has actually made a move on the board
+    //             (the physical position differs from positionBeforeTurn). The offer is then
+    //             communicated, but the move is only committed when the player presses the clock.
+    //   Wrong   = anything else (not on move, or on move but no move attempted yet). The offer
+    //             is still valid and forwarded to the opponent, but with an escalating
+    //             procedural warning. The clock keeps running on whoever's turn it is.
+    final boolean hasMove = side == room.getSession().getHavingMove();
+    final boolean moveAttempted = hasMove && afterPosition != null
+        && !room.getSession().getPositionBeforeTurn().equals(afterPosition);
 
-      if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
-        sendDrawOfferToOpponent(room, side);
-        sendClockUpdate(room);
-      }
+    if (moveAttempted) {
+      handleCorrectTimeDrawOffer(room, conn, side, afterPosition);
+    } else if (!hasMove && room.getSession().hasReleasedPieceCommitment()) {
+      // Scenario 2: opponent has already made a legal release (committed move via FIDE 4.7),
+      // they are merely waiting to press their clock. The offer is invalid — do NOT register
+      // it, do NOT count it toward the wrong-time penalty, and do NOT forward it to the
+      // committed opponent. Just inform the offerer.
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "wrongTimeDrawOffer");
+      msg.addProperty("message", "The draw offer is not valid because your opponent has"
+          + " already made a move and is about to press the clock.");
+      conn.send(GSON.toJson(msg));
     } else {
-      // Wrong time: offer is still valid, but penalties apply
-      final var result = room.getSession().offerDrawWrongTime(side);
-
-      if (result.arbiterMessage() != null) {
-        // Send arbiter message to the player
-        final JsonObject arbiterMsg = new JsonObject();
-        arbiterMsg.addProperty("type", result.isWrongTime() ? "wrongTimeDrawOffer" : "repeatedDrawOffer");
-        arbiterMsg.addProperty("message", result.arbiterMessage());
-        conn.send(GSON.toJson(arbiterMsg));
-
-        if (result.isWrongTime()) {
-          // Stop clock, ready-to-continue flow
-          room.getSession().getClock().stopClock();
-          room.getSession().enterWaitingForReady();
-          final JsonObject readyMsg = new JsonObject();
-          readyMsg.addProperty("type", "waitingForReady");
-          readyMsg.addProperty("message", "Are you ready to continue?");
-          room.sendToBoth(GSON.toJson(readyMsg));
-        }
-      }
-
-      // Forward the draw offer to the opponent (it's valid even at wrong time)
-      if (result.accepted() && !result.gameLost()) {
-        sendDrawOfferToOpponent(room, side);
-      }
+      handleWrongTimeDrawOffer(room, conn, side);
     }
 
     checkGameEnded(room);
+  }
+
+  private void handleCorrectTimeDrawOffer(GameRoom room, WebSocket conn, Side side,
+      StaticPosition afterPosition) {
+    final ArbiterResponse response = room.getSession().offerDrawCorrectTime(side, afterPosition);
+
+    if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
+      // Move is valid and the offer has been registered. Tell the offering player to press
+      // the clock (their move is not committed until then) and forward the offer to the opponent.
+      // Crucially: NO sendClockUpdate — the clock stays on the offering player.
+      sendDrawOfferToOpponent(room, side);
+      final JsonObject ack = new JsonObject();
+      ack.addProperty("type", "drawOfferSent");
+      ack.addProperty("message", "Draw offer sent. Now press the clock to complete your move.");
+      conn.send(GSON.toJson(ack));
+      return;
+    }
+    if (response.type() == ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST) {
+      // Repeated-offer game-lost penalty. The session has already ended the game.
+      sendArbiterResponse(room, side, response);
+      return;
+    }
+
+    // Move was invalid (or repeated-offer info/warning). Apply the standard arbiter
+    // intervention — for the move-validity violations, this also drives the restoration flow.
+    sendArbiterResponse(room, side, response);
+    if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
+      sendRestoreInstructions(room, side, response.message(), "error");
+    } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
+      sendRestoreInstructions(room, side, response.message(), "error");
+    } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
+      sendRestoreInstructions(room, side, response.message(), "error",
+          response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
+    }
+    // INCOMPLETE_MOVE / repeated-offer warning — message has already been sent, no further action.
+  }
+
+  private void handleWrongTimeDrawOffer(GameRoom room, WebSocket conn, Side side) {
+    final var result = room.getSession().offerDrawWrongTime(side);
+
+    if (result.arbiterMessage() != null) {
+      final JsonObject arbiterMsg = new JsonObject();
+      arbiterMsg.addProperty("type", result.isWrongTime() ? "wrongTimeDrawOffer" : "repeatedDrawOffer");
+      arbiterMsg.addProperty("message", result.arbiterMessage());
+      conn.send(GSON.toJson(arbiterMsg));
+      // Note: we no longer stop the clock or enter the ready-to-continue handshake here.
+      // Per FIDE the offer is informational and the clock keeps running on whoever has the move.
+    }
+
+    // Forward the offer to the opponent (still valid even at the wrong time, unless the
+    // offering side just hit the game-loss penalty or this was a duplicate from the same side).
+    if (result.accepted() && !result.gameLost()) {
+      sendDrawOfferToOpponent(room, side);
+    }
   }
 
   private void sendDrawOfferToOpponent(GameRoom room, Side offeringSide) {
@@ -559,7 +666,12 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendRestoreInstructions(GameRoom room, Side side, String message, String style) {
-    room.getSession().enterWaitingForRestoration();
+    sendRestoreInstructions(room, side, message, style, room.getSession().getPositionBeforeTurn());
+  }
+
+  private void sendRestoreInstructions(GameRoom room, Side side, String message, String style,
+      StaticPosition restorePosition) {
+    room.getSession().enterWaitingForRestoration(restorePosition);
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "restoreRequired");
     msg.addProperty("message", message);
@@ -636,6 +748,16 @@ public class GameWebSocketServer extends WebSocketServer {
     }
   }
 
+  /** Whether this event represents the on-move player touching a piece on the board.
+      Side-area RESTORE events are excluded — they place a piece TO the board, not "touch"
+      a piece on it. Used to invalidate a pending draw offer per FIDE 9.1.2.1. */
+  private static boolean isTouchPieceEvent(BoardEvent event) {
+    return switch (event.type()) {
+      case CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE -> true;
+      case RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> false;
+    };
+  }
+
   static String formatOpponentTouchMoveViolation(TouchMoveObligation obligation) {
     final String pieceName = formatPieceName(obligation);
     final String squareName = obligation.square().getName();
@@ -647,6 +769,43 @@ public class GameWebSocketServer extends WebSocketServer {
     return "Your opponent has made a touch-move violation. They first touched your " + pieceName + " on "
         + squareName + ", which can be captured, but did not capture it. They are requested to restore the "
         + "position and make a move that satisfies the touch-move rule.";
+  }
+
+  static String formatOpponentIllegalMove(String playerMessage) {
+    final String detail = extractIllegalMoveDetail(playerMessage);
+    if (detail.isBlank()) {
+      return "Your opponent made an illegal move. They are requested to restore the position.";
+    }
+    return "Your opponent made an illegal move: " + detail
+        + " They are requested to restore the position.";
+  }
+
+  static String formatOpponentReleasedPieceViolation(String playerMessage) {
+    String detail = extractViolationDetail(playerMessage, "Released-piece violation: ");
+    if (detail.isBlank()) {
+      return "Your opponent violated the released-piece rule. They are requested to restore the released position.";
+    }
+    detail = detail.replace("You already released", "they already released")
+        .replace("you cannot change", "they cannot change")
+        .replace("Please put", "They are requested to put");
+    return "Your opponent violated the released-piece rule: " + detail;
+  }
+
+  private static String extractIllegalMoveDetail(String playerMessage) {
+    return extractViolationDetail(playerMessage, "Illegal move: ");
+  }
+
+  private static String extractViolationDetail(String playerMessage, String prefix) {
+    String detail = playerMessage.trim();
+    if (detail.startsWith(prefix)) {
+      detail = detail.substring(prefix.length()).trim();
+    } else if (detail.startsWith("Illegal move.")) {
+      detail = detail.substring("Illegal move.".length()).trim();
+    }
+    if (detail.endsWith("Please restore the position.")) {
+      detail = detail.substring(0, detail.length() - "Please restore the position.".length()).trim();
+    }
+    return detail;
   }
 
   private static String formatPieceName(TouchMoveObligation obligation) {
@@ -709,9 +868,14 @@ public class GameWebSocketServer extends WebSocketServer {
         return;
       }
 
-      // Check flag fall
+      // Check flag fall. ClockManager.tick() (called inside checkFlagFall via
+      // getRemainingTimeMs) clamps the flagged side's time to 0, so emit one
+      // final clock update BEFORE the game-ended message — otherwise the client's
+      // last cached value is still the previous tick's positive remainder and
+      // the LCD shows 0:01 even after the player has lost on time.
       final Optional<GameResult> flagFall = room.getSession().checkFlagFall();
       if (flagFall.isPresent()) {
+        sendClockUpdate(room);
         sendGameEnded(room, flagFall.get());
         return;
       }

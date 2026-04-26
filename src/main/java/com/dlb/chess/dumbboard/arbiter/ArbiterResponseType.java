@@ -8,6 +8,9 @@ public enum ArbiterResponseType {
   // Move doesn't satisfy touch-move obligation
   TOUCH_MOVE_VIOLATION,
 
+  // Player changed a position after releasing a piece on a legal move square
+  RELEASED_PIECE_VIOLATION,
+
   // No legal move matches the board position
   ILLEGAL_MOVE,
 

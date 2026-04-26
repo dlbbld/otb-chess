@@ -1,18 +1,31 @@
 package com.dlb.chess.dumbboard.arbiter;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import com.dlb.chess.board.Board;
 import com.dlb.chess.board.StaticPosition;
+import com.dlb.chess.board.ValidateNewMove;
+import com.dlb.chess.board.model.UpdateSquare;
+import com.dlb.chess.board.enums.CastlingMove;
 import com.dlb.chess.board.enums.Piece;
 import com.dlb.chess.board.enums.Side;
+import com.dlb.chess.board.enums.Square;
 import com.dlb.chess.common.interfaces.ApiBoard;
+import com.dlb.chess.common.model.MoveSpecification;
 import com.dlb.chess.dumbboard.core.PositionComparator;
 import com.dlb.chess.dumbboard.event.ActionSequence;
+import com.dlb.chess.dumbboard.event.BoardEvent;
+import com.dlb.chess.dumbboard.event.BoardEventType;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveEvaluator;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveObligation;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveType;
+import com.dlb.chess.exceptions.InvalidMoveException;
 import com.dlb.chess.model.LegalMove;
+import com.dlb.chess.moves.utility.CastlingUtility;
 
 /**
  * The arbiter engine combines touch-move evaluation with position comparison.
@@ -45,6 +58,38 @@ public class ArbiterEngine {
   }
 
   /**
+   * Side-effect-free check used by the auto-end path to find out whether a
+   * released-piece commitment (FIDE 4.7) currently binds the player to a final
+   * position that the given {@code afterPosition} does not satisfy. If true, no
+   * code that bypasses {@link #evaluateClockPress} should accept the position
+   * as a move — the committed move must be played via the normal clock-press
+   * flow, where the violation is reported and the recovery flow runs.
+   */
+  public boolean hasReleasedPieceViolation(ApiBoard board, StaticPosition afterPosition, ActionSequence sequence) {
+    return findReleasedPieceViolation(board, afterPosition, sequence).isPresent();
+  }
+
+  /**
+   * Side-effect-free check: does the action sequence contain at least one release event whose
+   * resulting position is part of a legal move from {@code positionBeforeTurn}? Equivalent to
+   * "has the on-move player committed to a move via FIDE 4.7?" without comparing against any
+   * particular {@code afterPosition}.
+   */
+  public boolean hasReleasedPieceCommitment(ApiBoard board, ActionSequence sequence) {
+    StaticPosition currentPosition = board.getStaticPosition();
+    for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
+      currentPosition = applyEvent(currentPosition, event);
+      if (isReleaseOnBoard(event)) {
+        final Set<StaticPosition> allowedFinalPositions = findAllowedFinalPositionsForRelease(board, event);
+        if (!allowedFinalPositions.isEmpty()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * Evaluates the board state when the player presses the clock.
    *
    * @param board          the board state before this turn's move
@@ -54,6 +99,13 @@ public class ArbiterEngine {
    */
   public ArbiterResponse evaluateClockPress(ApiBoard board, StaticPosition afterPosition, ActionSequence sequence) {
     final Side sideToMove = board.getHavingMove();
+
+    final Optional<ReleasedPieceLock> releasedPieceViolation = findReleasedPieceViolation(board, afterPosition,
+        sequence);
+    if (releasedPieceViolation.isPresent()) {
+      final ReleasedPieceLock lock = releasedPieceViolation.get();
+      return ArbiterResponse.releasedPieceViolation(formatReleasedPieceViolation(lock), lock.releasePosition());
+    }
 
     // Check if the board position even changed
     if (board.getStaticPosition().equals(afterPosition)) {
@@ -65,7 +117,7 @@ public class ArbiterEngine {
 
     if (matchingMoves.isEmpty()) {
       // No legal move produces this position
-      return handleIllegalMove(sideToMove);
+      return handleIllegalMove(board, afterPosition, sequence, sideToMove);
     }
 
     // We have at least one matching move. Pick the first (should be unique in practice).
@@ -84,19 +136,236 @@ public class ArbiterEngine {
     return ArbiterResponse.moveAccepted(matchedMove);
   }
 
-  private ArbiterResponse handleIllegalMove(Side sideToMove) {
+  private record ReleasedPieceLock(
+      StaticPosition releasePosition,
+      Set<StaticPosition> allowedFinalPositions,
+      Piece piece,
+      Square square) {
+  }
+
+  private static Optional<ReleasedPieceLock> findReleasedPieceViolation(ApiBoard board, StaticPosition afterPosition,
+      ActionSequence sequence) {
+    StaticPosition currentPosition = board.getStaticPosition();
+    Optional<ReleasedPieceLock> firstReleasedLegalPosition = Optional.empty();
+
+    for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
+      currentPosition = applyEvent(currentPosition, event);
+
+      if (firstReleasedLegalPosition.isEmpty() && isReleaseOnBoard(event)) {
+        final Set<StaticPosition> allowedFinalPositions = findAllowedFinalPositionsForRelease(board, event);
+        if (!allowedFinalPositions.isEmpty()) {
+          firstReleasedLegalPosition = Optional.of(new ReleasedPieceLock(currentPosition, allowedFinalPositions,
+              event.piece(), event.targetSquare()));
+        }
+      }
+    }
+
+    if (firstReleasedLegalPosition.isPresent()
+        && !firstReleasedLegalPosition.get().allowedFinalPositions().contains(afterPosition)) {
+      return firstReleasedLegalPosition;
+    }
+    return Optional.empty();
+  }
+
+  private static Set<StaticPosition> findAllowedFinalPositionsForRelease(ApiBoard board, BoardEvent event) {
+    final Set<StaticPosition> result = new HashSet<>();
+    for (final LegalMove legalMove : board.getLegalMoveSet()) {
+      if (isReleasePartOfLegalMove(board.getHavingMove(), event, legalMove)) {
+        result.add(Board.createPositionAfterMove(board.getStaticPosition(), board.getHavingMove(),
+            legalMove.moveSpecification()));
+      }
+    }
+    return result;
+  }
+
+  private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove) {
+    if (event.piece() != legalMove.movingPiece()) {
+      return false;
+    }
+    if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())) {
+      return event.piece() == Piece.calculateKingPiece(havingMove)
+          && event.square() == CastlingUtility.calculateKingCastlingFrom(havingMove, legalMove.moveSpecification())
+          && event.targetSquare() == CastlingUtility.calculateKingCastlingTo(havingMove,
+              legalMove.moveSpecification());
+    }
+    return event.square() == legalMove.moveSpecification().fromSquare()
+        && event.targetSquare() == legalMove.moveSpecification().toSquare();
+  }
+
+  private static StaticPosition applyEvent(StaticPosition position, BoardEvent event) {
+    final List<UpdateSquare> updates = new ArrayList<>();
+    switch (event.type()) {
+      case CLICK -> {
+        return position;
+      }
+      case DRAG_MOVE, DRAG_CAPTURE -> {
+        addUpdate(updates, position, event.square(), Piece.NONE);
+        addUpdate(updates, position, event.targetSquare(), event.piece());
+      }
+      case REMOVE -> addUpdate(updates, position, event.square(), Piece.NONE);
+      case RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> addUpdate(updates, position, event.targetSquare(), event.piece());
+    }
+    if (updates.isEmpty()) {
+      return position;
+    }
+    return position.createChangedPosition(updates);
+  }
+
+  private static void addUpdate(List<UpdateSquare> updates, StaticPosition position, Square square, Piece piece) {
+    if (square != Square.NONE && position.get(square) != piece) {
+      updates.add(new UpdateSquare(square, piece));
+    }
+  }
+
+  private static boolean isReleaseOnBoard(BoardEvent event) {
+    return switch (event.type()) {
+      case DRAG_MOVE, DRAG_CAPTURE, RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED ->
+          event.piece() != Piece.NONE && event.targetSquare() != Square.NONE;
+      case CLICK, REMOVE -> false;
+    };
+  }
+
+  private static String formatReleasedPieceViolation(ReleasedPieceLock lock) {
+    final String pieceName = formatPieceName(lock.piece());
+    final String squareName = lock.square().getName();
+    return "Released-piece violation: You already released the " + pieceName + " on " + squareName
+        + ", and that was a legal move. Under the released-piece rule, you cannot change this position anymore."
+        + " Please put the " + pieceName + " back on " + squareName + " and press the clock.";
+  }
+
+  private ArbiterResponse handleIllegalMove(ApiBoard board, StaticPosition afterPosition, ActionSequence sequence,
+      Side sideToMove) {
     illegalMoveTracker.recordIllegalMove(sideToMove);
+    final Optional<String> reason = explainSimpleIllegalMove(board, afterPosition, sequence);
 
     if (illegalMoveTracker.isGameLost(sideToMove)) {
       final String sideName = sideToMove == Side.WHITE ? "White" : "Black";
       final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
       final String ordinal = ordinalSuffix(count);
       return ArbiterResponse.illegalMoveGameLost(
-          sideName + " loses the game. This was the " + count + ordinal + " illegal move by "
+          reason.map(ArbiterEngine::formatIllegalMoveReason).orElse("")
+              + sideName + " loses the game. This was the " + count + ordinal + " illegal move by "
               + sideName + ".");
     }
 
-    return ArbiterResponse.illegalMove("Illegal move. Please revert the position.");
+    return ArbiterResponse.illegalMove(buildOngoingIllegalMoveMessage(sideToMove, reason));
+  }
+
+  /**
+   * Builds the arbiter message for an illegal move that does NOT yet end the game. The
+   * player is told which-numbered illegal move this was and how many remain — phrased as
+   * "your next illegal move will lose the game" when there is exactly one remaining, and
+   * "the Nth illegal move will lose the game" otherwise. With unlimited illegal moves
+   * configured, only the count is reported.
+   */
+  private String buildOngoingIllegalMoveMessage(Side sideToMove, Optional<String> reason) {
+    final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
+    final int max = illegalMoveTracker.getMaxIllegalMoves();
+    final String countOrdinal = ordinalSuffix(count);
+    final StringBuilder msg = new StringBuilder();
+    msg.append(reason.map(ArbiterEngine::formatIllegalMoveReason).orElse("Illegal move. "));
+    msg.append("This is your ").append(count).append(countOrdinal).append(" illegal move. ");
+    if (!illegalMoveTracker.isUnlimited()) {
+      final int remaining = max - count;
+      if (remaining == 1) {
+        msg.append("Your next illegal move will lose the game. ");
+      } else {
+        final String maxOrdinal = ordinalSuffix(max);
+        msg.append("Your ").append(max).append(maxOrdinal).append(" illegal move will lose the game. ");
+      }
+    }
+    msg.append("Please restore the position.");
+    return msg.toString();
+  }
+
+  private static Optional<String> explainSimpleIllegalMove(ApiBoard board, StaticPosition afterPosition,
+      ActionSequence sequence) {
+    final Optional<MoveSpecification> moveSpecification = inferSimpleAttemptedMove(board, afterPosition, sequence);
+    if (moveSpecification.isEmpty()) {
+      return Optional.empty();
+    }
+
+    try {
+      ValidateNewMove.validateNewMove(board, moveSpecification.get());
+      final StaticPosition expectedPosition = Board.createPositionAfterMove(board.getStaticPosition(),
+          board.getHavingMove(), moveSpecification.get());
+      if (!expectedPosition.equals(afterPosition)) {
+        return Optional.of("the move itself is legal, but the final board position is not correct");
+      }
+    } catch (final InvalidMoveException e) {
+      return Optional.of(e.getMessage());
+    } catch (final RuntimeException e) {
+      return Optional.empty();
+    }
+    return Optional.empty();
+  }
+
+  private static Optional<MoveSpecification> inferSimpleAttemptedMove(ApiBoard board, StaticPosition afterPosition,
+      ActionSequence sequence) {
+    BoardEvent moveEvent = null;
+
+    for (final BoardEvent event : sequence.getEvents()) {
+      if (event.type() == BoardEventType.CLICK) {
+        continue;
+      }
+      if (event.type() != BoardEventType.DRAG_MOVE && event.type() != BoardEventType.DRAG_CAPTURE) {
+        return Optional.empty();
+      }
+      if (moveEvent != null) {
+        return Optional.empty();
+      }
+      moveEvent = event;
+    }
+
+    if (moveEvent == null || moveEvent.piece() == Piece.NONE || moveEvent.piece().getSide() != board.getHavingMove()
+        || moveEvent.square() == Square.NONE || moveEvent.targetSquare() == Square.NONE
+        || moveEvent.square() == moveEvent.targetSquare()) {
+      return Optional.empty();
+    }
+    if (board.getStaticPosition().get(moveEvent.square()) != moveEvent.piece()) {
+      return Optional.empty();
+    }
+    if (afterPosition.get(moveEvent.square()) != Piece.NONE
+        || afterPosition.get(moveEvent.targetSquare()) != moveEvent.piece()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(createMoveSpecification(moveEvent));
+  }
+
+  private static MoveSpecification createMoveSpecification(BoardEvent event) {
+    final Optional<CastlingMove> castlingMove = inferCastlingMove(event);
+    if (castlingMove.isPresent()) {
+      return new MoveSpecification(castlingMove.get());
+    }
+    return new MoveSpecification(event.square(), event.targetSquare());
+  }
+
+  private static Optional<CastlingMove> inferCastlingMove(BoardEvent event) {
+    if (event.piece() != Piece.WHITE_KING && event.piece() != Piece.BLACK_KING) {
+      return Optional.empty();
+    }
+    if (event.square() == Square.E1 && event.targetSquare() == Square.G1
+        || event.square() == Square.E8 && event.targetSquare() == Square.G8) {
+      return Optional.of(CastlingMove.KING_SIDE);
+    }
+    if (event.square() == Square.E1 && event.targetSquare() == Square.C1
+        || event.square() == Square.E8 && event.targetSquare() == Square.C8) {
+      return Optional.of(CastlingMove.QUEEN_SIDE);
+    }
+    return Optional.empty();
+  }
+
+  private static String formatIllegalMoveReason(String reason) {
+    return "Illegal move: " + ensureSentence(reason) + " ";
+  }
+
+  private static String ensureSentence(String text) {
+    final String trimmed = text.trim();
+    if (trimmed.endsWith(".") || trimmed.endsWith("!") || trimmed.endsWith("?")) {
+      return trimmed;
+    }
+    return trimmed + ".";
   }
 
   private static String ordinalSuffix(int n) {

@@ -219,6 +219,56 @@ class TestGameSessionFlow {
     assertEquals(Side.BLACK, session.getHavingMove());
   }
 
+  /** End-to-end released-piece flow: legal release commits, second drop violates, restoration
+      target is the release position, and after the player puts the piece back on the release
+      square and both Ready, the committed move is accepted. */
+  @Test
+  void testReleasedPieceViolationRestoresToReleasePosition() {
+    final GameSession session = new GameSession(TEST_TIME, 2, false);
+    session.startGame();
+
+    // White releases the e2 pawn on e3 (legal commit), then drags it on to e4, then presses clock.
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E3, Piece.WHITE_PAWN, 0));
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E3, Square.E4, Piece.WHITE_PAWN, 1));
+    final StaticPosition afterE4 = session.getBoard().getStaticPosition()
+        .createChangedPosition(Square.E2, Piece.NONE)
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+
+    final ArbiterResponse violation = session.pressClockButton(Side.WHITE, afterE4);
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, violation.type());
+    assertTrue(violation.message().contains("pawn on e3"));
+
+    // Restoration target is the release position (e2 empty, e3 occupied), NOT positionBeforeTurn.
+    final StaticPosition releasePosition = session.getBoard().getStaticPosition()
+        .createChangedPosition(Square.E2, Piece.NONE)
+        .createChangedPosition(Square.E3, Piece.WHITE_PAWN);
+    assertTrue(violation.restorePosition().isPresent());
+    assertEquals(releasePosition, violation.restorePosition().get());
+
+    // Server would call this; simulate the same path here.
+    session.enterWaitingForRestoration(releasePosition);
+    assertTrue(session.isWaitingForRestoration());
+    // The session reports "restored" once the physical board matches the release position.
+    assertTrue(session.isRestoredPosition(releasePosition));
+
+    // Complete the restoration; with autoResume=false the session enters waitingForReady.
+    session.completeRestoration();
+    assertFalse(session.isWaitingForRestoration());
+    assertTrue(session.isWaitingForReady());
+
+    // Both players Ready.
+    session.playerReady(Side.WHITE);
+    session.playerReady(Side.BLACK);
+    assertFalse(session.isWaitingForReady());
+
+    // White presses the clock with the committed release position — the e2-e3 move is accepted.
+    final ArbiterResponse accepted = session.pressClockButton(Side.WHITE, releasePosition);
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, accepted.type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+    // (The illegal-move counter is asserted at the engine level in TestArbiterEngine —
+    //  released-piece violation does not contribute to it.)
+  }
+
   private void makeSimpleMove(GameSession session, Square from, Square to, Piece piece) {
     final Side side = session.getHavingMove();
     session.recordEvent(side, BoardEvent.dragMove(from, to, piece, System.currentTimeMillis()));

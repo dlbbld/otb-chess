@@ -241,6 +241,10 @@ class Game {
       this.showArbiterMessage(data.message, 'error');
     });
 
+    this.ws.on('released_piece_violation', (data) => {
+      this.showArbiterMessage(data.message, 'error');
+    });
+
     this.ws.on('restoreRequired', (data) => {
       this.showArbiterMessage(data.message, data.style || 'info');
       this.clearArbiterButtons();
@@ -329,6 +333,22 @@ class Game {
       this.showArbiterMessage('Your opponent offers a draw.');
     });
 
+    // Acknowledgment to the offering player after a correct-time draw offer:
+    // the move was validated and the offer forwarded to the opponent. The player
+    // still has to press the clock to commit the move (FIDE — the draw offer
+    // does not also press the clock).
+    this.ws.on('drawOfferSent', (data) => {
+      this.showArbiterMessage(data.message, 'info');
+    });
+
+    // The on-move player just touched a piece while a draw offer was pending.
+    // Per FIDE 9.1.2.1 the right to accept is lost; hide the Accept/Reject panel
+    // and show the explanation.
+    this.ws.on('drawOfferInvalidated', (data) => {
+      document.getElementById('drawOfferPanel').style.display = 'none';
+      this.showArbiterMessage(data.message, 'error');
+    });
+
     this.ws.on('drawRejected', (data) => {
       document.getElementById('drawOfferPanel').style.display = 'none';
       this.showArbiterMessage('Draw offer rejected.');
@@ -350,6 +370,10 @@ class Game {
       this.gameActive = false;
       this.board.setEnabled(false);
       this.updateButtons();
+      // Game has ended — drop the PAUSE overlay because no further clockUpdate
+      // will arrive to clear it via the updateClocks path.
+      const clockEl = document.getElementById('chessClock');
+      if (clockEl) clockEl.classList.remove('paused');
       const scoreText = data.winner === 'none' ? '\u00BD-\u00BD'
         : (data.winner === 'white' ? '1-0' : '0-1');
       document.getElementById('gameResultScore').textContent = scoreText;
@@ -359,6 +383,8 @@ class Game {
 
     this.ws.on('opponentDisconnected', (data) => {
       this.showArbiterMessage(data.message, 'info');
+      // Drop any in-flight opponent drag visualisation — no more events will arrive.
+      this.board.clearOpponentDragVisuals();
     });
 
     this.ws.on('error', (data) => {
@@ -423,6 +449,12 @@ class Game {
 
     document.getElementById('flipBoardBtn').addEventListener('click', () => {
       this.board.flip();
+      // After a flip the floating piece's screen position is stale; clearing it
+      // keeps the visual coherent. Next opponent DRAG_HOVER will not respawn it
+      // (DRAG_START is what spawns), but on the dragger's next square change a
+      // hover event still fires; the small visual gap until the next drag is
+      // acceptable. Most flips happen between turns anyway.
+      this.board.clearOpponentDragVisuals();
       this.renderSideAreas();
       this.updateClockLabels();
       if (this._lastClockData) {
@@ -651,6 +683,15 @@ class Game {
     const topActive = data.running === topColor;
     const bottomActive = data.running === bottomColor;
     const neutral = data.running === 'none';
+
+    // Show the PAUSE indicator and flip the time displays when the clock is stopped
+    // mid-game (arbiter intervention, restoration handshake, etc.). Skipped when the
+    // game is not active so the indicator does not show before the game starts or
+    // after it has ended.
+    const clockEl = document.getElementById('chessClock');
+    if (clockEl) {
+      clockEl.classList.toggle('paused', neutral && this.gameActive);
+    }
 
     const bottomLever = document.getElementById('bottomClockBtn');
     const topLever = document.getElementById('topClockBtn');

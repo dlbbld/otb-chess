@@ -60,6 +60,7 @@ public class GameSession {
   private boolean blackReady;
   private boolean waitingForRestoration;
   private boolean restorationResumePending;
+  private StaticPosition restorationTargetPosition;
 
   public GameSession(TimeControl timeControl) {
     this(timeControl, com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES);
@@ -89,6 +90,7 @@ public class GameSession {
     this.blackReady = false;
     this.waitingForRestoration = false;
     this.restorationResumePending = false;
+    this.restorationTargetPosition = positionBeforeTurn;
   }
 
   /**
@@ -198,6 +200,14 @@ public class GameSession {
     }
     final com.dlb.chess.model.LegalMove matchedMove = matchingMoves.iterator().next();
 
+    // Released-piece guard (FIDE 4.7): if the player has already committed a release in this
+    // turn and the current physical position is NOT one of the committed move's allowed final
+    // positions, the player must not auto-finish a different move. The clock-press flow will
+    // produce a RELEASED_PIECE_VIOLATION and the standard restoration recovery handles it.
+    if (arbiter.hasReleasedPieceViolation(board, afterPosition, currentSequence)) {
+      return Optional.empty();
+    }
+
     // Touch-move check (also pure read). If the matched move would violate touch-move, leave
     // detection to the clock press so the existing arbiter feedback flow handles it.
     final java.util.Optional<com.dlb.chess.dumbboard.touchmove.TouchMoveObligation> obligation =
@@ -262,6 +272,9 @@ public class GameSession {
       case TOUCH_MOVE_VIOLATION -> {
         clock.stopClock();
       }
+      case RELEASED_PIECE_VIOLATION -> {
+        clock.stopClock();
+      }
       case INCOMPLETE_MOVE -> {
         // Nothing to do
       }
@@ -307,32 +320,47 @@ public class GameSession {
   // ===== Draw offers =====
 
   /**
-   * Player offers a draw at the correct time (their turn, after making a move).
-   * This also triggers move evaluation (same as clock press).
+   * Player offers a draw at the correct time (their turn, after making a move). The move is
+   * validated but NOT performed and the clock does NOT switch — the player still has to press
+   * the clock themselves to commit the move. This matches FIDE: the draw offer is communicated
+   * after the move is made and before the clock is pressed; the clock press is a separate act.
+   *
+   * <p>Returns {@link ArbiterResponseType#MOVE_ACCEPTED} when the move is legal and the offer
+   * has been registered (server should then forward the offer to the opponent and tell the
+   * offering player to press the clock). Returns the appropriate intervention type if the
+   * move is invalid (in which case the offer is dropped without penalty).
    */
   public synchronized ArbiterResponse offerDrawCorrectTime(Side side, StaticPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
 
+    // Validate the move first (no side effects on the move state — evaluateClockPress is
+    // pure; the move-performing happens in handleArbiterResponse, which we skip on success).
+    final ArbiterResponse moveResponse = arbiter.evaluateClockPress(board, afterPosition, currentSequence);
+
+    if (moveResponse.type() != ArbiterResponseType.MOVE_ACCEPTED) {
+      // Move is not valid — drop any pending offer state and apply the standard intervention
+      // (illegal-move counter, restoration target, etc.) via handleArbiterResponse.
+      drawOfferManager.dropOfferDueToInvalidMove(side);
+      return handleArbiterResponse(moveResponse, side, false);
+    }
+
+    // Move is valid. Register the offer (handles repeat / game-lost penalty).
     final var result = drawOfferManager.offerDrawCorrectTime(side);
     if (result.gameLost()) {
       endGame(new GameResult(GameResultType.DRAW_AGREEMENT, side.getOppositeSide(), result.arbiterMessage()));
       return ArbiterResponse.illegalMoveGameLost(result.arbiterMessage());
     }
     if (!result.accepted()) {
+      // Repeated offer (info or warning) — message returned, but the move is still pending
+      // (the player has to press the clock to commit it).
       return ArbiterResponse.incompleteMove(result.arbiterMessage());
     }
 
-    // Draw offer triggers move evaluation
-    final ArbiterResponse moveResponse = arbiter.evaluateClockPress(board, afterPosition, currentSequence);
-
-    if (moveResponse.type() != ArbiterResponseType.MOVE_ACCEPTED) {
-      drawOfferManager.dropOfferDueToInvalidMove(side);
-      return handleArbiterResponse(moveResponse, side, false);
-    }
-
-    return handleArbiterResponse(moveResponse, side, true);
+    // Offer registered. The matched move is returned to the server but the move itself is
+    // NOT performed and the clock does NOT switch — the player still owes a clock press.
+    return moveResponse;
   }
 
   /**
@@ -347,11 +375,22 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
     }
 
-    final var result = drawOfferManager.offerDrawWrongTime(side);
+    final boolean offererHasMove = side == board.getHavingMove();
+    final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
     if (result.gameLost()) {
       endGame(new GameResult(GameResultType.DRAW_AGREEMENT, side.getOppositeSide(), result.arbiterMessage()));
     }
     return result;
+  }
+
+  /**
+   * Whether the on-move player has already made a legal release in this turn — i.e. a
+   * release that corresponds to (the start of) a legal move from the position before turn.
+   * Used by the server to detect Scenario 2 of the draw-offer flow: an offer arriving
+   * after the opponent has committed a move via FIDE 4.7 is rejected outright.
+   */
+  public synchronized boolean hasReleasedPieceCommitment() {
+    return arbiter.hasReleasedPieceCommitment(board, currentSequence);
   }
 
   /**
@@ -392,8 +431,12 @@ public class GameSession {
    * Player claims a draw (threefold repetition or 50-move rule).
    */
   public synchronized DrawClaimResult claimDraw(Side side, DrawClaimType type, String san) {
-    if (state != GameState.IN_PROGRESS || side != board.getHavingMove()) {
+    if (state != GameState.IN_PROGRESS) {
       return DrawClaimResult.rejected("You cannot claim a draw now.");
+    }
+    if (side != board.getHavingMove()) {
+      // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is.
+      return DrawClaimResult.rejected("You cannot claim a draw when not having the move.");
     }
 
     final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
@@ -522,6 +565,7 @@ public class GameSession {
   private void startNewTurn() {
     this.currentSequence = new ActionSequence(board.getHavingMove());
     this.positionBeforeTurn = board.getStaticPosition();
+    this.restorationTargetPosition = positionBeforeTurn;
     this.removedSquaresThisTurn.clear();
     this.mustExecuteMove = null;
   }
@@ -535,11 +579,23 @@ public class GameSession {
   /**
    * Enters the "waiting for ready" state after an arbiter intervention.
    * Both players must signal readiness before the game continues.
+   *
+   * <p>The released-piece rule window is reset here because, after a recovery
+   * handshake, prior in-turn events should not retroactively bind the resumed
+   * play. In particular, a "legal-in-isolation" release that was actually
+   * invalid in context (e.g. a pawn drop that violates an active touch-move
+   * obligation on a different piece) must not be treated as a commitment after
+   * the recovery — otherwise the player can never satisfy the touch-move and
+   * the rule deadlocks. Known trade-off: a player who commits a legal release
+   * and then triggers an unrelated arbiter intervention (wrong-time draw,
+   * drawAcceptRejected, opponentClockPressed) before the clock press loses
+   * the FIDE 4.7 commitment after the handshake. Acceptable in practice.
    */
   public synchronized void enterWaitingForReady() {
     this.waitingForReady = true;
     this.whiteReady = false;
     this.blackReady = false;
+    currentSequence.resetReleasedPieceRule();
   }
 
   /**
@@ -547,11 +603,16 @@ public class GameSession {
    * until the physical board matches the position before the turn.
    */
   public synchronized void enterWaitingForRestoration() {
+    enterWaitingForRestoration(positionBeforeTurn);
+  }
+
+  public synchronized void enterWaitingForRestoration(StaticPosition restorationTargetPosition) {
     this.waitingForRestoration = true;
     this.restorationResumePending = false;
     this.waitingForReady = false;
     this.whiteReady = false;
     this.blackReady = false;
+    this.restorationTargetPosition = restorationTargetPosition;
   }
 
   /**
@@ -559,6 +620,7 @@ public class GameSession {
    */
   public synchronized void completeRestoration() {
     this.waitingForRestoration = false;
+    currentSequence.resetReleasedPieceRule();
     if (autoResumeAfterRestore) {
       this.restorationResumePending = true;
       this.waitingForReady = false;
@@ -608,7 +670,7 @@ public class GameSession {
    * Returns the position before the current turn, for restoring after an illegal move.
    */
   public synchronized StaticPosition getRestorePosition() {
-    return positionBeforeTurn;
+    return restorationTargetPosition;
   }
 
   public synchronized boolean isWaitingForReady() {
@@ -624,7 +686,7 @@ public class GameSession {
   }
 
   public synchronized boolean isRestoredPosition(StaticPosition position) {
-    return positionBeforeTurn.equals(position);
+    return restorationTargetPosition.equals(position);
   }
 
   public synchronized boolean isAutoResumeAfterRestore() {

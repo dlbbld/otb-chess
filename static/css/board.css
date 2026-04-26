@@ -54,10 +54,6 @@
   height: 56px;
 }
 
-.square .piece.dragging {
-  opacity: 0.4;
-}
-
 .square .coord {
   position: absolute;
   font-size: 10px;
@@ -88,6 +84,15 @@
 .floating-piece svg {
   width: 60px;
   height: 60px;
+}
+
+/* Watching the opponent drag a piece — same floating SVG, slightly translucent
+   so it reads as "the opponent's hand" rather than something the watcher is
+   actively manipulating. The position is updated only on square changes, which
+   gives the piece a small step-by-step glide rather than pixel-smooth motion. */
+.floating-piece.opponent-floating-piece {
+  opacity: 0.65;
+  transition: left 0.08s ease-out, top 0.08s ease-out;
 }
 
 /* Side areas */
