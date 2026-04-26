@@ -118,9 +118,10 @@ public class ArbiterEngine {
 
     return switch (obligation.type()) {
       case OWN_PIECE -> ArbiterResponse.touchMoveViolation(
-          "Touch-move violation: You have touched the " + pieceName + " on " + squareName
-              + ". Because this " + pieceName + " has legal moves, please perform a move with this piece."
-              + " Please revert the position.",
+          "Touch-move violation: You first touched the " + pieceName + " on " + squareName
+              + ", which has legal moves, but moved another piece. Under the touch-move rule, you must move"
+              + " the first touched piece. Please restore the position and move the " + pieceName
+              + " from " + squareName + ".",
           obligation);
       case OPPONENT_PIECE -> ArbiterResponse.touchMoveViolation(
           "Touch-move violation: You have touched the opponent's " + pieceName + " on " + squareName

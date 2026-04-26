@@ -109,6 +109,59 @@ class TestGameSession {
   }
 
   @Test
+  void testTouchNonCapturableOpponentPieceDoesNotBlockLegalMove() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final Optional<ArbiterResponse> touchResponse = session.recordEvent(Side.WHITE,
+        BoardEvent.click(Square.A7, Piece.BLACK_PAWN, 0));
+
+    assertTrue(touchResponse.isEmpty());
+
+    final ArbiterResponse response = makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+  }
+
+  @Test
+  void testTouchCapturableOpponentPieceCreatesCaptureObligation() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+    makeMove(session, Square.D7, Square.D5, Piece.BLACK_PAWN);
+
+    final Optional<ArbiterResponse> touchResponse = session.recordEvent(Side.WHITE,
+        BoardEvent.click(Square.D5, Piece.BLACK_PAWN, 0));
+    assertTrue(touchResponse.isEmpty());
+
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 1));
+    final StaticPosition afterPosition = session.getBoard().getStaticPosition()
+        .createChangedPosition(Square.G1, Piece.NONE)
+        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT);
+
+    final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterPosition);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
+    assertTrue(response.message().contains("must be captured"));
+  }
+
+  @Test
+  void testMovingOpponentPieceIsPositionChange() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final Optional<ArbiterResponse> response = session.recordEvent(Side.WHITE,
+        BoardEvent.dragMove(Square.A7, Square.A6, Piece.BLACK_PAWN, 0));
+
+    assertTrue(response.isPresent());
+    assertEquals(ArbiterResponseType.POSITION_CHANGE, response.get().type());
+    assertEquals("Position change: You moved an opponent's piece. That is not allowed. "
+        + "Please restore the position.", response.get().message());
+  }
+
+  @Test
   void testSecondIllegalMoveEndsGame() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();

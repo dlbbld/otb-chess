@@ -134,9 +134,10 @@ class TestArbiterEngine {
     assertTrue(response.obligation().isPresent());
     assertEquals(Square.B2, response.obligation().get().square());
     assertEquals(Piece.WHITE_PAWN, response.obligation().get().piece());
-    assertEquals("Touch-move violation: You have touched the pawn on b2."
-        + " Because this pawn has legal moves, please perform a move with this piece."
-        + " Please revert the position.", response.message());
+    assertEquals("Touch-move violation: You first touched the pawn on b2,"
+        + " which has legal moves, but moved another piece. Under the touch-move rule, you must move"
+        + " the first touched piece. Please restore the position and move the pawn from b2.",
+        response.message());
   }
 
   @Test

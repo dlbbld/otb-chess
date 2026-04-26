@@ -17,9 +17,6 @@ public enum ArbiterResponseType {
   // Player did not complete a move (board unchanged or incomplete)
   INCOMPLETE_MOVE,
 
-  // Mid-play intervention: player moved an opponent piece
-  REVERT_OPPONENT_PIECE,
-
-  // Mid-play intervention: invalid piece restoration from side area
-  REVERT_RESTORATION
+  // Mid-play intervention: player changed the position without making a legal move
+  POSITION_CHANGE
 }

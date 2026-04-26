@@ -78,6 +78,20 @@ class Game {
     document.getElementById('topClockLabel').textContent =
       this.topClockColor === 'white' ? 'White' : 'Black';
 
+    const bottomDisplay = document.getElementById('bottomClockDisplay');
+    const topDisplay = document.getElementById('topClockDisplay');
+    const bottomTime = document.getElementById('bottomClockTime');
+    const topTime = document.getElementById('topClockTime');
+    if (bottomDisplay && topDisplay && bottomTime && topTime) {
+      bottomDisplay.classList.toggle('own-clock', this.bottomClockColor === this.side);
+      bottomDisplay.classList.toggle('opponent-clock', this.bottomClockColor !== this.side);
+      topDisplay.classList.toggle('own-clock', this.topClockColor === this.side);
+      topDisplay.classList.toggle('opponent-clock', this.topClockColor !== this.side);
+
+      bottomTime.classList.toggle('opponent-time', this.bottomClockColor !== this.side);
+      topTime.classList.toggle('opponent-time', this.topClockColor !== this.side);
+    }
+
     // Physical clock position: always on White's right side of the board.
     // White view keeps the clock on the right; Black view moves it to the left.
     // Top/bottom DOM positions stay fixed while their assigned colors change,
@@ -228,7 +242,7 @@ class Game {
     });
 
     this.ws.on('restoreRequired', (data) => {
-      this.showArbiterMessage(data.message, 'info');
+      this.showArbiterMessage(data.message, data.style || 'info');
       this.clearArbiterButtons();
       this.showArbiterButton('Do this for me', () => {
         this.ws.send({ type: 'restorePosition' });
@@ -286,6 +300,10 @@ class Game {
     });
 
     this.ws.on('revert_restoration', (data) => {
+      this.showArbiterMessage(data.message, 'error');
+    });
+
+    this.ws.on('position_change', (data) => {
       this.showArbiterMessage(data.message, 'error');
     });
 

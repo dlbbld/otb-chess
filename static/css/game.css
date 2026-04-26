@@ -179,6 +179,7 @@ body:has(.game-layout) {
 }
 
 .clock-time {
+  display: inline-block;
   font-family: "Courier New", monospace;
   font-size: 16px;
   font-weight: bold;
@@ -186,8 +187,15 @@ body:has(.game-layout) {
   /* Horizontal time string rotated 90° — same effect as writing "30:00" on a
      real DGT 3000 LCD then turning the clock body sideways: characters lie
      on their side, the string reads top-to-bottom. */
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
+  transform-origin: center;
+  white-space: nowrap;
+  transform: rotate(270deg);
+}
+
+/* The opponent's LCD is seen from the other side of the clock, 180 degrees
+   away from the own-clock 270-degree orientation. */
+.clock-time.opponent-time {
+  transform: rotate(90deg);
 }
 
 .clock-display.active .clock-time {

@@ -42,12 +42,16 @@ public record ArbiterResponse(
     return new ArbiterResponse(ArbiterResponseType.INCOMPLETE_MOVE, message, Optional.empty(), Optional.empty());
   }
 
+  public static ArbiterResponse positionChange(String message) {
+    return new ArbiterResponse(ArbiterResponseType.POSITION_CHANGE, message, Optional.empty(), Optional.empty());
+  }
+
   public static ArbiterResponse revertOpponentPiece() {
-    return new ArbiterResponse(ArbiterResponseType.REVERT_OPPONENT_PIECE,
-        "You can only move your own pieces. Please revert.", Optional.empty(), Optional.empty());
+    return positionChange("Position change: You moved an opponent's piece. That is not allowed. "
+        + "Please restore the position.");
   }
 
   public static ArbiterResponse revertRestoration(String message) {
-    return new ArbiterResponse(ArbiterResponseType.REVERT_RESTORATION, message, Optional.empty(), Optional.empty());
+    return positionChange(message);
   }
 }

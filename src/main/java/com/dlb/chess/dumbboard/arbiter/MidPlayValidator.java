@@ -33,10 +33,9 @@ public class MidPlayValidator {
   public static Optional<ArbiterResponse> validate(BoardEvent event, Side sideToMove,
       StaticPosition positionBeforeTurn, Set<Square> removedSquares) {
 
-    // Check for moving opponent pieces
-    final Optional<ArbiterResponse> opponentCheck = validateNotMovingOpponentPiece(event, sideToMove);
-    if (opponentCheck.isPresent()) {
-      return opponentCheck;
+    final Optional<ArbiterResponse> positionChangeCheck = validateOpponentPiecePositionChange(event, sideToMove);
+    if (positionChangeCheck.isPresent()) {
+      return positionChangeCheck;
     }
 
     // Check for invalid piece restoration
@@ -44,17 +43,17 @@ public class MidPlayValidator {
   }
 
   /**
-   * Checks if the player is trying to move an opponent's piece.
-   * Only applies to CLICK, DRAG_MOVE, DRAG_CAPTURE, and REMOVE events.
+   * Checks if the player is trying to move or remove an opponent's piece.
+   * A plain click is allowed because it may only create a touch-move capture obligation.
    */
-  private static Optional<ArbiterResponse> validateNotMovingOpponentPiece(BoardEvent event, Side sideToMove) {
+  private static Optional<ArbiterResponse> validateOpponentPiecePositionChange(BoardEvent event, Side sideToMove) {
     final Piece piece = event.piece();
     if (piece == Piece.NONE) {
       return Optional.empty();
     }
 
-    // Only check events that involve picking up a piece from the board
-    if (event.type() == BoardEventType.RESTORE_TO_EMPTY || event.type() == BoardEventType.RESTORE_TO_OCCUPIED) {
+    if (event.type() == BoardEventType.CLICK || event.type() == BoardEventType.RESTORE_TO_EMPTY
+        || event.type() == BoardEventType.RESTORE_TO_OCCUPIED) {
       return Optional.empty();
     }
 
@@ -102,14 +101,15 @@ public class MidPlayValidator {
         return Optional.empty();
       }
       return Optional.of(ArbiterResponse.revertRestoration(
-          "You cannot alter the position. Please revert."));
+          "Position change: You changed the position. That is not allowed. Please restore the position."));
     }
 
     // It was removed during this turn — check if it's being restored to its correct square
     final Piece originalPiece = positionBeforeTurn.get(targetSquare);
     if (originalPiece != piece) {
       return Optional.of(ArbiterResponse.revertRestoration(
-          "You cannot alter the position. There was never a piece on this square."));
+          "Position change: You changed the position. There was never that piece on this square."
+              + " Please restore the position."));
     }
 
     return Optional.empty();

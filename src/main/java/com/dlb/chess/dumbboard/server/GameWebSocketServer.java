@@ -26,6 +26,8 @@ import com.dlb.chess.dumbboard.game.model.GameState;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 import com.dlb.chess.dumbboard.server.message.MessageConverter;
 import com.dlb.chess.dumbboard.server.model.GameRoom;
+import com.dlb.chess.dumbboard.touchmove.TouchMoveObligation;
+import com.dlb.chess.dumbboard.touchmove.TouchMoveType;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
@@ -234,7 +236,12 @@ public class GameWebSocketServer extends WebSocketServer {
     final Optional<ArbiterResponse> midPlayResponse = room.getSession().recordEvent(side, event);
 
     if (midPlayResponse.isPresent()) {
-      sendArbiterResponse(room, side, midPlayResponse.get());
+      final ArbiterResponse response = midPlayResponse.get();
+      if (response.type() == ArbiterResponseType.POSITION_CHANGE) {
+        sendRestoreInstructions(room, side, response.message(), "error");
+      } else {
+        sendArbiterResponse(room, side, response);
+      }
     }
 
     // Forward the event to the opponent for real-time board visibility
@@ -270,13 +277,21 @@ public class GameWebSocketServer extends WebSocketServer {
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     sendArbiterResponse(room, side, response);
 
+    if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION && response.obligation().isPresent()) {
+      final JsonObject opponentMsg = new JsonObject();
+      opponentMsg.addProperty("type", "touch_move_violation");
+      opponentMsg.addProperty("message", formatOpponentTouchMoveViolation(response.obligation().get()));
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
+    }
+
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       sendClockUpdate(room);
       // Note: opponentMoved (sent by sendArbiterResponse) already includes the board state.
       // Do NOT also send boardUpdate here, as it can overwrite the opponent's in-progress moves.
-    } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE
-        || response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
+    } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
       sendRestoreInstructions(room, side);
+    } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
+      sendRestoreInstructions(room, side, response.message(), "error");
     }
 
     checkGameEnded(room);
@@ -540,10 +555,15 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendRestoreInstructions(GameRoom room, Side side) {
+    sendRestoreInstructions(room, side, "Please restore the position to the beginning of the move.", "info");
+  }
+
+  private void sendRestoreInstructions(GameRoom room, Side side, String message, String style) {
     room.getSession().enterWaitingForRestoration();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "restoreRequired");
-    msg.addProperty("message", "Please restore the position to the beginning of the move.");
+    msg.addProperty("message", message);
+    msg.addProperty("style", style);
     room.sendToSide(side, GSON.toJson(msg));
   }
 
@@ -614,6 +634,31 @@ public class GameWebSocketServer extends WebSocketServer {
       System.out.println("Sending opponentMoved to " + side.getOppositeSide() + " with board state");
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
     }
+  }
+
+  static String formatOpponentTouchMoveViolation(TouchMoveObligation obligation) {
+    final String pieceName = formatPieceName(obligation);
+    final String squareName = obligation.square().getName();
+    if (obligation.type() == TouchMoveType.OWN_PIECE) {
+      return "Your opponent has made a touch-move violation. They first touched the " + pieceName + " on "
+          + squareName + ", which has legal moves, but moved another piece. They are requested to restore the "
+          + "position and move the touched piece.";
+    }
+    return "Your opponent has made a touch-move violation. They first touched your " + pieceName + " on "
+        + squareName + ", which can be captured, but did not capture it. They are requested to restore the "
+        + "position and make a move that satisfies the touch-move rule.";
+  }
+
+  private static String formatPieceName(TouchMoveObligation obligation) {
+    return switch (obligation.piece().getPieceType()) {
+      case KING -> "king";
+      case QUEEN -> "queen";
+      case ROOK -> "rook";
+      case BISHOP -> "bishop";
+      case KNIGHT -> "knight";
+      case PAWN -> "pawn";
+      default -> "piece";
+    };
   }
 
   private void sendClockUpdate(GameRoom room) {
