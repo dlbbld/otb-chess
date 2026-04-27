@@ -160,9 +160,8 @@ body:has(.game-layout) {
   box-shadow: 0 1px 0 rgba(255,255,255,0.10);
 }
 
-/* LCD-style time display. Time text is laid out as you would write "30:00"
-   horizontally, then the whole string is rotated 90° clockwise — so the
-   characters are sideways and the time reads top-to-bottom. */
+/* LCD-style time display. Time text is shown horizontally — "30:00" reads
+   left-to-right just like any normal clock face. */
 .clock-display {
   flex: 1;
   display: flex;
@@ -185,31 +184,13 @@ body:has(.game-layout) {
   font-size: 16px;
   font-weight: bold;
   color: #2a2e22;
-  /* Horizontal time string rotated 90° — same effect as writing "30:00" on a
-     real DGT 3000 LCD then turning the clock body sideways: characters lie
-     on their side, the string reads top-to-bottom. */
-  transform-origin: center;
+  /* Time is shown horizontally on both LCDs in both views. */
   white-space: nowrap;
-  transform: rotate(270deg);
-}
-
-/* The opponent's LCD is seen from the other side of the clock, 180 degrees
-   away from the own-clock 270-degree orientation. */
-.clock-time.opponent-time {
-  transform: rotate(90deg);
 }
 
 /* Paused state — game in progress but no clock running (arbiter intervention,
-   restoration handshake, etc.). Both time faces flip 180 degrees from their
-   normal orientation, so each player sees the times "the wrong way round" —
-   a clear visual cue that the clock is not actively counting down. The big
-   PAUSE label is drawn as an absolute overlay over the entire clock body. */
-.chess-clock.paused .clock-time {
-  transform: rotate(90deg);   /* own-time normal is 270deg; +180 = 90 */
-}
-.chess-clock.paused .clock-time.opponent-time {
-  transform: rotate(270deg);  /* opponent-time normal is 90deg; +180 = 270 */
-}
+   restoration handshake, etc.). The big PAUSE label is drawn as an absolute
+   overlay over the entire clock body; the time text itself stays put. */
 
 .chess-clock.paused::after {
   content: 'PAUSE';

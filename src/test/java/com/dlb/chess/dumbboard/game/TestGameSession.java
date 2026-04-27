@@ -385,6 +385,44 @@ class TestGameSession {
   }
 
   @Test
+  void testClaimWithInvalidSanIsRejectedAsInvalidMove() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // White claims threefold-with-move using a SAN that is not a legal move from
+    // the starting position ("e9" — no such square / pawn cannot move there).
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+
+    assertFalse(result.accepted());
+    assertTrue(result.invalidMove(),
+        "Illegal SAN must be reported via the invalidMove flag, not as a regular rejection");
+    assertTrue(result.moveToPerform().isEmpty());
+    assertTrue(result.message().startsWith("Invalid move:"),
+        "Message should surface the clean-chess validation reason: " + result.message());
+
+    // Game state is unchanged: no must-execute move was set, white still has the move.
+    assertNull(session.getMustExecuteMove());
+    assertEquals(Side.WHITE, session.getHavingMove());
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+  }
+
+  @Test
+  void testFiftyMoveClaimWithInvalidSanIsRejectedAsInvalidMove() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Kf7");
+
+    assertFalse(result.accepted());
+    assertTrue(result.invalidMove());
+    assertTrue(result.moveToPerform().isEmpty());
+    assertNull(session.getMustExecuteMove());
+    assertEquals(Side.WHITE, session.getHavingMove());
+  }
+
+  @Test
   void testMustExecuteMoveWrongPosition() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();

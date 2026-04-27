@@ -80,16 +80,11 @@ class Game {
 
     const bottomDisplay = document.getElementById('bottomClockDisplay');
     const topDisplay = document.getElementById('topClockDisplay');
-    const bottomTime = document.getElementById('bottomClockTime');
-    const topTime = document.getElementById('topClockTime');
-    if (bottomDisplay && topDisplay && bottomTime && topTime) {
+    if (bottomDisplay && topDisplay) {
       bottomDisplay.classList.toggle('own-clock', this.bottomClockColor === this.side);
       bottomDisplay.classList.toggle('opponent-clock', this.bottomClockColor !== this.side);
       topDisplay.classList.toggle('own-clock', this.topClockColor === this.side);
       topDisplay.classList.toggle('opponent-clock', this.topClockColor !== this.side);
-
-      bottomTime.classList.toggle('opponent-time', this.bottomClockColor !== this.side);
-      topTime.classList.toggle('opponent-time', this.topClockColor !== this.side);
     }
 
     // Physical clock position: always on White's right side of the board.
@@ -355,9 +350,20 @@ class Game {
     });
 
     this.ws.on('drawClaimResult', (data) => {
-      this.showArbiterMessage(data.message);
-      if (data.mustExecuteMove) {
-        this.showSanInput(false);
+      this.showArbiterMessage(data.message, data.invalidMove ? 'error' : null);
+      if (data.invalidMove) {
+        // SAN was illegal on the current position (clean-chess validation failed).
+        // Keep the SAN-input panel open and let the player try a different move.
+        const input = document.getElementById('sanInput');
+        if (input) {
+          input.value = '';
+          input.focus();
+        }
+      } else {
+        // Either the claim was accepted, or it was rejected with a legal move
+        // that the player must now actually execute on the board. Either way,
+        // the SAN-input panel is no longer needed.
+        this.hideSanInput();
       }
     });
 
@@ -432,7 +438,8 @@ class Game {
       if (!san) { this.showArbiterMessage('Please enter a move in SAN notation.'); return; }
       const claimType = document.getElementById('sanInputPanel').dataset.claimPrefix;
       this.ws.sendClaimDraw(claimType + '_WITH_MOVE', san);
-      this.hideSanInput();
+      // Leave the SAN-input panel visible until the server replies — if the move
+      // is invalid, the drawClaimResult handler re-prompts in the same panel.
     });
 
     document.getElementById('cancelClaimBtn').addEventListener('click', () => {

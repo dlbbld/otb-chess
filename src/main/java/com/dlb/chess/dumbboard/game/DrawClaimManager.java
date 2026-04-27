@@ -50,7 +50,8 @@ public class DrawClaimManager {
     try {
       moveSpec = SanValidation.validateSan(san, board);
     } catch (final SanValidationException e) {
-      return DrawClaimResult.rejected("Invalid move: " + e.getMessage());
+      return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
+          + " Please enter a legal move for the claim.");
     }
 
     // Temporarily perform the move and check
@@ -82,7 +83,8 @@ public class DrawClaimManager {
     try {
       moveSpec = SanValidation.validateSan(san, board);
     } catch (final SanValidationException e) {
-      return DrawClaimResult.rejected("Invalid move: " + e.getMessage());
+      return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
+          + " Please enter a legal move for the claim.");
     }
 
     // Temporarily perform the move and check
