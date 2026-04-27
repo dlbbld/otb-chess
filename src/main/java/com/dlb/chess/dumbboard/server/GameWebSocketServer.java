@@ -15,6 +15,8 @@ import org.java_websocket.server.WebSocketServer;
 
 import com.dlb.chess.board.StaticPosition;
 import com.dlb.chess.board.enums.Side;
+import com.dlb.chess.board.enums.Square;
+import com.dlb.chess.common.model.MoveSpecification;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponseType;
 import com.dlb.chess.dumbboard.event.BoardEvent;
@@ -28,6 +30,7 @@ import com.dlb.chess.dumbboard.server.message.MessageConverter;
 import com.dlb.chess.dumbboard.server.model.GameRoom;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveObligation;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveType;
+import com.dlb.chess.moves.utility.CastlingUtility;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
@@ -722,9 +725,23 @@ public class GameWebSocketServer extends WebSocketServer {
 
     if (response.acceptedMove().isPresent()) {
       final var move = response.acceptedMove().get();
+      final MoveSpecification spec = move.moveSpecification();
       final JsonObject moveData = new JsonObject();
-      moveData.addProperty("from", move.moveSpecification().fromSquare().getName());
-      moveData.addProperty("to", move.moveSpecification().toSquare().getName());
+      // For castling, MoveSpecification's fromSquare/toSquare are Square.NONE
+      // (calling getName() on them throws NonePointerException). Resolve the
+      // king's actual from/to squares via CastlingUtility instead, and tag the
+      // move so the client can recognise it.
+      if (CastlingUtility.calculateIsCastlingMove(spec)) {
+        final Side moveSide = move.havingMove();
+        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(moveSide, spec);
+        final Square kingTo = CastlingUtility.calculateKingCastlingTo(moveSide, spec);
+        moveData.addProperty("from", kingFrom.getName());
+        moveData.addProperty("to", kingTo.getName());
+        moveData.addProperty("castling", spec.castlingMove().name());
+      } else {
+        moveData.addProperty("from", spec.fromSquare().getName());
+        moveData.addProperty("to", spec.toSquare().getName());
+      }
       moveData.addProperty("piece", move.movingPiece().name());
       msg.add("move", moveData);
     }
