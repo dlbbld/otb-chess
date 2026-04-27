@@ -1,6 +1,7 @@
 package com.dlb.chess.dumbboard.arbiter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -439,6 +440,143 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
+  }
+
+  @Test
+  void testRookFirstCannotBeAcceptedAsCastling() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final ApiBoard board = new Board();
+    board.performMove("e4");
+    board.performMove("e5");
+    board.performMove("Nf3");
+    board.performMove("Nc6");
+    board.performMove("Be2");
+    board.performMove("Nf6");
+
+    // Rook first produces the same final position as castling, but the move may not be
+    // accepted as O-O because castling is a king move.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
+
+    final StaticPosition afterPosition = board.getStaticPosition()
+        .createChangedPosition(Square.E1, Piece.NONE)
+        .createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.G1, Piece.WHITE_KING)
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK);
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertTrue(response.message().contains("rook on f1"));
+  }
+
+  @Test
+  void testIllegalCastlingAttemptReportsCastlingReasonAndKingObligation() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final ApiBoard board = new Board("k4r2/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    // White tries to castle through f1, which is attacked by the black rook on f8.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
+
+    final StaticPosition afterPosition = board.getStaticPosition()
+        .createChangedPosition(Square.E1, Piece.NONE)
+        .createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.G1, Piece.WHITE_KING)
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK);
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.message().contains("castling is not possible"));
+    assertTrue(response.message().contains("the king would travel over a field that is in check"));
+    assertTrue(response.message().contains("Castling counts as a king move"));
+    assertTrue(response.message().contains("you must make a legal move with the king"));
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  @Test
+  void testFailedAdjacentCastlingAttemptWithNoKingMovesDoesNotBindRook() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final ApiBoard board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+
+    // White attempts a malformed kingside castling motion. Castling is impossible because f1 is
+    // attacked, and the king has no legal move at all from e1.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.F1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.G1, Piece.WHITE_ROOK, 1));
+
+    final StaticPosition afterFailedCastling = board.getStaticPosition()
+        .createChangedPosition(Square.E1, Piece.NONE)
+        .createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.F1, Piece.WHITE_KING)
+        .createChangedPosition(Square.G1, Piece.WHITE_ROOK);
+
+    final ArbiterResponse failedCastling = engine.evaluateClockPress(board, afterFailedCastling, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, failedCastling.type());
+    assertTrue(failedCastling.message().contains("castling is not possible"));
+    assertTrue(failedCastling.message().contains("the touched king has no legal moves"));
+    assertTrue(failedCastling.message().contains("make another legal move"));
+
+    // After restoring the original position, the failed castling rook touch must not bind the
+    // player to a rook move. A different legal move is acceptable.
+    sequence.resetReleasedPieceRule();
+    sequence.addEvent(BoardEvent.dragMove(Square.A2, Square.A3, Piece.WHITE_PAWN, 2));
+    final StaticPosition afterPawnMove = board.getStaticPosition()
+        .createChangedPosition(Square.A2, Piece.NONE)
+        .createChangedPosition(Square.A3, Piece.WHITE_PAWN);
+
+    final ArbiterResponse laterMove = engine.evaluateClockPress(board, afterPawnMove, sequence);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, laterMove.type());
+    assertTrue(laterMove.acceptedMove().isPresent());
+    assertEquals(Square.A2, laterMove.acceptedMove().get().moveSpecification().fromSquare());
+    assertEquals(Square.A3, laterMove.acceptedMove().get().moveSpecification().toSquare());
+  }
+
+  @Test
+  void testNonCastlingKingAndRookMovesDoNotReportCastlingFailure() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final ApiBoard board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.E3, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F2, Piece.WHITE_ROOK, 1));
+
+    final StaticPosition afterPosition = board.getStaticPosition()
+        .createChangedPosition(Square.E1, Piece.NONE)
+        .createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.E3, Piece.WHITE_KING)
+        .createChangedPosition(Square.F2, Piece.WHITE_ROOK);
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertFalse(response.message().contains("castling is not possible"));
+  }
+
+  @Test
+  void testFailedAdjacentCastlingAttemptWithLegalKingReleaseStillBindsReleasedPiece() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final ApiBoard board = new Board("k7/8/8/8/8/8/P2PPP2/3QK2R w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.F1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.G1, Piece.WHITE_ROOK, 1));
+
+    final StaticPosition afterPosition = board.getStaticPosition()
+        .createChangedPosition(Square.E1, Piece.NONE)
+        .createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.F1, Piece.WHITE_KING)
+        .createChangedPosition(Square.G1, Piece.WHITE_ROOK);
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertTrue(response.message().contains("king on f1"));
   }
 
   @Test

@@ -16,6 +16,7 @@ import com.dlb.chess.board.enums.Side;
 import com.dlb.chess.board.enums.Square;
 import com.dlb.chess.common.interfaces.ApiBoard;
 import com.dlb.chess.common.model.MoveSpecification;
+import com.dlb.chess.dumbboard.castling.CastlingAttemptDetector;
 import com.dlb.chess.dumbboard.core.PositionComparator;
 import com.dlb.chess.dumbboard.event.ActionSequence;
 import com.dlb.chess.dumbboard.event.BoardEvent;
@@ -145,6 +146,13 @@ public class ArbiterEngine {
 
   private static Optional<ReleasedPieceLock> findReleasedPieceViolation(ApiBoard board, StaticPosition afterPosition,
       ActionSequence sequence) {
+    final Optional<AttemptedMove> attemptedCastling = inferPhysicalCastlingAttempt(board, afterPosition,
+        sequence.getEventsSinceReleasedPieceRuleReset());
+    if (attemptedCastling.isPresent() && shouldBypassReleasedPieceForInvalidCastlingAttempt(board,
+        attemptedCastling.get())) {
+      return Optional.empty();
+    }
+
     StaticPosition currentPosition = board.getStaticPosition();
     Optional<ReleasedPieceLock> firstReleasedLegalPosition = Optional.empty();
 
@@ -278,29 +286,86 @@ public class ArbiterEngine {
     return msg.toString();
   }
 
+  private record AttemptedMove(
+      MoveSpecification moveSpecification,
+      boolean castlingAttempt,
+      Square kingReleaseSquare) {
+  }
+
   private static Optional<String> explainSimpleIllegalMove(ApiBoard board, StaticPosition afterPosition,
       ActionSequence sequence) {
-    final Optional<MoveSpecification> moveSpecification = inferSimpleAttemptedMove(board, afterPosition, sequence);
-    if (moveSpecification.isEmpty()) {
+    final Optional<AttemptedMove> attemptedMove = inferAttemptedMove(board, afterPosition, sequence);
+    if (attemptedMove.isEmpty()) {
       return Optional.empty();
     }
 
+    final MoveSpecification moveSpecification = attemptedMove.get().moveSpecification();
     try {
-      ValidateNewMove.validateNewMove(board, moveSpecification.get());
+      ValidateNewMove.validateNewMove(board, moveSpecification);
       final StaticPosition expectedPosition = Board.createPositionAfterMove(board.getStaticPosition(),
-          board.getHavingMove(), moveSpecification.get());
+          board.getHavingMove(), moveSpecification);
       if (!expectedPosition.equals(afterPosition)) {
         return Optional.of("the move itself is legal, but the final board position is not correct");
       }
     } catch (final InvalidMoveException e) {
-      return Optional.of(e.getMessage());
+      return Optional.of(formatIllegalMoveExplanation(e.getMessage(), board, sequence, attemptedMove.get()));
     } catch (final RuntimeException e) {
       return Optional.empty();
     }
     return Optional.empty();
   }
 
-  private static Optional<MoveSpecification> inferSimpleAttemptedMove(ApiBoard board, StaticPosition afterPosition,
+  private static Optional<AttemptedMove> inferAttemptedMove(ApiBoard board, StaticPosition afterPosition,
+      ActionSequence sequence) {
+    final Optional<AttemptedMove> castlingAttempt = inferPhysicalCastlingAttempt(board, afterPosition,
+        sequence.getEvents());
+    if (castlingAttempt.isPresent()) {
+      return castlingAttempt;
+    }
+    return inferSimpleAttemptedMove(board, afterPosition, sequence);
+  }
+
+  private static Optional<AttemptedMove> inferPhysicalCastlingAttempt(ApiBoard board, StaticPosition afterPosition,
+      List<BoardEvent> events) {
+    return CastlingAttemptDetector.findPhysicalAttempt(board, afterPosition, events)
+        .map(attempt -> new AttemptedMove(attempt.moveSpecification(), true, attempt.kingReleaseSquare()));
+  }
+
+  private static boolean shouldBypassReleasedPieceForInvalidCastlingAttempt(ApiBoard board, AttemptedMove attempt) {
+    if (!attempt.castlingAttempt() || isCastlingLegal(board, attempt.moveSpecification())) {
+      return false;
+    }
+    return !isKingReleaseLegalMove(board, attempt);
+  }
+
+  private static boolean isCastlingLegal(ApiBoard board, MoveSpecification moveSpecification) {
+    try {
+      ValidateNewMove.validateNewMove(board, moveSpecification);
+      return true;
+    } catch (final RuntimeException e) {
+      return false;
+    }
+  }
+
+  private static boolean isKingReleaseLegalMove(ApiBoard board, AttemptedMove attempt) {
+    if (attempt.kingReleaseSquare() == Square.NONE) {
+      return false;
+    }
+    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getHavingMove(),
+        attempt.moveSpecification());
+    final Piece kingPiece = Piece.calculateKingPiece(board.getHavingMove());
+    for (final LegalMove legalMove : board.getLegalMoveSet()) {
+      if (!CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())
+          && legalMove.movingPiece() == kingPiece
+          && legalMove.moveSpecification().fromSquare() == kingFrom
+          && legalMove.moveSpecification().toSquare() == attempt.kingReleaseSquare()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static Optional<AttemptedMove> inferSimpleAttemptedMove(ApiBoard board, StaticPosition afterPosition,
       ActionSequence sequence) {
     BoardEvent moveEvent = null;
 
@@ -330,7 +395,10 @@ public class ArbiterEngine {
       return Optional.empty();
     }
 
-    return Optional.of(createMoveSpecification(moveEvent));
+    final MoveSpecification moveSpecification = createMoveSpecification(moveEvent);
+    return Optional.of(new AttemptedMove(moveSpecification,
+        CastlingUtility.calculateIsCastlingMove(moveSpecification),
+        CastlingUtility.calculateIsCastlingMove(moveSpecification) ? moveEvent.targetSquare() : Square.NONE));
   }
 
   private static MoveSpecification createMoveSpecification(BoardEvent event) {
@@ -354,6 +422,42 @@ public class ArbiterEngine {
       return Optional.of(CastlingMove.QUEEN_SIDE);
     }
     return Optional.empty();
+  }
+
+  private static String formatIllegalMoveExplanation(String reason, ApiBoard board, ActionSequence sequence,
+      AttemptedMove attemptedMove) {
+    final String formattedReason;
+    if (attemptedMove.castlingAttempt() && !reason.startsWith("castling is not possible")) {
+      formattedReason = "castling is not possible: " + reason;
+    } else {
+      formattedReason = reason;
+    }
+    return formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove);
+  }
+
+  private static String formatCastlingTouchMoveConsequence(ApiBoard board, ActionSequence sequence,
+      AttemptedMove attemptedMove) {
+    if (!attemptedMove.castlingAttempt()) {
+      return "";
+    }
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getHavingMove(),
+        attemptedMove.moveSpecification());
+    final Piece kingPiece = Piece.calculateKingPiece(board.getHavingMove());
+
+    if (obligation.isPresent()) {
+      final TouchMoveObligation value = obligation.get();
+      if (value.type() == TouchMoveType.OWN_PIECE && value.square() == kingFrom && value.piece() == kingPiece) {
+        return " Castling counts as a king move; because the king has legal moves, after restoring the position"
+            + " you must make a legal move with the king.";
+      }
+      // A different first touch remains governed by the normal touch-move recovery path.
+      return "";
+    }
+
+    return " Castling counts as a king move, but the touched king has no legal moves; after restoring the position"
+        + " make another legal move.";
   }
 
   private static String formatIllegalMoveReason(String reason) {

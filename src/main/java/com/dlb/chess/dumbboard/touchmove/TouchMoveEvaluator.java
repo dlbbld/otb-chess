@@ -1,5 +1,6 @@
 package com.dlb.chess.dumbboard.touchmove;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -7,6 +8,7 @@ import com.dlb.chess.board.enums.Piece;
 import com.dlb.chess.board.enums.Side;
 import com.dlb.chess.board.enums.Square;
 import com.dlb.chess.common.interfaces.ApiBoard;
+import com.dlb.chess.dumbboard.castling.CastlingAttemptDetector;
 import com.dlb.chess.dumbboard.event.ActionSequence;
 import com.dlb.chess.dumbboard.event.BoardEvent;
 import com.dlb.chess.moves.utility.CastlingUtility;
@@ -34,8 +36,14 @@ public class TouchMoveEvaluator {
   public static Optional<TouchMoveObligation> findObligation(ActionSequence sequence, ApiBoard board) {
     final Side sideToMove = sequence.getSideToMove();
     final Set<LegalMove> legalMoves = board.getLegalMoveSet();
+    final List<BoardEvent> events = sequence.getEvents();
 
-    for (final BoardEvent event : sequence.getEvents()) {
+    for (int i = 0; i < events.size(); i++) {
+      if (CastlingAttemptDetector.isFailedAttemptWithNoLegalKingMove(events, i, sideToMove, legalMoves)) {
+        i++;
+        continue;
+      }
+      final BoardEvent event = events.get(i);
       final Optional<TouchMoveObligation> obligation = evaluateEvent(event, sideToMove, legalMoves);
       if (obligation.isPresent()) {
         return obligation;
