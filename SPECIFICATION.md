@@ -14,7 +14,7 @@ The chess library (clean-chess) has two validation pipelines: SAN (for PGN impor
 4. **The player does everything.** Like a physical board — no automatic piece removal, no automatic rook moves for castling, no inference.
 5. **The player learns by making mistakes.** The board allows errors so it can educate afterwards.
 6. **Complete freedom with own pieces during play.** The player can move their own pieces freely — including moving them back to the origin square. No freezing, no restrictions. All evaluation happens at clock press.
-7. **One mid-play intervention exists today: opponent-piece movement.** Moving an opponent piece without a capture context triggers immediate arbiter intervention. (Future revision: see "Opponent-Piece Removal — Planned Revision" below.)
+7. **One mid-play intervention exists for opponent pieces: dragging them across the board.** The player may **remove** opponent pieces from the board (capture-by-removal — see below) and may **click** them (touch-move tracking only). Dragging an opponent piece from one square to another is never part of a legal sequence and triggers an immediate arbiter intervention.
 8. **Respect the player's sphere of control.** The player is always in control of their own pieces. The board and arbiter never intrude into this sphere. Even when a specific move must be executed (e.g. after a rejected draw claim), the player physically makes the move themselves.
 
 ---
@@ -184,7 +184,7 @@ While the opponent is moving, the player sees a translucent floating piece follo
 
 - The player can move their own pieces freely during their turn — including moving a piece back to its origin square.
 - No board freezing, no restrictions on own piece movement.
-- Moving an opponent piece is currently the only mid-play intervention (see "Opponent-Piece Removal — Planned Revision" for the upcoming change).
+- Dragging an opponent piece from one square to another is the only mid-play intervention on opponent pieces. Removing an opponent piece off the board is allowed (used for capture-by-removal, see "Capture mechanics" above).
 
 ---
 
@@ -457,7 +457,8 @@ These are checked during play (not only at clock press):
 
 | Intervention | Trigger | Behaviour |
 |---|---|---|
-| **Opponent-piece movement** | Player moves a piece belonging to the opponent | Arbiter intervenes immediately with a "you may only move your own pieces" message + restoration. (See "Opponent-Piece Removal — Planned Revision" for the upcoming change.) |
+| **Opponent-piece drag (square → square)** | Player drags an opponent piece from one square to another (DRAG_MOVE / DRAG_CAPTURE) | Arbiter intervenes immediately with a "you may only move your own pieces" message + restoration. |
+| **Opponent-piece removal** | Player drags an opponent piece off the board | **No intervention.** The board observes silently; this is the first step of a capture-by-removal sequence. The square is added to `removedSquaresThisTurn` so it can be restored from the side area later if the player changes their mind. |
 | **Released-piece commitment violation** | Player has committed a release and a subsequent manipulation moves them off all positions consistent with the committed move set | Restore to release position. |
 | **Position change after restoration** | After a "Do this for me" or manual restoration, the player makes a board change that drifts away from the agreed restored position before resuming | Arbiter intervenes; restoration is repeated. |
 
@@ -483,20 +484,33 @@ These are checked during play (not only at clock press):
 
 ---
 
-## Opponent-Piece Removal — Planned Revision
+## Capture-by-Removal
 
-(Not yet implemented; replaces the current strict "no opponent piece movement" rule.)
+The board allows the **physical capture sequence**: lift the opponent piece off the board, then move your own piece onto the now-empty square. Both events are observed silently during play — there is no mid-play intervention. At clock press the position is evaluated as usual:
 
-The player will be allowed to **physically remove opponent pieces** during their turn — necessary for capturing, en passant, and the diagonal-pawn-then-remove-pawn sequence. Specifically:
+- The resulting position equals the position after the legal capture move → accepted as a normal capture (the same outcome as a single DRAG_CAPTURE).
+- The position does not match any legal move → standard illegal-move flow (restoration, counter increment, penalty).
 
-1. **No mid-play intervention** when the player removes or moves an opponent piece during their own turn — the board observes silently.
-2. At **clock press**, the position is evaluated as usual:
-   - If the position can arise from a legal move from the previous position → accepted.
-   - Otherwise → illegal move (with the usual restoration / counter / penalty).
-3. **Special rule — the king cannot be captured.** If the player removes the **opponent's king** off the board at any moment, the arbiter intervenes **immediately** with:
-   > _"You are not allowed to remove the opponent's king from the board. Please restore."_
+This complements the existing capture path where the player drags their own piece onto the opponent's square (DRAG_CAPTURE auto-displaces the opponent piece).
 
-This revision is captured here so the spec reflects the agreed direction.
+**En passant** uses the same physical sequence: lift the opponent pawn off the board, then move the capturing pawn diagonally onto the now-empty target square (the en passant square, which is empty in any case).
+
+### Special rule (planned, not yet implemented) — the king cannot be captured
+
+If the player drags the **opponent's king** off the board at any moment, the arbiter must intervene **immediately** with:
+
+> _"You are not allowed to remove the opponent's king from the board. Please restore."_
+
+This is tracked in **Open Items** below.
+
+### Side note — piece displacement detection (deferred)
+
+The current rule allows the player to remove an opponent piece without subsequently moving onto its square. The position at clock press will then not match any legal move and the standard illegal-move flow fires — but the message wording is generic (it does not specifically point out that an opponent piece was removed without a corresponding capture). A future refinement should:
+
+- Detect "piece displacement" — opponent pieces removed during the turn that are not consistent with a single legal move from the starting position.
+- Surface a more specific message ("You removed the {piece} on {square} but did not capture it. Please restore.").
+
+This is tracked in **Open Items** below.
 
 ---
 
@@ -586,8 +600,9 @@ For `move_accepted`, the `move` block carries `from`, `to`, `piece`. **Castling 
 
 1. **Practice mode** — more lenient, immediate helpful feedback.
 2. **Tournament mode without arbiter** — player must claim illegal moves.
-3. **Opponent-piece removal during own turn** — see "Opponent-Piece Removal — Planned Revision".
-4. **Move history display** — step-through with arbiter interventions.
-5. **Insufficient material** — relationship between simple cases and full CUA detection.
-6. **Reconnect after disconnect** — current state is preserved server-side; reconnection flow not yet implemented.
-7. **Performance** — `isDeadPositionFull()` (CUA) runs on every legal-completing board event and on every clock press; consider gating on a piece-count precondition for opening / middlegame positions.
+3. **King-cannot-be-captured immediate intervention.** Today, dragging the opponent's king off the board is silently allowed; the resulting position fires the generic illegal-move flow only at clock press. Per spec the arbiter should intervene immediately when the king is removed: _"You are not allowed to remove the opponent's king from the board. Please restore."_
+4. **Piece-displacement detection** (deferred). When the player removes an opponent piece without subsequently moving onto its square, the position at clock press doesn't match any legal move and the standard illegal-move flow fires — but with a generic message. Future refinement should detect this specific case and produce a wording that names the removed piece and asks the player to either complete the capture or restore the piece.
+5. **Move history display** — step-through with arbiter interventions.
+6. **Insufficient material** — relationship between simple cases and full CUA detection.
+7. **Reconnect after disconnect** — current state is preserved server-side; reconnection flow not yet implemented.
+8. **Performance** — `checkAutomaticEndings` is now fast (insufficient-material check only); the deeper CUA helper runs only at flag fall and resignation via `isUnwinnableQuick`.

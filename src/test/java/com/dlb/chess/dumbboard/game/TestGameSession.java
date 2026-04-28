@@ -161,6 +161,62 @@ class TestGameSession {
         + "Please restore the position.", response.get().message());
   }
 
+  /** Capture-by-removal: the player lifts the opponent piece off the board (REMOVE) and
+      then moves their own piece onto the now-empty square. Both events must be allowed
+      mid-play (no immediate intervention) and the resulting position must be accepted at
+      clock press as a normal capture, since it equals the position after the legal capture
+      move. */
+  @Test
+  void testCaptureByRemovingOpponentPieceFirstThenMoving() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // Set up: 1.e4 e5 2.Nf3, then Black plays Nc6, then White plays Nxe5? No — let's set
+    // up so White can capture on e5 with the knight on f3. After 1.e4 e5 2.Nf3, white can
+    // play Nxe5 (it's pseudo-legal; e5 is undefended after Nc6 isn't played, but the
+    // king-safety rule is fine).
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+    makeMove(session, Square.E7, Square.E5, Piece.BLACK_PAWN);
+    makeMove(session, Square.G1, Square.F3, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.B8, Square.C6, Piece.BLACK_KNIGHT);
+
+    // Step 1: White REMOVES the black pawn from e5 — must NOT trigger an intervention.
+    final Optional<ArbiterResponse> removeResponse = session.recordEvent(Side.WHITE,
+        BoardEvent.remove(Square.E5, Piece.BLACK_PAWN, 0));
+    assertTrue(removeResponse.isEmpty(), "REMOVE of opponent piece must be allowed (no intervention)");
+
+    // Step 2: White moves the knight Nf3 -> e5. The DRAG_MOVE event itself is allowed.
+    final Optional<ArbiterResponse> moveResponse = session.recordEvent(Side.WHITE,
+        BoardEvent.dragMove(Square.F3, Square.E5, Piece.WHITE_KNIGHT, 1));
+    assertTrue(moveResponse.isEmpty(), "DRAG_MOVE of own piece onto empty square must be allowed");
+
+    // Step 3: Press the clock. The resulting position equals the position after the legal
+    // capture Nxe5, so the arbiter accepts it as a normal capture move.
+    final StaticPosition afterCapture = session.getBoard().getStaticPosition()
+        .createChangedPosition(Square.E5, Piece.WHITE_KNIGHT)
+        .createChangedPosition(Square.F3, Piece.NONE);
+    final ArbiterResponse pressResponse = session.pressClockButton(Side.WHITE, afterCapture);
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, pressResponse.type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+  }
+
+  /** Stand-alone unit check on the validator: the REMOVE of an opponent piece does not
+      trigger any mid-play intervention, while DRAG_MOVE of the same opponent piece does. */
+  @Test
+  void testRemoveOfOpponentPieceIsAllowedDragOfOpponentPieceIsNot() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final Optional<ArbiterResponse> removeResp = session.recordEvent(Side.WHITE,
+        BoardEvent.remove(Square.A7, Piece.BLACK_PAWN, 0));
+    assertTrue(removeResp.isEmpty());
+
+    final Optional<ArbiterResponse> dragResp = session.recordEvent(Side.WHITE,
+        BoardEvent.dragMove(Square.E7, Square.E5, Piece.BLACK_PAWN, 1));
+    assertTrue(dragResp.isPresent());
+    assertEquals(ArbiterResponseType.POSITION_CHANGE, dragResp.get().type());
+  }
+
   @Test
   void testSecondIllegalMoveEndsGame() {
     final GameSession session = new GameSession(TEST_TIME);

@@ -137,15 +137,22 @@ public class GameSession {
       return midPlayResponse;
     }
 
-    // Track removed opponent pieces
-    if (event.type() == com.dlb.chess.dumbboard.event.BoardEventType.REMOVE
-        || event.type() == com.dlb.chess.dumbboard.event.BoardEventType.DRAG_CAPTURE) {
-      final Square removedSquare = event.type() == com.dlb.chess.dumbboard.event.BoardEventType.REMOVE
-          ? event.square()
-          : event.targetSquare();
+    // Track removed opponent pieces. Two paths:
+    //   • DRAG_CAPTURE: the player drops their own piece on top of an opponent piece;
+    //     the displaced piece (= the opponent piece) is implicitly removed. The
+    //     opponent piece is identified by event.displacedPiece().
+    //   • REMOVE:       the player drags an opponent piece off the board explicitly,
+    //     as the first step of a capture-by-removal sequence. The opponent piece is
+    //     identified by event.piece(); displacedPiece is NONE for REMOVE events.
+    if (event.type() == com.dlb.chess.dumbboard.event.BoardEventType.DRAG_CAPTURE) {
       if (event.displacedPiece() != com.dlb.chess.board.enums.Piece.NONE
           && event.displacedPiece().getSide() != side) {
-        removedSquaresThisTurn.add(removedSquare);
+        removedSquaresThisTurn.add(event.targetSquare());
+      }
+    } else if (event.type() == com.dlb.chess.dumbboard.event.BoardEventType.REMOVE) {
+      if (event.piece() != com.dlb.chess.board.enums.Piece.NONE
+          && event.piece().getSide() != side) {
+        removedSquaresThisTurn.add(event.square());
       }
     }
 

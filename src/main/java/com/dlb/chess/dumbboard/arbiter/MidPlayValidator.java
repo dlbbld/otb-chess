@@ -43,8 +43,28 @@ public class MidPlayValidator {
   }
 
   /**
-   * Checks if the player is trying to move or remove an opponent's piece.
-   * A plain click is allowed because it may only create a touch-move capture obligation.
+   * Checks if the player is trying to move an opponent's piece <em>on the board</em>
+   * (which is never allowed, even as the start of a capture sequence). The arbiter
+   * intervenes immediately.
+   *
+   * <p>What is allowed without intervention:
+   * <ul>
+   *   <li>{@link BoardEventType#CLICK} on an opponent piece — touch-move only, no
+   *       position change.</li>
+   *   <li>{@link BoardEventType#REMOVE} of an opponent piece — corresponds to the
+   *       physical capture sequence: lift the opponent piece off the board, then move
+   *       your own piece onto that square. The position-comparison at clock press
+   *       evaluates whether the resulting position matches a legal capture; if not,
+   *       the standard illegal-move flow handles it.</li>
+   *   <li>{@link BoardEventType#RESTORE_TO_EMPTY} / {@link BoardEventType#RESTORE_TO_OCCUPIED}
+   *       — handled by {@link #validateRestoration}; allows putting a piece back from
+   *       the side area.</li>
+   * </ul>
+   *
+   * <p>What is blocked: dragging an opponent piece from one square to another
+   * ({@link BoardEventType#DRAG_MOVE}, {@link BoardEventType#DRAG_CAPTURE}). That is
+   * never part of a legal sequence and the arbiter intervenes with a generic
+   * "you cannot move opponent pieces" message.
    */
   private static Optional<ArbiterResponse> validateOpponentPiecePositionChange(BoardEvent event, Side sideToMove) {
     final Piece piece = event.piece();
@@ -52,8 +72,10 @@ public class MidPlayValidator {
       return Optional.empty();
     }
 
-    if (event.type() == BoardEventType.CLICK || event.type() == BoardEventType.RESTORE_TO_EMPTY
-        || event.type() == BoardEventType.RESTORE_TO_OCCUPIED) {
+    if (event.type() != BoardEventType.DRAG_MOVE && event.type() != BoardEventType.DRAG_CAPTURE) {
+      // CLICK, REMOVE, and the RESTORE_* cases either carry no commitment or are
+      // covered by validateRestoration. Allowing REMOVE of an opponent piece
+      // implements the physical capture-by-removal flow.
       return Optional.empty();
     }
 
