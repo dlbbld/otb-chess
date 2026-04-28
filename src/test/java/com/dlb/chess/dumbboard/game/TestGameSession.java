@@ -445,20 +445,36 @@ class TestGameSession {
     assertTrue(session.getResult().isDraw());
   }
 
+  /** Plays an eight-half-move knight shuffle (Nf3 Nf6 Ng1 Ng8 ×2) so the initial position
+      has occurred 3 times. White is to move. From here white's `Nf3` would create the
+      3rd occurrence of position-after-1.Nf3 ⇒ `canClaimThreefoldRepetitionRuleWithOwnMove()`
+      is true. This keeps the with-move short-circuit from firing and lets the tests
+      exercise the per-move SAN-validation / rejectedWithMove paths. */
+  private void shuffleKnightsToReachThreefoldClaimable(GameSession session) {
+    makeMove(session, Square.G1, Square.F3, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.G8, Square.F6, Piece.BLACK_KNIGHT);
+    makeMove(session, Square.F3, Square.G1, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.F6, Square.G8, Piece.BLACK_KNIGHT);
+    makeMove(session, Square.G1, Square.F3, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.G8, Square.F6, Piece.BLACK_KNIGHT);
+    makeMove(session, Square.F3, Square.G1, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.F6, Square.G8, Piece.BLACK_KNIGHT);
+  }
+
   @Test
   void testMustExecuteMoveAfterRejectedClaim() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    shuffleKnightsToReachThreefoldClaimable(session);
 
-    // White claims threefold with move "e4" — but no threefold exists
+    // White claims threefold with move "e4". The move is legal; the resulting position has
+    // never occurred — so the per-move check rejects with mustExecuteMove="e4".
     final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e4");
     assertFalse(result.accepted());
     assertTrue(result.moveToPerform().isPresent());
-
-    // Now white must play e4
     assertNotNull(session.getMustExecuteMove());
 
-    // White plays e4 correctly
+    // Now white must play e4.
     final StaticPosition afterE4 = session.getBoard().getStaticPosition()
         .createChangedPosition(Square.E2, Piece.NONE)
         .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
@@ -473,9 +489,10 @@ class TestGameSession {
   void testClaimWithInvalidSanIsRejectedAsInvalidMove() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    shuffleKnightsToReachThreefoldClaimable(session);
 
-    // White claims threefold-with-move using a SAN that is not a legal move from
-    // the starting position ("e9" — no such square / pawn cannot move there).
+    // SAN "e9" is structurally invalid (no rank 9). Clean-chess rejects it; we surface the
+    // reason via invalidMove so the SAN-input panel re-prompts.
     final DrawClaimResult result = session.claimDraw(
         Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
 
@@ -494,11 +511,18 @@ class TestGameSession {
 
   @Test
   void testFiftyMoveClaimWithInvalidSanIsRejectedAsInvalidMove() {
-    final GameSession session = new GameSession(TEST_TIME);
+    // Custom FEN with halfMoveClock = 99, white to move, K+R vs K. Any non-capture
+    // non-pawn move advances the clock to 100 ⇒ canClaimFiftyMoveRuleWithOwnMove() == true,
+    // so the short-circuit does not fire and the SAN-validation path is reachable.
+    final Board startingBoard = new Board("4k3/8/8/8/3R4/8/8/4K3 w - - 99 50");
+    final GameSession session = new GameSession(TEST_TIME,
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
+        true, startingBoard);
     session.startGame();
 
+    // SAN "Kz9" is structurally invalid.
     final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Kf7");
+        Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Kz9");
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove());
@@ -511,11 +535,13 @@ class TestGameSession {
   void testMustExecuteMoveWrongPosition() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    shuffleKnightsToReachThreefoldClaimable(session);
 
-    // White claims threefold with move "e4" — rejected
+    // White claims threefold with move "e4" — legal, doesn't trigger threefold ⇒ rejectedWithMove.
     session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e4");
 
-    // White plays d4 instead of e4
+    // White plays d4 instead of e4 — the must-execute-move is still e4, so this fails as
+    // INCOMPLETE_MOVE.
     final StaticPosition afterD4 = session.getBoard().getStaticPosition()
         .createChangedPosition(Square.D2, Piece.NONE)
         .createChangedPosition(Square.D4, Piece.WHITE_PAWN);
@@ -523,5 +549,55 @@ class TestGameSession {
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterD4);
     assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, response.type());
     assertTrue(response.message().contains("specified move was not executed"));
+  }
+
+  /** When no move from the current position can possibly create a threefold repetition,
+      the with-move claim short-circuits with a generic "no move could satisfy" rejection
+      BEFORE the SAN is even validated. The player's SAN is not tested for legality (no
+      invalidMove flag set), and no must-execute-move is established — the player is free
+      to play any legal move. */
+  @Test
+  void testThreefoldClaimWithMoveShortCircuitsWhenImpossibleFromCurrentPosition() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    // From the initial position, no legal move can possibly produce a threefold repetition
+    // (the position has occurred only once).
+
+    // Even an illegal SAN is not flagged as invalidMove — the short-circuit fires first.
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+
+    assertFalse(result.accepted());
+    assertFalse(result.invalidMove(),
+        "Short-circuit must NOT report invalidMove — the SAN was never validated");
+    assertTrue(result.moveToPerform().isEmpty(),
+        "Short-circuit must NOT set mustExecuteMove — the player is free to play any move");
+    assertTrue(result.message().contains("no move from the current position can lead to"
+            + " a threefold repetition"),
+        "Message should explain the structural impossibility: " + result.message());
+    assertNull(session.getMustExecuteMove());
+    assertEquals(Side.WHITE, session.getHavingMove());
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+  }
+
+  /** Same short-circuit behaviour for the 50-move-with-move claim when the half-move clock
+      is below the threshold. */
+  @Test
+  void testFiftyMoveClaimWithMoveShortCircuitsWhenClockIsBelowThreshold() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    // Half-move clock starts at 0. canClaimFiftyMoveRuleWithOwnMove() requires 99+, so the
+    // short-circuit fires.
+
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "e4");
+
+    assertFalse(result.accepted());
+    assertFalse(result.invalidMove());
+    assertTrue(result.moveToPerform().isEmpty());
+    assertTrue(result.message().contains("no move from the current position can satisfy"
+            + " the 50-move rule"),
+        "Message should explain the structural impossibility: " + result.message());
+    assertNull(session.getMustExecuteMove());
   }
 }

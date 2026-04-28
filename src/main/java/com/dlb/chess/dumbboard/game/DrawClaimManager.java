@@ -45,6 +45,17 @@ public class DrawClaimManager {
   }
 
   private DrawClaimResult claimThreefoldWithMove(ApiBoard board, String san) {
+    // Short-circuit: if no legal move from the current position can possibly lead to a
+    // threefold repetition, reject without even parsing the SAN. clean-chess decides this
+    // by iterating legal moves once internally; the cost beats the per-call SAN parse +
+    // performMove + isThreefoldRepetition + unperformMove cycle, and gives the player a
+    // clearer message than "your SAN is invalid" or "this specific move does not satisfy".
+    if (!board.canClaimThreefoldRepetitionRuleWithOwnMove()) {
+      return DrawClaimResult.rejected(
+          "Claim rejected, because no move from the current position can lead to a threefold"
+              + " repetition. Please play.");
+    }
+
     // Validate the SAN move
     final MoveSpecification moveSpec;
     try {
@@ -83,6 +94,16 @@ public class DrawClaimManager {
   }
 
   private DrawClaimResult claimFiftyMoveWithMove(ApiBoard board, String san) {
+    // Short-circuit: clean-chess can determine in O(1) whether ANY legal move from the
+    // current position can satisfy the 50-move rule (it just checks the half-move clock
+    // and that there is at least one legal non-resetting move). Reject without parsing
+    // the SAN if no move could satisfy.
+    if (!board.canClaimFiftyMoveRuleWithOwnMove()) {
+      return DrawClaimResult.rejected(
+          "Claim rejected, because no move from the current position can satisfy the 50-move"
+              + " rule. Please play.");
+    }
+
     // Validate the SAN move
     final MoveSpecification moveSpec;
     try {
