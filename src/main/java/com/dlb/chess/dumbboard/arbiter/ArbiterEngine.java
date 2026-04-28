@@ -16,6 +16,8 @@ import com.dlb.chess.board.enums.Side;
 import com.dlb.chess.board.enums.Square;
 import com.dlb.chess.common.interfaces.ApiBoard;
 import com.dlb.chess.common.model.MoveSpecification;
+import com.dlb.chess.dumbboard.arbiter.ArbiterResponse.IllegalMoveDetail;
+import com.dlb.chess.dumbboard.arbiter.ArbiterResponse.ReleasedPieceContext;
 import com.dlb.chess.dumbboard.castling.CastlingAttemptDetector;
 import com.dlb.chess.dumbboard.core.PositionComparator;
 import com.dlb.chess.dumbboard.event.ActionSequence;
@@ -105,7 +107,8 @@ public class ArbiterEngine {
         sequence);
     if (releasedPieceViolation.isPresent()) {
       final ReleasedPieceLock lock = releasedPieceViolation.get();
-      return ArbiterResponse.releasedPieceViolation(formatReleasedPieceViolation(lock), lock.releasePosition());
+      return ArbiterResponse.releasedPieceViolation(new ReleasedPieceContext(lock.piece(), lock.square()),
+          lock.releasePosition());
     }
 
     // Check if the board position even changed
@@ -129,7 +132,7 @@ public class ArbiterEngine {
 
     if (obligation.isPresent()) {
       if (!TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
-        return handleTouchMoveViolation(obligation.get(), sideToMove);
+        return handleTouchMoveViolation(obligation.get());
       }
     }
 
@@ -233,66 +236,39 @@ public class ArbiterEngine {
     };
   }
 
-  private static String formatReleasedPieceViolation(ReleasedPieceLock lock) {
-    final String pieceName = formatPieceName(lock.piece());
-    final String squareName = lock.square().getName();
-    return "Released-piece violation: You already released the " + pieceName + " on " + squareName
-        + ", and that was a legal move. Under the released-piece rule, you cannot change this position anymore."
-        + " Please put the " + pieceName + " back on " + squareName + " and press the clock.";
-  }
-
   private ArbiterResponse handleIllegalMove(ApiBoard board, StaticPosition afterPosition, ActionSequence sequence,
       Side sideToMove) {
     illegalMoveTracker.recordIllegalMove(sideToMove);
-    final Optional<String> reason = explainSimpleIllegalMove(board, afterPosition, sequence);
+    final Optional<IllegalMoveReason> reason = explainSimpleIllegalMove(board, afterPosition, sequence);
+    final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
+    final IllegalMoveDetail detail = new IllegalMoveDetail(
+        reason.map(IllegalMoveReason::playerReason),
+        reason.map(IllegalMoveReason::opponentReason),
+        sideToMove,
+        count,
+        illegalMoveTracker.getMaxIllegalMoves(),
+        illegalMoveTracker.isUnlimited());
 
     if (illegalMoveTracker.isGameLost(sideToMove)) {
-      final String sideName = sideToMove == Side.WHITE ? "White" : "Black";
-      final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
-      final String ordinal = ordinalSuffix(count);
-      return ArbiterResponse.illegalMoveGameLost(
-          reason.map(ArbiterEngine::formatIllegalMoveReason).orElse("")
-              + sideName + " loses the game. This was the " + count + ordinal + " illegal move by "
-              + sideName + ".");
+      return ArbiterResponse.illegalMoveGameLost(detail);
     }
 
-    return ArbiterResponse.illegalMove(buildOngoingIllegalMoveMessage(sideToMove, reason));
+    return ArbiterResponse.illegalMove(detail);
   }
 
   /**
-   * Builds the arbiter message for an illegal move that does NOT yet end the game. The
-   * player is told which-numbered illegal move this was and how many remain — phrased as
-   * "your next illegal move will lose the game" when there is exactly one remaining, and
-   * "the Nth illegal move will lose the game" otherwise. With unlimited illegal moves
-   * configured, only the count is reported.
+   * Physical move inferred from the player's board manipulations.
    */
-  private String buildOngoingIllegalMoveMessage(Side sideToMove, Optional<String> reason) {
-    final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
-    final int max = illegalMoveTracker.getMaxIllegalMoves();
-    final String countOrdinal = ordinalSuffix(count);
-    final StringBuilder msg = new StringBuilder();
-    msg.append(reason.map(ArbiterEngine::formatIllegalMoveReason).orElse("Illegal move. "));
-    msg.append("This is your ").append(count).append(countOrdinal).append(" illegal move. ");
-    if (!illegalMoveTracker.isUnlimited()) {
-      final int remaining = max - count;
-      if (remaining == 1) {
-        msg.append("Your next illegal move will lose the game. ");
-      } else {
-        final String maxOrdinal = ordinalSuffix(max);
-        msg.append("Your ").append(max).append(maxOrdinal).append(" illegal move will lose the game. ");
-      }
-    }
-    msg.append("Please restore the position.");
-    return msg.toString();
-  }
-
   private record AttemptedMove(
       MoveSpecification moveSpecification,
       boolean castlingAttempt,
       Square kingReleaseSquare) {
   }
 
-  private static Optional<String> explainSimpleIllegalMove(ApiBoard board, StaticPosition afterPosition,
+  private record IllegalMoveReason(String playerReason, String opponentReason) {
+  }
+
+  private static Optional<IllegalMoveReason> explainSimpleIllegalMove(ApiBoard board, StaticPosition afterPosition,
       ActionSequence sequence) {
     final Optional<AttemptedMove> attemptedMove = inferAttemptedMove(board, afterPosition, sequence);
     if (attemptedMove.isEmpty()) {
@@ -305,7 +281,8 @@ public class ArbiterEngine {
       final StaticPosition expectedPosition = Board.createPositionAfterMove(board.getStaticPosition(),
           board.getHavingMove(), moveSpecification);
       if (!expectedPosition.equals(afterPosition)) {
-        return Optional.of("the move itself is legal, but the final board position is not correct");
+        final String reason = "the move itself is legal, but the final board position is not correct";
+        return Optional.of(new IllegalMoveReason(reason, reason));
       }
     } catch (final InvalidMoveException e) {
       return Optional.of(formatIllegalMoveExplanation(e.getMessage(), board, sequence, attemptedMove.get()));
@@ -424,7 +401,7 @@ public class ArbiterEngine {
     return Optional.empty();
   }
 
-  private static String formatIllegalMoveExplanation(String reason, ApiBoard board, ActionSequence sequence,
+  private static IllegalMoveReason formatIllegalMoveExplanation(String reason, ApiBoard board, ActionSequence sequence,
       AttemptedMove attemptedMove) {
     final String formattedReason;
     if (attemptedMove.castlingAttempt() && !reason.startsWith("castling is not possible")) {
@@ -432,11 +409,13 @@ public class ArbiterEngine {
     } else {
       formattedReason = reason;
     }
-    return formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove);
+    return new IllegalMoveReason(
+        formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, false),
+        formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, true));
   }
 
   private static String formatCastlingTouchMoveConsequence(ApiBoard board, ActionSequence sequence,
-      AttemptedMove attemptedMove) {
+      AttemptedMove attemptedMove, boolean opponent) {
     if (!attemptedMove.castlingAttempt()) {
       return "";
     }
@@ -449,70 +428,28 @@ public class ArbiterEngine {
     if (obligation.isPresent()) {
       final TouchMoveObligation value = obligation.get();
       if (value.type() == TouchMoveType.OWN_PIECE && value.square() == kingFrom && value.piece() == kingPiece) {
-        return " Castling counts as a king move; because the king has legal moves, after restoring the position"
-            + " you must make a legal move with the king.";
+        return opponent
+            ? " Castling counts as a king move; because the king has legal moves, after restoring the position"
+                + " they must make a legal move with the king."
+            : " Castling counts as a king move; because the king has legal moves, after restoring the position"
+                + " you must make a legal move with the king.";
       }
       // A different first touch remains governed by the normal touch-move recovery path.
       return "";
     }
 
-    return " Castling counts as a king move, but the touched king has no legal moves; after restoring the position"
-        + " make another legal move.";
+    return opponent
+        ? " Castling counts as a king move, but the touched king has no legal moves; after restoring the position"
+            + " they may make another legal move."
+        : " Castling counts as a king move, but the touched king has no legal moves; after restoring the position"
+            + " make another legal move.";
   }
 
-  private static String formatIllegalMoveReason(String reason) {
-    return "Illegal move: " + ensureSentence(reason) + " ";
-  }
-
-  private static String ensureSentence(String text) {
-    final String trimmed = text.trim();
-    if (trimmed.endsWith(".") || trimmed.endsWith("!") || trimmed.endsWith("?")) {
-      return trimmed;
-    }
-    return trimmed + ".";
-  }
-
-  private static String ordinalSuffix(int n) {
-    final int mod100 = n % 100;
-    if (mod100 >= 11 && mod100 <= 13) {
-      return "th";
-    }
-    return switch (n % 10) {
-      case 1 -> "st";
-      case 2 -> "nd";
-      case 3 -> "rd";
-      default -> "th";
-    };
-  }
-
-  private ArbiterResponse handleTouchMoveViolation(TouchMoveObligation obligation, Side sideToMove) {
-    final String pieceName = formatPieceName(obligation.piece());
-    final String squareName = obligation.square().getName();
-
+  private ArbiterResponse handleTouchMoveViolation(TouchMoveObligation obligation) {
     return switch (obligation.type()) {
-      case OWN_PIECE -> ArbiterResponse.touchMoveViolation(
-          "Touch-move violation: You first touched the " + pieceName + " on " + squareName
-              + ", which has legal moves, but moved another piece. Under the touch-move rule, you must move"
-              + " the first touched piece. Please restore the position and move the " + pieceName
-              + " from " + squareName + ".",
-          obligation);
-      case OPPONENT_PIECE -> ArbiterResponse.touchMoveViolation(
-          "Touch-move violation: You have touched the opponent's " + pieceName + " on " + squareName
-              + ". Because the " + pieceName + " can be captured, it must be captured."
-              + " Please revert the position.",
-          obligation);
+      case OWN_PIECE -> ArbiterResponse.touchMoveViolation(obligation);
+      case OPPONENT_PIECE -> ArbiterResponse.touchMoveViolation(obligation);
     };
   }
 
-  private static String formatPieceName(Piece piece) {
-    return switch (piece.getPieceType()) {
-      case KING -> "king";
-      case QUEEN -> "queen";
-      case ROOK -> "rook";
-      case BISHOP -> "bishop";
-      case KNIGHT -> "knight";
-      case PAWN -> "pawn";
-      default -> "piece";
-    };
-  }
 }

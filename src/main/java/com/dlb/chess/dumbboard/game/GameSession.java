@@ -267,7 +267,7 @@ public class GameSession {
       }
       case ILLEGAL_MOVE_GAME_LOST -> {
         endGame(new GameResult(GameResultType.ILLEGAL_MOVE_GAME_LOST, side.getOppositeSide(),
-            response.message()));
+            response.renderedPlayerMessage()));
       }
       case TOUCH_MOVE_VIOLATION -> {
         clock.stopClock();

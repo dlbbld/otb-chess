@@ -14,6 +14,8 @@ import com.dlb.chess.board.enums.Square;
 import com.dlb.chess.common.interfaces.ApiBoard;
 import com.dlb.chess.dumbboard.event.ActionSequence;
 import com.dlb.chess.dumbboard.event.BoardEvent;
+import com.dlb.chess.dumbboard.message.MessageKey;
+import com.dlb.chess.dumbboard.message.Messages;
 
 class TestArbiterEngine {
 
@@ -54,10 +56,10 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
-    assertEquals("Illegal move: the knight cannot move in this way."
-        + " This is your 1st illegal move. Your next illegal move will lose the game."
-        + " Please restore the position.",
-        response.message());
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT, response.playerMessageKey());
+    assertEquals(1, response.illegalMoveDetail().get().count());
+    assertEquals(Side.WHITE, response.illegalMoveDetail().get().side());
+    assertEquals("the knight cannot move in this way", response.illegalMoveDetail().get().playerReason().get());
     assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
 
@@ -74,9 +76,9 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
-    assertEquals("Illegal move. This is your 1st illegal move."
-        + " Your next illegal move will lose the game. Please restore the position.",
-        response.message());
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT, response.playerMessageKey());
+    assertEquals(1, response.illegalMoveDetail().get().count());
+    assertTrue(response.illegalMoveDetail().get().playerReason().isEmpty());
   }
 
   @Test
@@ -95,9 +97,9 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterE4, sequence);
 
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
-    assertEquals("Released-piece violation: You already released the pawn on e3, and that was a legal move."
-        + " Under the released-piece rule, you cannot change this position anymore."
-        + " Please put the pawn back on e3 and press the clock.", response.message());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_PLAYER, response.playerMessageKey());
+    assertEquals(Piece.WHITE_PAWN, response.releasedPieceContext().get().piece());
+    assertEquals(Square.E3, response.releasedPieceContext().get().square());
     assertTrue(response.restorePosition().isPresent());
     assertEquals(board.getStaticPosition()
         .createChangedPosition(Square.E2, Piece.NONE)
@@ -236,7 +238,8 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, response.type());
-    assertTrue(response.message().contains("2nd illegal move"));
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_GAME_LOST_PLAYER, response.playerMessageKey());
+    assertEquals(2, response.illegalMoveDetail().get().count());
   }
 
   /** With max=4 the early illegal moves should name the 4th (not "next") as the loss-trigger,
@@ -254,19 +257,21 @@ class TestArbiterEngine {
 
     final ArbiterResponse first = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
-    assertTrue(first.message().contains("1st illegal move"));
-    assertTrue(first.message().contains("Your 4th illegal move will lose the game"));
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_LIMIT, first.playerMessageKey());
+    assertEquals(1, first.illegalMoveDetail().get().count());
+    assertEquals(4, first.illegalMoveDetail().get().maxIllegalMoves());
 
     final ArbiterResponse second = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, second.type());
-    assertTrue(second.message().contains("2nd illegal move"));
-    assertTrue(second.message().contains("Your 4th illegal move will lose the game"));
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_LIMIT, second.playerMessageKey());
+    assertEquals(2, second.illegalMoveDetail().get().count());
+    assertEquals(4, second.illegalMoveDetail().get().maxIllegalMoves());
 
     final ArbiterResponse third = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, third.type());
-    assertTrue(third.message().contains("3rd illegal move"));
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT, third.playerMessageKey());
+    assertEquals(3, third.illegalMoveDetail().get().count());
     // Now exactly one remaining → message switches to "next" instead of "4th".
-    assertTrue(third.message().contains("Your next illegal move will lose the game"));
 
     final ArbiterResponse fourth = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, fourth.type());
@@ -286,8 +291,9 @@ class TestArbiterEngine {
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
-    assertTrue(response.message().contains("1st illegal move"));
-    assertTrue(!response.message().contains("lose the game"));
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_UNLIMITED, response.playerMessageKey());
+    assertEquals(1, response.illegalMoveDetail().get().count());
+    assertTrue(response.illegalMoveDetail().get().unlimited());
   }
 
   @Test
@@ -346,10 +352,9 @@ class TestArbiterEngine {
     assertTrue(response.obligation().isPresent());
     assertEquals(Square.B2, response.obligation().get().square());
     assertEquals(Piece.WHITE_PAWN, response.obligation().get().piece());
-    assertEquals("Touch-move violation: You first touched the pawn on b2,"
-        + " which has legal moves, but moved another piece. Under the touch-move rule, you must move"
-        + " the first touched piece. Please restore the position and move the pawn from b2.",
-        response.message());
+    assertEquals(MessageKey.ARBITER_TOUCH_MOVE_OWN_PLAYER, response.playerMessageKey());
+    assertEquals(Messages.get(MessageKey.ARBITER_TOUCH_MOVE_OWN_PLAYER, "pawn", "b2"),
+        response.renderedPlayerMessage());
   }
 
   @Test

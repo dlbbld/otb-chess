@@ -28,8 +28,6 @@ import com.dlb.chess.dumbboard.game.model.GameState;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 import com.dlb.chess.dumbboard.server.message.MessageConverter;
 import com.dlb.chess.dumbboard.server.model.GameRoom;
-import com.dlb.chess.dumbboard.touchmove.TouchMoveObligation;
-import com.dlb.chess.dumbboard.touchmove.TouchMoveType;
 import com.dlb.chess.moves.utility.CastlingUtility;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -253,7 +251,7 @@ public class GameWebSocketServer extends WebSocketServer {
     if (midPlayResponse.isPresent()) {
       final ArbiterResponse response = midPlayResponse.get();
       if (response.type() == ArbiterResponseType.POSITION_CHANGE) {
-        sendRestoreInstructions(room, side, response.message(), "error");
+        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
       } else {
         sendArbiterResponse(room, side, response);
       }
@@ -327,34 +325,19 @@ public class GameWebSocketServer extends WebSocketServer {
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     sendArbiterResponse(room, side, response);
 
-    if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION && response.obligation().isPresent()) {
-      final JsonObject opponentMsg = new JsonObject();
-      opponentMsg.addProperty("type", "touch_move_violation");
-      opponentMsg.addProperty("message", formatOpponentTouchMoveViolation(response.obligation().get()));
-      room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
-    } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
-      final JsonObject opponentMsg = new JsonObject();
-      opponentMsg.addProperty("type", "released_piece_violation");
-      opponentMsg.addProperty("message", formatOpponentReleasedPieceViolation(response.message()));
-      room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
-    } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
-      final JsonObject opponentMsg = new JsonObject();
-      opponentMsg.addProperty("type", "illegal_move");
-      opponentMsg.addProperty("message", formatOpponentIllegalMove(response.message()));
-      room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
-    }
+    sendOpponentArbiterMessage(room, side, response);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       sendClockUpdate(room);
       // Note: opponentMoved (sent by sendArbiterResponse) already includes the board state.
       // Do NOT also send boardUpdate here, as it can overwrite the opponent's in-progress moves.
     } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
-      sendRestoreInstructions(room, side, response.message(), "error");
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
     } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
-      sendRestoreInstructions(room, side, response.message(), "error",
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
-      sendRestoreInstructions(room, side, response.message(), "error");
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
     }
 
     checkGameEnded(room);
@@ -431,11 +414,11 @@ public class GameWebSocketServer extends WebSocketServer {
     // intervention — for the move-validity violations, this also drives the restoration flow.
     sendArbiterResponse(room, side, response);
     if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
-      sendRestoreInstructions(room, side, response.message(), "error");
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
-      sendRestoreInstructions(room, side, response.message(), "error");
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
     } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
-      sendRestoreInstructions(room, side, response.message(), "error",
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     }
     // INCOMPLETE_MOVE / repeated-offer warning — message has already been sent, no further action.
@@ -683,6 +666,18 @@ public class GameWebSocketServer extends WebSocketServer {
     room.sendToSide(side, GSON.toJson(msg));
   }
 
+  private void sendOpponentArbiterMessage(GameRoom room, Side side, ArbiterResponse response) {
+    final Optional<String> opponentMessage = response.renderedOpponentMessage();
+    if (opponentMessage.isEmpty()) {
+      return;
+    }
+    final JsonObject opponentMsg = new JsonObject();
+    opponentMsg.addProperty("type", response.type().name().toLowerCase());
+    opponentMsg.addProperty("message", opponentMessage.get());
+    opponentMsg.addProperty("style", response.style());
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
+  }
+
   private void forwardBoardEventToOpponent(GameRoom room, Side side, JsonObject eventData) {
     final JsonObject forwardMsg = new JsonObject();
     forwardMsg.addProperty("type", "opponentBoardEvent");
@@ -721,7 +716,8 @@ public class GameWebSocketServer extends WebSocketServer {
   private void sendArbiterResponse(GameRoom room, Side side, ArbiterResponse response) {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", response.type().name().toLowerCase());
-    msg.addProperty("message", response.message());
+    msg.addProperty("message", response.renderedPlayerMessage());
+    msg.addProperty("style", response.style());
 
     if (response.acceptedMove().isPresent()) {
       final var move = response.acceptedMove().get();
@@ -771,68 +767,6 @@ public class GameWebSocketServer extends WebSocketServer {
     return switch (event.type()) {
       case CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE -> true;
       case RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> false;
-    };
-  }
-
-  static String formatOpponentTouchMoveViolation(TouchMoveObligation obligation) {
-    final String pieceName = formatPieceName(obligation);
-    final String squareName = obligation.square().getName();
-    if (obligation.type() == TouchMoveType.OWN_PIECE) {
-      return "Your opponent has made a touch-move violation. They first touched the " + pieceName + " on "
-          + squareName + ", which has legal moves, but moved another piece. They are requested to restore the "
-          + "position and move the touched piece.";
-    }
-    return "Your opponent has made a touch-move violation. They first touched your " + pieceName + " on "
-        + squareName + ", which can be captured, but did not capture it. They are requested to restore the "
-        + "position and make a move that satisfies the touch-move rule.";
-  }
-
-  static String formatOpponentIllegalMove(String playerMessage) {
-    final String detail = extractIllegalMoveDetail(playerMessage);
-    if (detail.isBlank()) {
-      return "Your opponent made an illegal move. They are requested to restore the position.";
-    }
-    return "Your opponent made an illegal move: " + detail
-        + " They are requested to restore the position.";
-  }
-
-  static String formatOpponentReleasedPieceViolation(String playerMessage) {
-    String detail = extractViolationDetail(playerMessage, "Released-piece violation: ");
-    if (detail.isBlank()) {
-      return "Your opponent violated the released-piece rule. They are requested to restore the released position.";
-    }
-    detail = detail.replace("You already released", "they already released")
-        .replace("you cannot change", "they cannot change")
-        .replace("Please put", "They are requested to put");
-    return "Your opponent violated the released-piece rule: " + detail;
-  }
-
-  private static String extractIllegalMoveDetail(String playerMessage) {
-    return extractViolationDetail(playerMessage, "Illegal move: ");
-  }
-
-  private static String extractViolationDetail(String playerMessage, String prefix) {
-    String detail = playerMessage.trim();
-    if (detail.startsWith(prefix)) {
-      detail = detail.substring(prefix.length()).trim();
-    } else if (detail.startsWith("Illegal move.")) {
-      detail = detail.substring("Illegal move.".length()).trim();
-    }
-    if (detail.endsWith("Please restore the position.")) {
-      detail = detail.substring(0, detail.length() - "Please restore the position.".length()).trim();
-    }
-    return detail;
-  }
-
-  private static String formatPieceName(TouchMoveObligation obligation) {
-    return switch (obligation.piece().getPieceType()) {
-      case KING -> "king";
-      case QUEEN -> "queen";
-      case ROOK -> "rook";
-      case BISHOP -> "bishop";
-      case KNIGHT -> "knight";
-      case PAWN -> "pawn";
-      default -> "piece";
     };
   }
 
