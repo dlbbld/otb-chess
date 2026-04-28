@@ -83,8 +83,8 @@ public class ArbiterEngine {
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
       currentPosition = applyEvent(currentPosition, event);
       if (isReleaseOnBoard(event)) {
-        final Set<StaticPosition> allowedFinalPositions = findAllowedFinalPositionsForRelease(board, event);
-        if (!allowedFinalPositions.isEmpty()) {
+        final ReleaseCommitment commitment = findCommitmentForRelease(board, event);
+        if (!commitment.allowedFinalPositions().isEmpty()) {
           return true;
         }
       }
@@ -107,6 +107,25 @@ public class ArbiterEngine {
         sequence);
     if (releasedPieceViolation.isPresent()) {
       final ReleasedPieceLock lock = releasedPieceViolation.get();
+      // Castling-only commitment ⇒ the player must complete the castling, not restore
+      // the king. The message points them at the rook's destination instead of telling
+      // them (misleadingly) to "put the king back" — the king is already on the right
+      // square.
+      final Optional<LegalMove> castlingMove = lock.uniqueCastlingMove();
+      if (castlingMove.isPresent()) {
+        final MoveSpecification spec = castlingMove.get().moveSpecification();
+        final Side castlingSide = castlingMove.get().havingMove();
+        final Square rookFrom = CastlingAttemptDetector.calculateRookCastlingFrom(castlingSide,
+            spec.castlingMove());
+        final Square rookTo = CastlingAttemptDetector.calculateRookCastlingTo(castlingSide,
+            spec.castlingMove());
+        final String castlingDirection = spec.castlingMove() == CastlingMove.KING_SIDE
+            ? "kingside" : "queenside";
+        return ArbiterResponse.releasedPieceViolationCastling(
+            new ArbiterResponse.ReleasedPieceCastlingContext(lock.piece(), lock.square(),
+                castlingDirection, rookFrom, rookTo),
+            lock.releasePosition());
+      }
       return ArbiterResponse.releasedPieceViolation(new ReleasedPieceContext(lock.piece(), lock.square()),
           lock.releasePosition());
     }
@@ -143,8 +162,31 @@ public class ArbiterEngine {
   private record ReleasedPieceLock(
       StaticPosition releasePosition,
       Set<StaticPosition> allowedFinalPositions,
+      Set<LegalMove> committedMoves,
       Piece piece,
       Square square) {
+
+    /**
+     * True iff every legal move consistent with the release is a castling move (i.e. the
+     * release commits the player exclusively to castling). In that case the player must
+     * complete the castling rather than restore the released piece, and the message
+     * should reflect that.
+     */
+    boolean isCastlingOnlyCommitment() {
+      if (committedMoves.isEmpty()) {
+        return false;
+      }
+      return committedMoves.stream()
+          .allMatch(m -> CastlingUtility.calculateIsCastlingMove(m.moveSpecification()));
+    }
+
+    /** The unique castling move the player is committed to, when {@link #isCastlingOnlyCommitment()}. */
+    Optional<LegalMove> uniqueCastlingMove() {
+      if (committedMoves.size() == 1 && isCastlingOnlyCommitment()) {
+        return Optional.of(committedMoves.iterator().next());
+      }
+      return Optional.empty();
+    }
   }
 
   private static Optional<ReleasedPieceLock> findReleasedPieceViolation(ApiBoard board, StaticPosition afterPosition,
@@ -163,9 +205,10 @@ public class ArbiterEngine {
       currentPosition = applyEvent(currentPosition, event);
 
       if (firstReleasedLegalPosition.isEmpty() && isReleaseOnBoard(event)) {
-        final Set<StaticPosition> allowedFinalPositions = findAllowedFinalPositionsForRelease(board, event);
-        if (!allowedFinalPositions.isEmpty()) {
-          firstReleasedLegalPosition = Optional.of(new ReleasedPieceLock(currentPosition, allowedFinalPositions,
+        final ReleaseCommitment commitment = findCommitmentForRelease(board, event);
+        if (!commitment.allowedFinalPositions().isEmpty()) {
+          firstReleasedLegalPosition = Optional.of(new ReleasedPieceLock(currentPosition,
+              commitment.allowedFinalPositions(), commitment.committedMoves(),
               event.piece(), event.targetSquare()));
         }
       }
@@ -178,15 +221,26 @@ public class ArbiterEngine {
     return Optional.empty();
   }
 
-  private static Set<StaticPosition> findAllowedFinalPositionsForRelease(ApiBoard board, BoardEvent event) {
-    final Set<StaticPosition> result = new HashSet<>();
+  /**
+   * Captures both the set of allowed final positions and the set of legal moves that
+   * the release commits the player to. The legal-move set lets the message-building
+   * code recognise a castling-only commitment and produce the castling-specific
+   * arbiter message.
+   */
+  private record ReleaseCommitment(Set<StaticPosition> allowedFinalPositions, Set<LegalMove> committedMoves) {
+  }
+
+  private static ReleaseCommitment findCommitmentForRelease(ApiBoard board, BoardEvent event) {
+    final Set<StaticPosition> positions = new HashSet<>();
+    final Set<LegalMove> moves = new HashSet<>();
     for (final LegalMove legalMove : board.getLegalMoveSet()) {
       if (isReleasePartOfLegalMove(board.getHavingMove(), event, legalMove)) {
-        result.add(Board.createPositionAfterMove(board.getStaticPosition(), board.getHavingMove(),
+        moves.add(legalMove);
+        positions.add(Board.createPositionAfterMove(board.getStaticPosition(), board.getHavingMove(),
             legalMove.moveSpecification()));
       }
     }
-    return result;
+    return new ReleaseCommitment(positions, moves);
   }
 
   private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove) {

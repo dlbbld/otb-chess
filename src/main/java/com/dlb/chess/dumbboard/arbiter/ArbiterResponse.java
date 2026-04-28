@@ -78,6 +78,21 @@ public record ArbiterResponse(
   public record ReleasedPieceContext(Piece piece, Square square) {
   }
 
+  /**
+   * Released-piece context for the case where the release commits the player
+   * exclusively to a castling move. Carries the castling direction and the rook
+   * from/to so the message can tell the player to complete the castling — rather
+   * than misleadingly asking them to "put the king back", since the king is
+   * already on the right square.
+   */
+  public record ReleasedPieceCastlingContext(
+      Piece piece,
+      Square square,
+      String castlingDirection,
+      Square rookFrom,
+      Square rookTo) {
+  }
+
   public static ArbiterResponse moveAccepted(LegalMove move) {
     return new ArbiterResponse(ArbiterResponseType.MOVE_ACCEPTED, MessageKey.ARBITER_MOVE_ACCEPTED, List.of(),
         Optional.empty(), List.of(), Optional.of(move), Optional.empty(), Optional.empty(), Optional.empty(),
@@ -106,6 +121,29 @@ public record ArbiterResponse(
         MessageKey.ARBITER_RELEASED_PIECE_PLAYER, args, Optional.of(MessageKey.ARBITER_RELEASED_PIECE_OPPONENT),
         args, Optional.empty(), Optional.empty(), Optional.ofNullable(restorePosition), Optional.empty(),
         Optional.of(context));
+  }
+
+  /**
+   * Released-piece violation where the release commits the player to castling. The
+   * message tells the player to complete the castling by placing the rook on its
+   * target square; the king is already correctly placed.
+   */
+  public static ArbiterResponse releasedPieceViolationCastling(ReleasedPieceCastlingContext context,
+      StaticPosition restorePosition) {
+    final List<Object> args = List.of(
+        context.square().getName(),
+        context.castlingDirection(),
+        context.rookFrom().getName(),
+        context.rookTo().getName());
+    // The standard ReleasedPieceContext (piece + square) is also carried, so callers
+    // that read structured fields without distinguishing castling still see the king
+    // and the release square.
+    final ReleasedPieceContext releasedContext = new ReleasedPieceContext(context.piece(), context.square());
+    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION,
+        MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, args,
+        Optional.of(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_OPPONENT), args,
+        Optional.empty(), Optional.empty(), Optional.ofNullable(restorePosition), Optional.empty(),
+        Optional.of(releasedContext));
   }
 
   public static ArbiterResponse illegalMove(IllegalMoveDetail detail) {

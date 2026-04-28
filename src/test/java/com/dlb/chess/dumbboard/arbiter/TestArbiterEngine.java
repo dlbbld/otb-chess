@@ -187,7 +187,50 @@ class TestArbiterEngine {
     // The release on g1 is part of the legal castling move, so it commits — but the only
     // allowed final position is the fully castled one with the rook on f1.
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    // Castling-specific message: the king's home is correct, the player must complete
+    // the castling by moving the rook from h1 to f1. The message must NOT mislead the
+    // player into "putting the king back" since the king is already where it belongs.
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, response.playerMessageKey());
     assertTrue(response.message().contains("king on g1"));
+    assertTrue(response.message().contains("kingside castling"));
+    assertTrue(response.message().contains("from h1 to f1"));
+  }
+
+  /** User-reported scenario: kingside castling is legal, the player releases the king on g1,
+      then drags the rook from h1 to E1 (wrong destination) and presses the clock. The arbiter
+      must report a castling-specific message asking the player to complete the castling by
+      placing the rook on f1 — not the misleading "put the king back on g1" message, since
+      the king is already correctly placed. */
+  @Test
+  void testReleasedPieceViolationCastlingRookMovedToWrongSquare() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final ApiBoard board = new Board();
+    board.performMove("e4");
+    board.performMove("e5");
+    board.performMove("Nf3");
+    board.performMove("Nf6");
+    board.performMove("Bc4");
+    board.performMove("Bc5");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.E1, Piece.WHITE_ROOK, 1));
+
+    final StaticPosition wrongAfter = board.getStaticPosition()
+        .createChangedPosition(Square.E1, Piece.WHITE_ROOK)
+        .createChangedPosition(Square.G1, Piece.WHITE_KING)
+        .createChangedPosition(Square.H1, Piece.NONE);
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, wrongAfter, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, response.playerMessageKey());
+    assertTrue(response.message().contains("king on g1"));
+    assertTrue(response.message().contains("kingside castling"));
+    assertTrue(response.message().contains("from h1 to f1"));
+    // The misleading "put the king back" wording from the generic released-piece message
+    // must NOT appear — the king is already correctly placed.
+    assertFalse(response.message().contains("Please put the king back"));
   }
 
   /** Castling completed normally: king released on g1, then rook released on f1, board now in

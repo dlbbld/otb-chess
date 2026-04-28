@@ -128,7 +128,7 @@ public final class CastlingAttemptDetector {
         && event.square() == calculateRookCastlingFrom(sideToMove, castlingMove);
   }
 
-  private static Square calculateRookCastlingFrom(Side sideToMove, CastlingMove castlingMove) {
+  public static Square calculateRookCastlingFrom(Side sideToMove, CastlingMove castlingMove) {
     return switch (castlingMove) {
       case KING_SIDE -> Square.calculateKingSideRookOriginalSquare(sideToMove);
       case QUEEN_SIDE -> Square.calculateQueenSideRookOriginalSquare(sideToMove);
