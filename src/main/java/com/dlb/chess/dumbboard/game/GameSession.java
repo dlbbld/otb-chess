@@ -23,8 +23,7 @@ import com.dlb.chess.dumbboard.game.model.GameResultType;
 import com.dlb.chess.dumbboard.game.model.GameState;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 import com.dlb.chess.pgn.create.PgnCreate;
-import com.dlb.chess.unwinnability.full.enums.DeadPositionFull;
-import com.dlb.chess.unwinnability.full.enums.UnwinnableFull;
+import com.dlb.chess.unwinnability.quick.enums.UnwinnableQuick;
 
 /**
  * Central orchestrator for a dumb chessboard game.
@@ -465,21 +464,31 @@ public class GameSession {
 
   /**
    * Player resigns.
+   *
+   * <p>FIDE-aligned: a resignation is a draw if the opponent has no series of legal moves
+   * that could result in checkmate. We use the QUICK winnability check, not the FULL CUA:
+   * full CUA is a deep iterative-deepening helpmate search that can take hundreds of ms
+   * on midgame positions, while QUICK runs in microseconds and is precise enough for the
+   * cases that matter at resignation/flag-fall (lone king, K+B, K+N, etc.).
+   * POSSIBLY_WINNABLE is treated as winnable: if we can't prove the opponent is
+   * unwinnable, we award them the win.
    */
   public synchronized GameResult resign(Side side) {
     final Side opponent = side.getOppositeSide();
 
-    // Check if the opponent can even win
-    final UnwinnableFull winnability = board.isUnwinnableFull(opponent);
-    if (winnability == UnwinnableFull.UNWINNABLE) {
+    final UnwinnableQuick winnability = board.isUnwinnableQuick(opponent);
+    if (winnability == UnwinnableQuick.UNWINNABLE) {
+      final String sideName = sideName(side);
+      final String opponentName = sideName(opponent);
       final GameResult drawResult = new GameResult(GameResultType.RESIGNATION, Side.NONE,
-          "The game is drawn. The opponent cannot checkmate by any series of legal moves.");
+          sideName + " resigned, but because " + opponentName
+              + " has no possible win, the game is a draw.");
       endGame(drawResult);
       return drawResult;
     }
 
-    final String sideName = side == Side.WHITE ? "White" : "Black";
-    final String opponentName = opponent == Side.WHITE ? "White" : "Black";
+    final String sideName = sideName(side);
+    final String opponentName = sideName(opponent);
     final GameResult lossResult = new GameResult(GameResultType.RESIGNATION, opponent,
         sideName + " resigns. " + opponentName + " wins the game.");
     endGame(lossResult);
@@ -490,6 +499,13 @@ public class GameSession {
 
   /**
    * Checks for flag fall. Should be called periodically.
+   *
+   * <p>When a side runs out of time, we use the QUICK winnability check on the OPPONENT
+   * (the side that did NOT time out) to decide whether they can possibly checkmate. If
+   * they cannot, the game is a draw (FIDE 6.9 / 5.2.2). The QUICK check is a fast
+   * static analysis suitable for use on every flag fall; the FULL CUA is intentionally
+   * avoided here because it is a deep search and the dumb-board has no other reason to
+   * pay that cost.
    */
   public synchronized Optional<GameResult> checkFlagFall() {
     if (state != GameState.IN_PROGRESS) {
@@ -501,15 +517,16 @@ public class GameSession {
     for (final Side side : new Side[] { Side.WHITE, Side.BLACK }) {
       if (clock.isFlagFall(side)) {
         final Side opponent = side.getOppositeSide();
-        final UnwinnableFull winnability = board.isUnwinnableFull(opponent);
+        final UnwinnableQuick winnability = board.isUnwinnableQuick(opponent);
 
+        final String sideName = sideName(side);
+        final String opponentName = sideName(opponent);
         final GameResult flagResult;
-        if (winnability == UnwinnableFull.UNWINNABLE) {
+        if (winnability == UnwinnableQuick.UNWINNABLE) {
           flagResult = new GameResult(GameResultType.FLAG_FALL, Side.NONE,
-              "The game is drawn. The opponent cannot checkmate by any series of legal moves.");
+              sideName + "'s time has elapsed, but because " + opponentName
+                  + " has no possible win, the game is a draw.");
         } else {
-          final String sideName = side == Side.WHITE ? "White" : "Black";
-          final String opponentName = opponent == Side.WHITE ? "White" : "Black";
           flagResult = new GameResult(GameResultType.FLAG_FALL, opponent,
               sideName + " loses on time. " + opponentName + " wins the game.");
         }
@@ -524,28 +541,20 @@ public class GameSession {
 
   // ===== Automatic game endings =====
 
+  /**
+   * Game-ending detection that runs after every accepted move and on every auto-end
+   * board event. Only fast checks are allowed here — never the full CUA
+   * (isDeadPositionFull / isUnwinnableFull). Insufficient material is detected via
+   * the cheap structural test on the board; positions that are dead by exhaustive
+   * search but not by insufficient material are not auto-ended (the players will end
+   * them via fivefold/75-move/stalemate or claim a draw).
+   */
   private Optional<GameResult> checkAutomaticEndings() {
-    final long t0 = System.nanoTime();
-    final Optional<GameResult> result = checkAutomaticEndingsInner();
-    final long elapsedMs = (System.nanoTime() - t0) / 1_000_000L;
-    // Only log when it took noticeable time — keep the log noise low. The CUA
-    // (UnwinnableFullAnalyzer.unwinnableFull, called inside isDeadPositionFull)
-    // is the primary cost here. A persistent >50 ms tail on one side's clock
-    // press is the user-visible "switching takes longer" symptom.
-    if (elapsedMs >= 50) {
-      System.out.println("[perf] checkAutomaticEndings (" + board.getHavingMove()
-          + " to move) took " + elapsedMs + " ms");
-    }
-    return result;
-  }
-
-  private Optional<GameResult> checkAutomaticEndingsInner() {
     // 1. Checkmate
     if (board.isCheckmate()) {
       final Side winner = board.getHavingMove().getOppositeSide();
-      final String winnerName = winner == Side.WHITE ? "White" : "Black";
       return Optional.of(new GameResult(GameResultType.CHECKMATE, winner,
-          winnerName + " won the game by checkmate."));
+          sideName(winner) + " won the game by checkmate."));
     }
 
     // 2. Stalemate
@@ -554,10 +563,10 @@ public class GameSession {
           "The game is drawn by stalemate."));
     }
 
-    // 3. Dead position (CUA)
-    if (board.isDeadPositionFull() == DeadPositionFull.DEAD_POSITION) {
+    // 3. Insufficient material (FIDE 9.4 / 5.2.2). Fast structural check; no search.
+    if (board.isInsufficientMaterial()) {
       return Optional.of(new GameResult(GameResultType.DEAD_POSITION, Side.NONE,
-          "The game is drawn. Neither player can checkmate the opponent."));
+          "The game is drawn by insufficient material. Neither player can checkmate."));
     }
 
     // 4. Fivefold repetition
@@ -589,6 +598,10 @@ public class GameSession {
     this.state = GameState.ENDED;
     this.result = gameResult;
     this.clock.stopClock();
+  }
+
+  private static String sideName(Side side) {
+    return side == Side.WHITE ? "White" : "Black";
   }
 
   /**
