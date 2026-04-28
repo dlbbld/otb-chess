@@ -60,13 +60,18 @@ public class DrawClaimManager {
     board.unperformMove();
 
     if (isThreefold) {
-      // Claim accepted — the move will be performed by the game session
-      return DrawClaimResult.accepted("The game is drawn by threefold repetition.");
+      // Claim accepted — the move will be performed by the game session.
+      // Echo the SAN the player entered so the message clearly references their input.
+      return DrawClaimResult.accepted(
+          "Claim accepted. There would be a threefold repetition after the entered move "
+              + san + ". The game is drawn.");
     }
 
-    // Claim rejected — the player must still execute this move
+    // Claim rejected — the player must still execute this move.
     return DrawClaimResult.rejectedWithMove(
-        "Threefold claim rejected. Please play the specified move.", moveSpec);
+        "Claim rejected, because there is no threefold repetition after the mentioned move "
+            + san + ". Please play.",
+        moveSpec);
   }
 
   private DrawClaimResult claimFiftyMoveOnBoard(ApiBoard board) {
@@ -93,10 +98,15 @@ public class DrawClaimManager {
     board.unperformMove();
 
     if (isFiftyMove) {
-      return DrawClaimResult.accepted("The game is drawn by the 50-move rule.");
+      // Echo the SAN the player entered.
+      return DrawClaimResult.accepted(
+          "Claim accepted. The 50-move rule would apply after the entered move "
+              + san + ". The game is drawn.");
     }
 
     return DrawClaimResult.rejectedWithMove(
-        "50-move rule claim rejected. Please play the specified move.", moveSpec);
+        "Claim rejected, because the 50-move rule does not apply after the mentioned move "
+            + san + ". Please play.",
+        moveSpec);
   }
 }
