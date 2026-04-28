@@ -50,15 +50,21 @@ class GameWebSocket {
     }
   }
 
-  createGame(side, initialTimeMs, incrementMs, maxIllegalMoves, autoResumeAfterRestore) {
-    this.send({
+  createGame(side, initialTimeMs, incrementMs, maxIllegalMoves, autoResumeAfterRestore, fen) {
+    const msg = {
       type: 'createGame',
       side: side,
       initialTimeMs: initialTimeMs,
       incrementMs: incrementMs,
       maxIllegalMoves: maxIllegalMoves,
       autoResumeAfterRestore: autoResumeAfterRestore
-    });
+    };
+    // Optional starting FEN — when supplied the server validates via clean-chess and
+    // overrides the creator's side to whichever side is to move in the FEN.
+    if (fen) {
+      msg.fen = fen;
+    }
+    this.send(msg);
   }
 
   joinGame(gameId) {

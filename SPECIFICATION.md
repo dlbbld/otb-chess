@@ -35,11 +35,28 @@ The player configures the game on a single screen before clicking **Create**:
    - **Auto-resume after restoration (default).** When the position is restored to the start of the turn (either via the player's manual restoration or the "Do this for me" button), the clock resumes immediately on the side that has the move.
    - **Manual continue (ready-handshake).** After restoration, both players must click **Ready to continue** before the clock restarts. Used when the players want to confirm they have agreed on the position.
 
+5. **Starting position FEN** (optional). A text field on the start screen accepts an
+   arbitrary FEN. Behaviour:
+   - **Empty:** standard initial position; the player's chosen side is honoured.
+   - **Valid FEN:** the game starts from that position. The side to move in the FEN
+     plays first, so the **creator is given that side** regardless of the colour
+     they originally selected — they will be the first to move. The second player
+     to join gets the other colour.
+   - **Invalid FEN:** the server rejects the create request and returns the
+     chess-library validation reason via the standard error channel
+     ("Invalid FEN: …"). No game is created. The player can correct the FEN and
+     try again.
+
+   Validation is performed by the chess library (`new Board(fenString)` →
+   `FenParserAdvanced.parseFenAdvanced` → `FenAdvancedValidationException`); the
+   exception's message is forwarded verbatim so the player sees the specific
+   reason (illegal piece placement, malformed castling rights, etc.).
+
 ### Joining
 
-5. The creator receives an **8-character game code** with a **Copy code** button.
-6. The second player opens the join page; the **game code field auto-fills** from the URL or from the creator's clipboard share, so the second player only confirms.
-7. Both browsers connect via WebSocket — the game begins.
+6. The creator receives an **8-character game code** with a **Copy code** button.
+7. The second player opens the join page; the **game code field auto-fills** from the URL or from the creator's clipboard share, so the second player only confirms.
+8. Both browsers connect via WebSocket — the game begins.
 
 ---
 

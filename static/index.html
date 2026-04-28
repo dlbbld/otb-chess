@@ -57,6 +57,13 @@
         <label><input type="radio" name="autoResumeAfterRestore" value="false"> No</label>
       </div>
 
+      <label>Starting position FEN <span style="font-weight:normal;color:#888;">(optional — leave empty for normal start)</span>:</label>
+      <input type="text" id="startingFen" placeholder="e.g. rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
+      <p style="font-size:12px;color:#777;margin:-4px 0 12px;">
+        If supplied, the game starts from this position. The side to move in the FEN plays first;
+        the player creating the game is given that side automatically.
+      </p>
+
       <button id="createGameBtn" class="primary-btn">Create Game</button>
     </div>
 
@@ -101,10 +108,15 @@
       const maxIllegal = document.getElementById('maxIllegalMoves').value;
       const autoResumeAfterRestore =
         document.querySelector('input[name="autoResumeAfterRestore"]:checked').value;
-      window.location.href = '/game.html?creator=true&side=' + side
+      const fen = document.getElementById('startingFen').value.trim();
+      let url = '/game.html?creator=true&side=' + side
         + '&time=' + selectedTime + '&inc=' + selectedInc
         + '&maxIllegal=' + encodeURIComponent(maxIllegal)
         + '&autoResumeAfterRestore=' + encodeURIComponent(autoResumeAfterRestore);
+      if (fen) {
+        url += '&fen=' + encodeURIComponent(fen);
+      }
+      window.location.href = url;
     });
 
     // Join game

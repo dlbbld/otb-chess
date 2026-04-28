@@ -40,7 +40,9 @@ class Game {
       // maxIllegal: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
       const maxIllegalMoves = parseInt(params.get('maxIllegal') || '2');
       const autoResumeAfterRestore = params.get('autoResumeAfterRestore') !== 'false';
-      this.ws.createGame(this.side, initialTimeMs, incrementMs, maxIllegalMoves, autoResumeAfterRestore);
+      const fen = params.get('fen') || '';
+      this.ws.createGame(this.side, initialTimeMs, incrementMs, maxIllegalMoves,
+          autoResumeAfterRestore, fen);
     } else {
       this.ws.joinGame(this.gameId);
     }
@@ -120,7 +122,12 @@ class Game {
   setupMessageHandlers() {
     this.ws.on('gameCreated', (data) => {
       this.gameId = data.gameId;
+      // The server may override the requested side when a custom FEN is supplied
+      // (the side-to-move from the FEN wins so the creator can play first).
       this.side = data.side;
+      if (this.side === 'black' && !this.board.flipped) {
+        this.board.flip();
+      }
       localStorage.setItem('lastGameId', data.gameId);
       this.board.setPosition(data.board);
       this.board.renderAll();
@@ -164,7 +171,10 @@ class Game {
 
     this.ws.on('gameStarted', (data) => {
       this.gameActive = true;
-      this.isMyTurn = this.side === 'white';
+      // Use the server-supplied side to move (necessary for custom-FEN games where
+      // Black may be to move first); fall back to White for the normal case.
+      const havingMove = data.havingMove || 'white';
+      this.isMyTurn = havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.updateButtons();
       this.showArbiterMessage('Game started! ' + (this.isMyTurn ? 'Your turn.' : "Opponent's turn."));

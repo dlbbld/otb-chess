@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.java_websocket.WebSocket;
 
+import com.dlb.chess.board.Board;
 import com.dlb.chess.board.enums.Side;
 import com.dlb.chess.dumbboard.game.GameSession;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
@@ -33,8 +34,18 @@ public class GameRoom {
   }
 
   public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore) {
+    this(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, new Board());
+  }
+
+  /**
+   * Constructor accepting a custom starting board (e.g. parsed from a FEN supplied
+   * on the start screen). FEN parsing and validation happen at the server boundary
+   * before the room is built.
+   */
+  public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves,
+      boolean autoResumeAfterRestore, Board startingBoard) {
     this.gameId = gameId;
-    this.session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore);
+    this.session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
     this.timeControl = timeControl;
   }
 

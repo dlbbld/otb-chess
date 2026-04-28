@@ -189,6 +189,35 @@ class TestGameSession {
   }
 
   @Test
+  void testCustomFenStartingPositionWithBlackToMove() {
+    // FEN with Black to move: White just played e4. Standard openings notation.
+    final Board board = new Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
+    final GameSession session = new GameSession(TEST_TIME,
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
+        true, board);
+    session.startGame();
+
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+    // The side-to-move from the FEN is Black, not the hardcoded White.
+    assertEquals(Side.BLACK, session.getHavingMove());
+    // Black's clock is the one running — verify by attempting a White move first
+    // and confirming it's rejected as "not your turn".
+    final ArbiterResponse rejected = session.pressClockButton(Side.WHITE,
+        session.getBoard().getStaticPosition());
+    assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, rejected.type());
+
+    // Black plays e5 (the natural reply) and the move is accepted.
+    session.recordEvent(Side.BLACK,
+        BoardEvent.dragMove(Square.E7, Square.E5, Piece.BLACK_PAWN, 0));
+    final StaticPosition afterE5 = session.getBoard().getStaticPosition()
+        .createChangedPosition(Square.E7, Piece.NONE)
+        .createChangedPosition(Square.E5, Piece.BLACK_PAWN);
+    final ArbiterResponse accepted = session.pressClockButton(Side.BLACK, afterE5);
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, accepted.type());
+    assertEquals(Side.WHITE, session.getHavingMove());
+  }
+
+  @Test
   void testResignation() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();

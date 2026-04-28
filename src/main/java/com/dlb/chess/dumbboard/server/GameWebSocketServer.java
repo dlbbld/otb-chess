@@ -13,6 +13,7 @@ import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
+import com.dlb.chess.board.Board;
 import com.dlb.chess.board.StaticPosition;
 import com.dlb.chess.board.enums.Side;
 import com.dlb.chess.board.enums.Square;
@@ -119,18 +120,52 @@ public class GameWebSocketServer extends WebSocketServer {
   private void handleCreateGame(WebSocket conn, JsonObject json) {
     final long initialTimeMs = json.get("initialTimeMs").getAsLong();
     final long incrementMs = json.get("incrementMs").getAsLong();
-    final String sideStr = json.get("side").getAsString();
+    final String requestedSide = json.get("side").getAsString();
     // maxIllegalMoves: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
     final int maxIllegalMoves = json.has("maxIllegalMoves") ? json.get("maxIllegalMoves").getAsInt()
         : com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES;
     final boolean autoResumeAfterRestore = !json.has("autoResumeAfterRestore")
         || json.get("autoResumeAfterRestore").getAsBoolean();
 
+    // Optional FEN — when supplied, the game starts from that position. Validation goes
+    // through clean-chess so the player gets the chess library's specific reason. The
+    // creator's side is overridden to the side-to-move from the FEN, so the creator can
+    // play first regardless of which colour they originally selected on the start screen.
+    final String fenInput = (json.has("fen") && !json.get("fen").isJsonNull())
+        ? json.get("fen").getAsString().trim() : "";
+
+    final Board startingBoard;
+    final String creatorSide;
+    if (fenInput.isEmpty()) {
+      startingBoard = new Board();
+      creatorSide = "white".equalsIgnoreCase(requestedSide) ? "white" : "black";
+    } else {
+      final Board parsed;
+      try {
+        parsed = new Board(fenInput);
+      } catch (final com.dlb.chess.common.exceptions.FenAdvancedValidationException
+          | com.dlb.chess.common.exceptions.FenAdvancedFurtherValidationException e) {
+        // Expected user error — surface the chess library's specific validation reason.
+        sendError(conn, "Invalid FEN: " + e.getMessage());
+        return;
+      } catch (final RuntimeException e) {
+        // Any other parsing failure: still treat as user error rather than internal,
+        // because the FEN string is user input.
+        sendError(conn, "Invalid FEN: " + e.getMessage());
+        return;
+      }
+      startingBoard = parsed;
+      // Side-to-move from the FEN wins. If the FEN has Black to move, the creator
+      // (who joins first) plays Black; the second player gets White.
+      creatorSide = parsed.getHavingMove() == com.dlb.chess.board.enums.Side.WHITE ? "white" : "black";
+    }
+
     final String gameId = UUID.randomUUID().toString().substring(0, 8);
     final TimeControl timeControl = new TimeControl(initialTimeMs, incrementMs);
-    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore);
+    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore,
+        startingBoard);
 
-    if ("white".equalsIgnoreCase(sideStr)) {
+    if ("white".equals(creatorSide)) {
       room.setWhitePlayer(conn);
     } else {
       room.setBlackPlayer(conn);
@@ -143,11 +178,14 @@ public class GameWebSocketServer extends WebSocketServer {
     final JsonObject response = new JsonObject();
     response.addProperty("type", "gameCreated");
     response.addProperty("gameId", gameId);
-    response.addProperty("side", sideStr.toLowerCase());
-    response.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(StaticPosition.INITIAL_POSITION)));
+    response.addProperty("side", creatorSide);
+    response.add("board",
+        GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getStaticPosition())));
+    response.addProperty("havingMove", startingBoard.getHavingMove().name().toLowerCase());
     conn.send(GSON.toJson(response));
 
-    System.out.println("Game created: " + gameId + " by " + sideStr);
+    System.out.println("Game created: " + gameId + " by " + creatorSide
+        + (fenInput.isEmpty() ? "" : " (custom FEN)"));
   }
 
   private void handleJoinGame(WebSocket conn, JsonObject json) {
@@ -174,18 +212,26 @@ public class GameWebSocketServer extends WebSocketServer {
 
     playerGameMap.put(conn, gameId);
 
-    // Send join confirmation to the joining player
+    // Send join confirmation to the joining player. Send the actual starting board
+    // (not the hard-coded initial position) so a custom-FEN game shows the right
+    // pieces in the joiner's first render.
+    final var startingPosition = room.getSession().getBoard().getStaticPosition();
+    final var havingMove = room.getSession().getHavingMove();
     final JsonObject joinResponse = new JsonObject();
     joinResponse.addProperty("type", "gameJoined");
     joinResponse.addProperty("gameId", gameId);
     joinResponse.addProperty("side", side);
-    joinResponse.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(StaticPosition.INITIAL_POSITION)));
+    joinResponse.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingPosition)));
+    joinResponse.addProperty("havingMove", havingMove.name().toLowerCase());
     conn.send(GSON.toJson(joinResponse));
 
-    // Notify both players that the game is starting
+    // Notify both players that the game is starting. `havingMove` lets the client
+    // correctly assign the first turn — this matters when the FEN starts with Black
+    // to move.
     final JsonObject startMsg = new JsonObject();
     startMsg.addProperty("type", "gameStarted");
     startMsg.addProperty("message", "Both players connected. Game starting!");
+    startMsg.addProperty("havingMove", havingMove.name().toLowerCase());
     room.sendToBoth(GSON.toJson(startMsg));
 
     // Start the game

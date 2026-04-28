@@ -70,7 +70,21 @@ public class GameSession {
   }
 
   public GameSession(TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore) {
-    this.board = new Board();
+    this(timeControl, maxIllegalMoves, autoResumeAfterRestore, new Board());
+  }
+
+  /**
+   * Constructor for games that start from a non-initial position (e.g. a custom FEN
+   * supplied on the start screen). The board is pre-built by the caller; FEN parsing
+   * and validation happen at the server boundary so the validation reason can be
+   * returned to the client before the {@link GameSession} is created.
+   *
+   * <p>The starting side-to-move is taken from the supplied board, so e.g. a FEN with
+   * Black to move correctly starts the clock on Black at game start.
+   */
+  public GameSession(TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore,
+      Board startingBoard) {
+    this.board = startingBoard;
     this.clock = new ClockManager(timeControl);
     this.arbiter = new ArbiterEngine(maxIllegalMoves);
     this.drawOfferManager = new DrawOfferManager();
@@ -80,7 +94,7 @@ public class GameSession {
 
     this.state = GameState.WAITING_FOR_PLAYERS;
     this.result = null;
-    this.currentSequence = new ActionSequence(Side.WHITE);
+    this.currentSequence = new ActionSequence(board.getHavingMove());
     this.positionBeforeTurn = board.getStaticPosition();
     this.removedSquaresThisTurn = new HashSet<>();
     this.mustExecuteMove = null;
@@ -97,7 +111,9 @@ public class GameSession {
    */
   public synchronized void startGame() {
     this.state = GameState.IN_PROGRESS;
-    this.clock.startClock(Side.WHITE);
+    // The clock starts on whichever side is to move in the starting position,
+    // not blindly on White, so a FEN with Black to move correctly clocks Black.
+    this.clock.startClock(board.getHavingMove());
   }
 
   // ===== Mid-play event recording =====
