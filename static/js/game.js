@@ -183,10 +183,11 @@ class Game {
 
     // After the OPPONENT's move is accepted — we receive the new board state
     this.ws.on('opponentMoved', (data) => {
-      console.log('opponentMoved received');
       if (data.board) {
+        // setPosition already calls renderSquare on every entry in data.board
+        // (the server sends all 64 squares), so a follow-up renderAll is pure
+        // redundant DOM work. Skip it.
         this.board.setPosition(data.board);
-        this.board.renderAll();
         this.board.clearHighlights();
         this.recomputeSideArea();
       }
@@ -212,8 +213,9 @@ class Game {
     });
 
     this.ws.on('boardUpdate', (data) => {
+      // setPosition renders every server-supplied square; the explicit
+      // renderAll afterwards is redundant.
       this.board.setPosition(data.board);
-      this.board.renderAll();
       this.board.clearHighlights();
       this.recomputeSideArea();
       this.isMyTurn = data.havingMove === this.side;
@@ -250,8 +252,8 @@ class Game {
 
     this.ws.on('positionRestored', (data) => {
       if (data.board) {
+        // setPosition already re-renders every supplied square.
         this.board.setPosition(data.board);
-        this.board.renderAll();
         this.board.clearHighlights();
         this.recomputeSideArea();
       }

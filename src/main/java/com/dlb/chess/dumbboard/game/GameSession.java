@@ -525,6 +525,21 @@ public class GameSession {
   // ===== Automatic game endings =====
 
   private Optional<GameResult> checkAutomaticEndings() {
+    final long t0 = System.nanoTime();
+    final Optional<GameResult> result = checkAutomaticEndingsInner();
+    final long elapsedMs = (System.nanoTime() - t0) / 1_000_000L;
+    // Only log when it took noticeable time — keep the log noise low. The CUA
+    // (UnwinnableFullAnalyzer.unwinnableFull, called inside isDeadPositionFull)
+    // is the primary cost here. A persistent >50 ms tail on one side's clock
+    // press is the user-visible "switching takes longer" symptom.
+    if (elapsedMs >= 50) {
+      System.out.println("[perf] checkAutomaticEndings (" + board.getHavingMove()
+          + " to move) took " + elapsedMs + " ms");
+    }
+    return result;
+  }
+
+  private Optional<GameResult> checkAutomaticEndingsInner() {
     // 1. Checkmate
     if (board.isCheckmate()) {
       final Side winner = board.getHavingMove().getOppositeSide();

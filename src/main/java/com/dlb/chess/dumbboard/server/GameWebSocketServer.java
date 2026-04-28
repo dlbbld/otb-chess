@@ -746,7 +746,6 @@ public class GameWebSocketServer extends WebSocketServer {
       msg.add("move", moveData);
     }
 
-    System.out.println("Sending to " + side + ": " + response.type());
     room.sendToSide(side, GSON.toJson(msg));
 
     // Also notify opponent of accepted moves — include full board state
@@ -761,7 +760,6 @@ public class GameWebSocketServer extends WebSocketServer {
       opponentMsg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
       opponentMsg.addProperty("havingMove", havingMove.name().toLowerCase());
       opponentMsg.addProperty("isCheck", isCheck);
-      System.out.println("Sending opponentMoved to " + side.getOppositeSide() + " with board state");
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
     }
   }
@@ -856,7 +854,6 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
     msg.addProperty("havingMove", havingMove.name().toLowerCase());
     msg.addProperty("isCheck", room.getSession().isCheck());
-    System.out.println("Sending boardUpdate to both players. Having move: " + havingMove);
     room.sendToBoth(GSON.toJson(msg));
   }
 
