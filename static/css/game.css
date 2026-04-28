@@ -528,3 +528,73 @@ body:has(.game-layout) {
   border: 1px solid #555; border-radius: 3px; padding: 6px; font-family: monospace;
   font-size: 11px; margin: 4px 0; resize: vertical;
 }
+
+/* === Developer console (technical error detail) ===
+   Fixed to the bottom of the viewport, kept clearly distinct from the user-visible
+   arbiter message area. Appears only when the server emits a devDetail. */
+.dev-console {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 30vh;
+  background: #181a16;
+  color: #d2d6c8;
+  border-top: 1px solid #444;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 11px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.4);
+}
+.dev-console-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  background: #2a2c25;
+  border-bottom: 1px solid #444;
+}
+.dev-console-title {
+  flex: 1;
+  font-weight: bold;
+  color: #b0b3a3;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.dev-console-btn {
+  background: #3a3d33;
+  color: #d2d6c8;
+  border: 1px solid #555;
+  border-radius: 2px;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.dev-console-btn:hover {
+  background: #4a4e42;
+}
+.dev-console-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dev-console-entry {
+  padding: 2px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.dev-console-entry .ts {
+  color: #7a7d6e;
+  margin-right: 6px;
+}
+.dev-console-entry .detail {
+  color: #f0a89e;
+}
+.dev-console.collapsed .dev-console-body {
+  display: none;
+}

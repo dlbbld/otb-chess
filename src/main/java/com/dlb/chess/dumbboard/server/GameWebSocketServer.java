@@ -99,7 +99,7 @@ public class GameWebSocketServer extends WebSocketServer {
         default -> sendError(conn, "Unknown message type: " + type);
       }
     } catch (final Exception e) {
-      sendError(conn, "Error processing message: " + e.getMessage());
+      sendInternalError(conn, e, "onMessage");
     }
   }
 
@@ -832,7 +832,8 @@ public class GameWebSocketServer extends WebSocketServer {
       // Send clock update
       sendClockUpdate(room);
     } catch (final Exception e) {
-      System.err.println("Error in clock tick: " + e.getMessage());
+      System.err.println("[internal] tickClock: " + e);
+      e.printStackTrace();
     }
   }
 
@@ -840,6 +841,28 @@ public class GameWebSocketServer extends WebSocketServer {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "error");
     msg.addProperty("message", message);
+    if (conn != null && conn.isOpen()) {
+      conn.send(GSON.toJson(msg));
+    }
+  }
+
+  /**
+   * Reports an unexpected server-side exception to the client without leaking the raw
+   * technical detail into the user-visible message area. The user sees a single friendly
+   * generic message; the technical detail (exception class + message + the calling context)
+   * goes into a `devDetail` field that the client renders in a collapsible developer pane
+   * at the bottom of the page. The full stack trace is also written to stderr so the
+   * developer can correlate.
+   */
+  private void sendInternalError(WebSocket conn, Throwable e, String context) {
+    System.err.println("[internal] " + context + ": " + e);
+    e.printStackTrace();
+
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "error");
+    msg.addProperty("message", "We are sorry — the arbiter lost his concentration for a moment"
+        + " and could not handle the situation. Please try again.");
+    msg.addProperty("devDetail", context + ": " + e);
     if (conn != null && conn.isOpen()) {
       conn.send(GSON.toJson(msg));
     }

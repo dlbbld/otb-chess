@@ -123,6 +123,17 @@
     </div>
   </div>
 
+  <!-- Developer console for technical error detail. Hidden by default; shown on
+       the first arriving devDetail. Stays out of the user-visible arbiter area. -->
+  <div id="devConsole" class="dev-console" style="display:none;">
+    <div class="dev-console-header">
+      <span class="dev-console-title">Developer log</span>
+      <button id="devConsoleClearBtn" class="dev-console-btn" type="button">clear</button>
+      <button id="devConsoleToggleBtn" class="dev-console-btn" type="button">hide</button>
+    </div>
+    <div id="devConsoleBody" class="dev-console-body"></div>
+  </div>
+
   <script src="js/board.js"></script>
   <script src="js/websocket.js"></script>
   <script src="js/game.js"></script>

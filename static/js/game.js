@@ -47,6 +47,7 @@ class Game {
 
     this.setupButtons();
     this.setupClockButtons();
+    this.setupDevConsoleControls();
   }
 
   // === Clock buttons ===
@@ -396,7 +397,57 @@ class Game {
     });
 
     this.ws.on('error', (data) => {
-      this.showArbiterMessage('Error: ' + data.message, 'error');
+      // The user sees only the friendly server-supplied message. Raw technical
+      // detail (exception class, message, calling context) lives in `devDetail`
+      // and is routed to the developer console at the bottom of the page —
+      // never into the arbiter message area.
+      this.showArbiterMessage(data.message, 'error');
+      if (data.devDetail) {
+        this.appendDevConsole(data.devDetail);
+      }
+    });
+  }
+
+  // === Developer console ===
+
+  /**
+   * Appends a technical error detail to the dev-console pane and reveals the
+   * pane on first use. Out of band from the arbiter message area — the user-
+   * visible UI does not see this text.
+   */
+  appendDevConsole(detail) {
+    const console = document.getElementById('devConsole');
+    const body = document.getElementById('devConsoleBody');
+    if (!console || !body) return;
+    const entry = document.createElement('div');
+    entry.className = 'dev-console-entry';
+    const ts = document.createElement('span');
+    ts.className = 'ts';
+    const now = new Date();
+    ts.textContent = now.toTimeString().slice(0, 8);
+    const text = document.createElement('span');
+    text.className = 'detail';
+    text.textContent = detail;
+    entry.appendChild(ts);
+    entry.appendChild(text);
+    body.appendChild(entry);
+    body.scrollTop = body.scrollHeight;
+    console.style.display = 'flex';
+    console.classList.remove('collapsed');
+  }
+
+  setupDevConsoleControls() {
+    const console = document.getElementById('devConsole');
+    const body = document.getElementById('devConsoleBody');
+    const clearBtn = document.getElementById('devConsoleClearBtn');
+    const toggleBtn = document.getElementById('devConsoleToggleBtn');
+    if (!console || !body || !clearBtn || !toggleBtn) return;
+    clearBtn.addEventListener('click', () => {
+      body.innerHTML = '';
+    });
+    toggleBtn.addEventListener('click', () => {
+      const collapsed = console.classList.toggle('collapsed');
+      toggleBtn.textContent = collapsed ? 'show' : 'hide';
     });
   }
 
