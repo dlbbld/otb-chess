@@ -45,24 +45,23 @@ public class DrawClaimManager {
   }
 
   private DrawClaimResult claimThreefoldWithMove(ApiBoard board, String san) {
-    // Short-circuit: if no legal move from the current position can possibly lead to a
-    // threefold repetition, reject without even parsing the SAN. clean-chess decides this
-    // by iterating legal moves once internally; the cost beats the per-call SAN parse +
-    // performMove + isThreefoldRepetition + unperformMove cycle, and gives the player a
-    // clearer message than "your SAN is invalid" or "this specific move does not satisfy".
-    if (!board.canClaimThreefoldRepetitionRuleWithOwnMove()) {
-      return DrawClaimResult.rejected(
-          "Claim rejected, because no move from the current position can lead to a threefold"
-              + " repetition. Please play.");
-    }
-
-    // Validate the SAN move
+    // Validate the SAN first. The player's input always gets feedback before any
+    // claim-feasibility short-circuit fires: an invalid SAN is reported as invalidMove so the
+    // player can correct it.
     final MoveSpecification moveSpec;
     try {
       moveSpec = SanValidation.validateSan(san, board);
     } catch (final SanValidationException e) {
       return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
           + " Please enter a legal move for the claim.");
+    }
+
+    // SAN is legal. Short-circuit: if no legal move from this position can possibly lead to
+    // a threefold repetition, reject the claim immediately without performing the move.
+    if (!board.canClaimThreefoldRepetitionRuleWithOwnMove()) {
+      return DrawClaimResult.rejected(
+          "Claim rejected, because no move from the current position can lead to a threefold"
+              + " repetition. Please play.");
     }
 
     // Temporarily perform the move and check
@@ -94,23 +93,22 @@ public class DrawClaimManager {
   }
 
   private DrawClaimResult claimFiftyMoveWithMove(ApiBoard board, String san) {
-    // Short-circuit: clean-chess can determine in O(1) whether ANY legal move from the
-    // current position can satisfy the 50-move rule (it just checks the half-move clock
-    // and that there is at least one legal non-resetting move). Reject without parsing
-    // the SAN if no move could satisfy.
-    if (!board.canClaimFiftyMoveRuleWithOwnMove()) {
-      return DrawClaimResult.rejected(
-          "Claim rejected, because no move from the current position can satisfy the 50-move"
-              + " rule. Please play.");
-    }
-
-    // Validate the SAN move
+    // Validate the SAN first; bad input is reported as invalidMove before any
+    // claim-feasibility short-circuit.
     final MoveSpecification moveSpec;
     try {
       moveSpec = SanValidation.validateSan(san, board);
     } catch (final SanValidationException e) {
       return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
           + " Please enter a legal move for the claim.");
+    }
+
+    // SAN is legal. Short-circuit: clean-chess can determine in O(1) whether any legal move
+    // from this position could satisfy the 50-move rule.
+    if (!board.canClaimFiftyMoveRuleWithOwnMove()) {
+      return DrawClaimResult.rejected(
+          "Claim rejected, because no move from the current position can satisfy the 50-move"
+              + " rule. Please play.");
     }
 
     // Temporarily perform the move and check

@@ -560,35 +560,29 @@ class TestGameSession {
   void testThreefoldClaimWithMoveShortCircuitsWhenImpossibleFromCurrentPosition() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
-    // From the initial position, no legal move can possibly produce a threefold repetition
-    // (the position has occurred only once).
-
-    // Even an illegal SAN is not flagged as invalidMove — the short-circuit fires first.
+    // From the initial position, no legal move can possibly produce a threefold repetition.
+    // The SAN ("e4") is legal, so it passes SAN validation; the short-circuit then fires
+    // on the impossibility of ever reaching threefold and rejects the claim without
+    // performing the move.
     final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e4");
 
     assertFalse(result.accepted());
-    assertFalse(result.invalidMove(),
-        "Short-circuit must NOT report invalidMove — the SAN was never validated");
-    assertTrue(result.moveToPerform().isEmpty(),
-        "Short-circuit must NOT set mustExecuteMove — the player is free to play any move");
+    assertFalse(result.invalidMove());
+    assertTrue(result.moveToPerform().isEmpty());
     assertTrue(result.message().contains("no move from the current position can lead to"
-            + " a threefold repetition"),
-        "Message should explain the structural impossibility: " + result.message());
+        + " a threefold repetition"));
     assertNull(session.getMustExecuteMove());
     assertEquals(Side.WHITE, session.getHavingMove());
     assertEquals(GameState.IN_PROGRESS, session.getState());
   }
 
-  /** Same short-circuit behaviour for the 50-move-with-move claim when the half-move clock
-      is below the threshold. */
   @Test
   void testFiftyMoveClaimWithMoveShortCircuitsWhenClockIsBelowThreshold() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
-    // Half-move clock starts at 0. canClaimFiftyMoveRuleWithOwnMove() requires 99+, so the
-    // short-circuit fires.
-
+    // Half-move clock 0; canClaimFiftyMoveRuleWithOwnMove() requires 99+. SAN ("e4") is
+    // legal, so SAN validation passes and the short-circuit then rejects the claim.
     final DrawClaimResult result = session.claimDraw(
         Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "e4");
 
@@ -596,8 +590,35 @@ class TestGameSession {
     assertFalse(result.invalidMove());
     assertTrue(result.moveToPerform().isEmpty());
     assertTrue(result.message().contains("no move from the current position can satisfy"
-            + " the 50-move rule"),
-        "Message should explain the structural impossibility: " + result.message());
+        + " the 50-move rule"));
     assertNull(session.getMustExecuteMove());
+  }
+
+  /** SAN validation must precede the short-circuit: even when no move could satisfy the
+      claim, an invalid SAN is reported as invalidMove first so the player can correct it. */
+  @Test
+  void testInvalidSanReportedBeforeShortCircuitForThreefold() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+
+    assertFalse(result.accepted());
+    assertTrue(result.invalidMove());
+    assertTrue(result.message().startsWith("Invalid move:"));
+  }
+
+  @Test
+  void testInvalidSanReportedBeforeShortCircuitForFiftyMove() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Kz9");
+
+    assertFalse(result.accepted());
+    assertTrue(result.invalidMove());
+    assertTrue(result.message().startsWith("Invalid move:"));
   }
 }
