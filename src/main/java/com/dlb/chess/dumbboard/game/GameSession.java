@@ -53,6 +53,11 @@ public class GameSession {
   // State for "must execute specified move" after rejected draw claim
   private MoveSpecification mustExecuteMove;
 
+  // FIDE 9.2 / 9.3: a player may make at most one draw claim per move. Set when a claim
+  // attempt is processed (accepted or rejected, but not when the SAN was invalid — the
+  // player hasn't actually completed an attempt yet). Reset on startNewTurn().
+  private boolean claimMadeThisTurn;
+
   // Ready-to-continue tracking (both players must click after arbiter intervention)
   private boolean waitingForReady;
   private boolean whiteReady;
@@ -454,30 +459,49 @@ public class GameSession {
    */
   public synchronized DrawClaimResult claimDraw(Side side, DrawClaimType type, String san) {
     if (state != GameState.IN_PROGRESS) {
-      return DrawClaimResult.rejected("You cannot claim a draw now.");
+      return DrawClaimResult.error("You cannot claim a draw now.");
     }
     if (side != board.getHavingMove()) {
       // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is.
-      return DrawClaimResult.rejected("You cannot claim a draw when not having the move.");
+      return DrawClaimResult.error("You cannot claim a draw when not having the move.");
+    }
+    if (claimMadeThisTurn) {
+      return DrawClaimResult.rejectedWithoutDrawOffer(
+          "You have already made a draw claim on this move. Only one claim per move is allowed.",
+          "Your opponent attempted a second draw claim on the same move. The claim was rejected.");
     }
 
     final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
+
+    // An invalid SAN doesn't constitute a completed claim attempt — the player can re-prompt.
+    // Any other outcome counts and locks claims for the rest of this turn.
+    if (!claimResult.invalidMove()) {
+      claimMadeThisTurn = true;
+    }
 
     if (claimResult.accepted()) {
       final GameResultType resultType = (type == DrawClaimType.THREEFOLD_ON_BOARD
           || type == DrawClaimType.THREEFOLD_WITH_MOVE) ? GameResultType.THREEFOLD_CLAIM
               : GameResultType.FIFTY_MOVE_CLAIM;
 
-      // If claim-with-move was accepted, perform the move first
       if (claimResult.moveToPerform().isPresent()) {
         board.performMove(claimResult.moveToPerform().get());
       }
 
-      endGame(new GameResult(resultType, Side.NONE, claimResult.message()));
+      // Use the short game-end description for the result panel; the long claim-feedback
+      // line goes only to the per-player arbiter messages.
+      final String description = claimResult.gameEndDescription().orElse(claimResult.message());
+      endGame(new GameResult(resultType, Side.NONE, description));
     } else if (claimResult.moveToPerform().isPresent()) {
-      // Rejected claim with move — player must execute the specified move
       mustExecuteMove = claimResult.moveToPerform().get();
       clock.startClock(side);
+    }
+
+    // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. We register a
+    // correct-time offer (the claimer is on the move) so it follows the standard accept /
+    // reject / touch-piece-invalidation flow without going through the wrong-time escalation.
+    if (claimResult.convertsToDrawOffer()) {
+      drawOfferManager.offerDrawCorrectTime(side);
     }
 
     return claimResult;
@@ -615,6 +639,7 @@ public class GameSession {
     this.restorationTargetPosition = positionBeforeTurn;
     this.removedSquaresThisTurn.clear();
     this.mustExecuteMove = null;
+    this.claimMadeThisTurn = false;
   }
 
   private void endGame(GameResult gameResult) {

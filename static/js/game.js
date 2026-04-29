@@ -6,6 +6,9 @@ class Game {
     this.side = null; // 'white' or 'black'
     this.gameId = null;
     this.isMyTurn = false;
+    // FIDE 9.2 / 9.3: at most one draw claim per move. Set when the server reports a
+    // non-invalid claim outcome; reset whenever a new turn starts on this side.
+    this.claimMadeThisTurn = false;
     this.gameActive = false;
     this.sideAreaPieces = [];
     this.draggedSidePieceIndex = -1;
@@ -205,6 +208,8 @@ class Game {
       if (data.havingMove) {
         this.isMyTurn = data.havingMove === this.side;
         this.board.setEnabled(this.isMyTurn);
+        // New turn: claim ledger resets (one claim per move).
+        this.claimMadeThisTurn = false;
         this.updateButtons();
       }
       if (data.isCheck && this.isMyTurn) {
@@ -231,6 +236,7 @@ class Game {
       this.recomputeSideArea();
       this.isMyTurn = data.havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
+      this.claimMadeThisTurn = false;
       this.updateButtons();
       if (data.isCheck && this.isMyTurn) {
         this.highlightKingInCheck();
@@ -365,19 +371,23 @@ class Game {
     this.ws.on('drawClaimResult', (data) => {
       this.showArbiterMessage(data.message, data.invalidMove ? 'error' : null);
       if (data.invalidMove) {
-        // SAN was illegal on the current position (clean-chess validation failed).
-        // Keep the SAN-input panel open and let the player try a different move.
         const input = document.getElementById('sanInput');
         if (input) {
           input.value = '';
           input.focus();
         }
       } else {
-        // Either the claim was accepted, or it was rejected with a legal move
-        // that the player must now actually execute on the board. Either way,
-        // the SAN-input panel is no longer needed.
+        // Claim attempt is now committed for this turn — disable the Claim Threefold /
+        // Claim 50-Move buttons until the next own turn starts.
+        this.claimMadeThisTurn = true;
+        this.updateButtons();
         this.hideSanInput();
       }
+    });
+
+    // Opponent broadcast: the other side made a claim event we need to display.
+    this.ws.on('drawClaimOpponent', (data) => {
+      this.showArbiterMessage(data.message);
     });
 
     this.ws.on('pgn', (data) => {
@@ -501,8 +511,10 @@ class Game {
       if (!san) { this.showArbiterMessage('Please enter a move in SAN notation.'); return; }
       const claimType = document.getElementById('sanInputPanel').dataset.claimPrefix;
       this.ws.sendClaimDraw(claimType + '_WITH_MOVE', san);
-      // Leave the SAN-input panel visible until the server replies — if the move
-      // is invalid, the drawClaimResult handler re-prompts in the same panel.
+      // The claim is now committed — even if the SAN was invalid, the player must enter a
+      // legal move and cannot abandon the claim. Hide the cancel button accordingly.
+      const cancelBtn = document.getElementById('cancelClaimBtn');
+      if (cancelBtn) cancelBtn.style.display = 'none';
     });
 
     document.getElementById('cancelClaimBtn').addEventListener('click', () => {
@@ -719,6 +731,11 @@ class Game {
       panel.dataset.claimPrefix = claimPrefix;
       document.getElementById('sanInput').value = '';
       document.getElementById('sanInput').focus();
+      // Each panel-open is a fresh opportunity; restore the cancel button. It is hidden
+      // again the moment the player presses "Claim with Move" (the claim is then committed
+      // and cannot be cancelled — the player must complete it with a legal SAN).
+      const cancelBtn = document.getElementById('cancelClaimBtn');
+      if (cancelBtn) cancelBtn.style.display = '';
     }
   }
 
@@ -814,8 +831,11 @@ class Game {
     document.getElementById('offerDrawBtn').disabled = !this.gameActive;
     document.getElementById('resignBtn').disabled = !this.gameActive;
     document.getElementById('requestPieceBtn').disabled = !this.gameActive;
-    document.getElementById('claimThreefoldBtn').disabled = !this.gameActive;
-    document.getElementById('claimFiftyMoveBtn').disabled = !this.gameActive;
+    // Claim buttons are also disabled once a claim has already been made on this turn:
+    // FIDE 9.2 / 9.3 allows at most one claim per move.
+    const claimsAllowed = this.gameActive && !this.claimMadeThisTurn;
+    document.getElementById('claimThreefoldBtn').disabled = !claimsAllowed;
+    document.getElementById('claimFiftyMoveBtn').disabled = !claimsAllowed;
   }
 
   showArbiterMessage(message, style) {

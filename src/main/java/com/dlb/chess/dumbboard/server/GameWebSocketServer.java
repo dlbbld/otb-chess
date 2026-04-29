@@ -554,6 +554,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final DrawClaimResult result = room.getSession().claimDraw(side, claimType, san);
 
+    // Per-player feedback for the claim event itself (claimer's arbiter panel).
     final JsonObject response = new JsonObject();
     response.addProperty("type", "drawClaimResult");
     response.addProperty("accepted", result.accepted());
@@ -563,6 +564,22 @@ public class GameWebSocketServer extends WebSocketServer {
       response.addProperty("mustExecuteMove", result.moveToPerform().get().toString());
     }
     conn.send(GSON.toJson(response));
+
+    // Opponent gets a separate notification (the claim event happened on their counterpart's
+    // side; they need to know it occurred and what its outcome was).
+    if (result.opponentMessage().isPresent()) {
+      final JsonObject opponentMsg = new JsonObject();
+      opponentMsg.addProperty("type", "drawClaimOpponent");
+      opponentMsg.addProperty("message", result.opponentMessage().get());
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
+    }
+
+    // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. The session
+    // already registered the offer; broadcast it so the opponent gets the standard
+    // Accept/Reject panel and the touch-piece invalidation flow.
+    if (result.convertsToDrawOffer()) {
+      sendDrawOfferToOpponent(room, side);
+    }
 
     checkGameEnded(room);
   }

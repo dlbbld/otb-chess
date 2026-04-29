@@ -621,4 +621,75 @@ class TestGameSession {
     assertTrue(result.invalidMove());
     assertTrue(result.message().startsWith("Invalid move:"));
   }
+
+  @Test
+  void testAcceptedClaimCarriesShortGameEndDescriptionAndPerPlayerMessages() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    makeMove(session, Square.G1, Square.F3, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.G8, Square.F6, Piece.BLACK_KNIGHT);
+    makeMove(session, Square.F3, Square.G1, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.F6, Square.G8, Piece.BLACK_KNIGHT);
+    makeMove(session, Square.G1, Square.F3, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.G8, Square.F6, Piece.BLACK_KNIGHT);
+    makeMove(session, Square.F3, Square.G1, Piece.WHITE_KNIGHT);
+    makeMove(session, Square.F6, Square.G8, Piece.BLACK_KNIGHT);
+    // Now P0 has occurred 3 times. White can claim threefold-on-board.
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(result.accepted());
+
+    // Claimer's arbiter line is short and player-centric; opponent gets a separate notice.
+    assertEquals("Your claim was accepted.", result.message());
+    assertTrue(result.opponentMessage().isPresent());
+    assertTrue(result.opponentMessage().get().contains("threefold repetition"));
+
+    // The game-result panel uses the short termination description, NOT the long claim text.
+    assertEquals("The game is drawn by threefold repetition.", session.getResult().description());
+  }
+
+  @Test
+  void testSecondClaimOnSameMoveIsRejected() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    // First claim from the initial position is rejected (no threefold). It is now committed
+    // for this turn — a second claim must be refused.
+    final DrawClaimResult first = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(first.accepted());
+
+    final DrawClaimResult second = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertFalse(second.accepted());
+    assertTrue(second.message().contains("already made a draw claim"));
+    assertTrue(second.opponentMessage().isPresent());
+    assertTrue(second.opponentMessage().get().contains("second draw claim"));
+  }
+
+  @Test
+  void testRejectedClaimRegistersDrawOfferToOpponent() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(result.accepted());
+    assertTrue(result.convertsToDrawOffer());
+    // The session has registered a pending draw offer that the opponent can accept/reject.
+    assertTrue(session.getDrawOfferManager().isDrawOffered());
+    assertEquals(Side.WHITE, session.getDrawOfferManager().getOfferingSide());
+  }
+
+  @Test
+  void testInvalidSanDoesNotLockClaimsForThisTurn() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    // Invalid SAN on a with-move claim does not constitute a completed claim attempt — the
+    // player is re-prompted and may try another claim with a legal SAN.
+    final DrawClaimResult invalid = session.claimDraw(
+        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+    assertTrue(invalid.invalidMove());
+
+    final DrawClaimResult onBoard = session.claimDraw(
+        Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    // A normal rejection (the position has not occurred 3 times), NOT the
+    // "already-made-a-claim" lock.
+    assertFalse(onBoard.accepted());
+    assertFalse(onBoard.message().contains("already made a draw claim"));
+  }
 }
