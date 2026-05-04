@@ -4,6 +4,15 @@
 
 The chess library (clean-chess) has two validation pipelines: SAN (for PGN import) and MoveSpecification (for programmatic moves). The "dumb chessboard" is a third pipeline -- an educational electronic chessboard that simulates physical board play. The player must execute all actions manually. The board acts as a silent observer during play and evaluates at clock press.
 
+### Companion docs
+
+This file describes what the system does. Several companion documents under [`docs/`](docs/) cover the relationship to the FIDE Laws of Chess and ideas not yet committed to scope:
+
+- [`docs/fide-deviations.md`](docs/fide-deviations.md) — places where our behaviour deviates from FIDE, plus arbiter-judgment policies the system encodes (where FIDE delegates to a human arbiter).
+- [`docs/enhancements.md`](docs/enhancements.md) — non-deviation improvements planned or under consideration.
+- [`docs/design-principles.md`](docs/design-principles.md) — cross-cutting design rules that don't fit the operational Core Principles list below.
+- [`docs/future-ideas.md`](docs/future-ideas.md) — speculative directions ("crazy chessboard" scope).
+
 ---
 
 ## Core Principles
@@ -712,42 +721,6 @@ Each row names a verification path: an automated test (where applicable) or a ma
 | Second draw claim on same move silently allowed | No per-turn ledger | Automated -- `TestGameSession.testSecondClaimOnSameMoveIsRejected` |
 | Rejected claim didn't become a draw offer | No conversion path from `DrawClaimResult` to `DrawOfferManager` | Automated -- `TestGameSession.testRejectedClaimRegistersDrawOfferToOpponent` |
 | Internal exceptions leaked technical text into the arbiter panel | Catch-all sent raw `e.getMessage()` to the client | Manual -- `sendInternalError` separates friendly `message` from `devDetail`; verified via dev console |
-
----
-
-## Future Vision (speculative)
-
-These are *ideas* — directions the dumb-chessboard could grow beyond currently-planned scope. Distinct from "Spec-driven implementation follow-ups" and "Open Items" below: those are committed work waiting for execution; this section is where ideas live before they earn a "yes, let's do that" decision.
-
-### Naming evolution: "crazy chessboard"
-
-The current name "dumb chessboard" describes the technical posture: the board observes silently and doesn't enforce rules during play. Accurate but understated. As scope grows toward modelling more of OTB chess's untidy social reality (distraction, complaint, arbiter judgement, freak cases), an alternative worth considering is **"crazy chessboard"** — a board that lets players do everything, including the weird and unwise things that physical chess silently permits and FIDE only loosely constrains.
-
-The rename would mark a shift in framing: from "minimal enforcement" toward "celebrated freedom + structured consequence." Not decided, just on the table.
-
-### Distraction and complaint mechanics
-
-Today the board handles distraction passively: FIDE Article 11.5 ("It is forbidden to distract or annoy the opponent") is encoded only via the wrong-time-draw-offer escalation. A richer model would put distraction itself into the player's hands — and matching counter-tools into the opponent's.
-
-**Distraction actions (offender side)**
-- *Knock piece on table* button: plays a knock sound on the opponent's audio output.
-- *Repeated knocking*: rhythmic action with accumulating audible loudness.
-- *Foot-tapping*: alternative sound, same shape.
-- Each action carries (or accumulates) a *loudness* value.
-
-**Complaint (target side)**
-- *"I'm being distracted"* button summons the virtual arbiter.
-- The arbiter reads the offender's recent loudness history and decides:
-  - Below threshold: complaint dismissed ("the arbiter doesn't see anything wrong").
-  - At threshold: warning to the offender.
-  - Above threshold: escalating Article 12.9 penalties — time penalty, point loss, game forfeit.
-
-**Configurability**
-- Thresholds adjustable per game: "strict arbitration" vs "tolerant."
-- Off by default in tournament-style play; opt-in for "crazy chessboard" mode.
-
-**Rationale**
-Most chess software treats the player as a move-input device; rules happen *to* them. Modelling distraction-and-complaint as first-class actions surfaces the social fabric of OTB play and gives the player explicit standing (Core Principle #9) — the right to push back, to dispute, to call the arbiter. Whether or not this ships, the framing is what distinguishes the dumb-chessboard from every other digital chess UI.
 
 ---
 
