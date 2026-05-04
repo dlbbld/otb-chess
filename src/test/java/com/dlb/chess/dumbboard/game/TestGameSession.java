@@ -692,4 +692,82 @@ class TestGameSession {
     assertFalse(onBoard.accepted());
     assertFalse(onBoard.message().contains("already made a draw claim"));
   }
+
+  /**
+   * FIDE 9.4: a player loses the right to claim under 9.2/9.3 once any piece has been
+   * touched on this move. The session must reject claims after a CLICK, DRAG_*, or
+   * REMOVE event in the current turn, before processing the claim.
+   */
+  @Test
+  void testClaimAfterTouchingPieceIsRejectedPerFide94() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    shuffleKnightsToReachThreefoldClaimable(session);
+
+    // White touches a piece (CLICK on own knight) before attempting a claim.
+    session.recordEvent(Side.WHITE,
+        BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, System.currentTimeMillis()));
+
+    // The position has actually occurred three times (knight shuffle reached threefold)
+    // so without the 9.4 check the claim would succeed. With the check, it must be rejected.
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+
+    assertFalse(result.accepted(),
+        "FIDE 9.4: claim must be rejected after touching a piece, even if position is repeated");
+    assertTrue(result.message().contains("FIDE 9.4"),
+        "Rejection message should reference Article 9.4: " + result.message());
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+  }
+
+  /**
+   * FIDE 9.5.3: an incorrect (i.e. completed but rejected) draw claim adds 2 minutes to
+   * the opponent's clock. Applies to rejected on-board and claim-with-move attempts;
+   * does NOT apply to invalid-SAN cases (the player can re-prompt with a correct SAN).
+   */
+  @Test
+  void testRejectedClaimAddsTwoMinutePenaltyToOpponentPerFide953() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    // From the standard initial position, threefold has not occurred. Any claim here
+    // is incorrect and should incur the FIDE 9.5.3 penalty.
+    final long blackBefore = session.getClock().getRemainingTimeMs(Side.BLACK);
+
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+
+    assertFalse(result.accepted(),
+        "Threefold has not occurred — the claim must be rejected");
+    assertFalse(result.invalidMove(), "It is a completed claim attempt, not invalid SAN");
+
+    final long blackAfter = session.getClock().getRemainingTimeMs(Side.BLACK);
+    final long delta = blackAfter - blackBefore;
+    // Allow a small tolerance window: clock ticks during the test add no time to BLACK
+    // (BLACK isn't running), but assertion stays robust if implementation drifts a few ms.
+    assertTrue(delta >= 119_000 && delta <= 121_000,
+        "FIDE 9.5.3: opponent should gain ~2 minutes (120000 ms); actual delta = " + delta);
+  }
+
+  /**
+   * Invalid-SAN claims do NOT trigger the FIDE 9.5.3 penalty — the player has not actually
+   * completed a claim; they can re-prompt with a correct SAN.
+   */
+  @Test
+  void testInvalidSanClaimDoesNotTriggerNineFiveThreePenalty() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    shuffleKnightsToReachThreefoldClaimable(session);
+
+    final long blackBefore = session.getClock().getRemainingTimeMs(Side.BLACK);
+
+    final DrawClaimResult result = session.claimDraw(
+        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+
+    assertTrue(result.invalidMove(), "Invalid SAN must surface as invalidMove, not as a rejection");
+
+    final long blackAfter = session.getClock().getRemainingTimeMs(Side.BLACK);
+    // Black's clock isn't running and no penalty fires, so any difference must be tiny.
+    assertTrue(Math.abs(blackAfter - blackBefore) < 1_000,
+        "Invalid SAN must not penalise the opponent; delta = " + (blackAfter - blackBefore));
+  }
 }

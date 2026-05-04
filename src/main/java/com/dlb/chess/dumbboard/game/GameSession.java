@@ -58,6 +58,11 @@ public class GameSession {
   // player hasn't actually completed an attempt yet). Reset on startNewTurn().
   private boolean claimMadeThisTurn;
 
+  // FIDE 9.5.3: an incorrect draw claim adds 2 minutes to the opponent's clock.
+  // (Article-9 of the Competitive Rules of Play; rapid/blitz Appendix A.3 reduces this
+  // to 1 minute — not differentiated here, see fide-deviations.md.)
+  private static final long INCORRECT_CLAIM_PENALTY_MS = 2 * 60 * 1000;
+
   // Ready-to-continue tracking (both players must click after arbiter intervention)
   private boolean waitingForReady;
   private boolean whiteReady;
@@ -465,6 +470,15 @@ public class GameSession {
       // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is.
       return DrawClaimResult.error("You cannot claim a draw when not having the move.");
     }
+    if (!currentSequence.isEmpty()) {
+      // FIDE 9.4: the player loses the right to claim under 9.2 / 9.3 once any piece has
+      // been touched on this move. Any event in the current turn's action sequence
+      // (CLICK, DRAG_*, REMOVE, RESTORE_*) counts as a touch — claims must be made
+      // before starting to interact with pieces.
+      return DrawClaimResult.error(
+          "You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). "
+              + "Claims must be made before any piece interaction.");
+    }
     if (claimMadeThisTurn) {
       return DrawClaimResult.rejectedWithoutDrawOffer(
           "You have already made a draw claim on this move. Only one claim per move is allowed.",
@@ -492,9 +506,15 @@ public class GameSession {
       // line goes only to the per-player arbiter messages.
       final String description = claimResult.gameEndDescription().orElse(claimResult.message());
       endGame(new GameResult(resultType, Side.NONE, description));
-    } else if (claimResult.moveToPerform().isPresent()) {
-      mustExecuteMove = claimResult.moveToPerform().get();
-      clock.startClock(side);
+    } else if (!claimResult.invalidMove()) {
+      // FIDE 9.5.3: an incorrect (i.e. completed but rejected) claim adds 2 minutes to the
+      // opponent's clock. Both rejected on-board claims and rejectedWithMove claims qualify;
+      // invalid-SAN doesn't (the player hasn't actually claimed yet — they can re-prompt).
+      clock.addPenaltyTime(side.getOppositeSide(), INCORRECT_CLAIM_PENALTY_MS);
+      if (claimResult.moveToPerform().isPresent()) {
+        mustExecuteMove = claimResult.moveToPerform().get();
+        clock.startClock(side);
+      }
     }
 
     // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. We register a

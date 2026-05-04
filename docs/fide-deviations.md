@@ -41,18 +41,6 @@ Each deviation entry includes a *Path to compliance* sub-section so the route to
 
 ---
 
-### D-002 — Wrong-side draw claim pauses the game
-
-**FIDE**: Articles 9.2 and 9.3 — only the player having the move can correctly claim threefold or 50-move. A wrong-side attempt would be told off by the arbiter informally; play continues uninterrupted.
-
-**What we do**: The "Claim Threefold" and "Claim 50-Move" buttons stay enabled for both sides at all times. If the side *not* having the move clicks, the system pauses the clock and shows messages: to the offender, "you cannot claim at this time"; to the having-the-move side, "[opponent] tried to claim threefold but it isn't their move." Game resumes only when both players signal agreement to continue (default), or after a configurable timeout (see [E-001](enhancements.md#e-001)).
-
-**Rationale**: In OTB chess, the arbiter resolves wrong-side claims with no game-state change — the claim is informally rejected and play continues. Our digital system has no human arbiter; the same situation has to surface as a state-machine event. We chose explicit interactive resolution over silent rejection so the offender sees feedback and the opponent isn't surprised by a claim notification appearing during their thinking time.
-
-**Path to compliance**: Suppress the wrong-side claim entirely (don't pause the clock, don't notify the opponent — only show a private message to the offender). E-001 is a partial mitigation; full FIDE-style behaviour would also remove the dual-consent step.
-
----
-
 ### D-003 — Claim buttons have a back-out step (current bug, to be fixed)
 
 **FIDE**: Article 9.5.1 — a draw claim cannot be withdrawn once made. The "claim" act is the speech act of telling the arbiter; in our case it should be the button press itself.
@@ -81,7 +69,7 @@ This is committed work, scheduled when the surrounding GUI work is touched.
 
 **What we do today**: No j'adoube concept exists. Touch-move is enforced via the digital equivalent (selecting a piece commits you to moving it) but no escape hatch is provided for adjustment. There is no way for a player to "touch without committing" the way an OTB arbiter would allow.
 
-**Rationale for not implementing**: Substantial work — UI button, mode tracking, per-piece event recording, side/turn validation, distinguishing adjusting-own-piece vs. adjusting-opponent-piece. The feature exists primarily to mirror physical-board behaviour. Lower priority than D-001/D-002/D-003.
+**Rationale for not implementing**: Substantial work — UI button, mode tracking, per-piece event recording, side/turn validation, distinguishing adjusting-own-piece vs. adjusting-opponent-piece. The feature exists primarily to mirror physical-board behaviour. Lower priority than D-001 / D-003.
 
 **Path to compliance (sketch)**:
 
@@ -109,3 +97,24 @@ The first two presses trigger an inline message to the offender ("offered out of
 **Rationale**: Arbiter judgment must be encoded into a digital system; an explicit threshold is more transparent than a fuzzy heuristic. Three is small enough to feel like a real limit, large enough to forgive a single mistake.
 
 **Note**: This policy applies only to wrong-time offers. Repeated offers at the recommended time are not currently penalized — see [E-002](enhancements.md#e-002) for the open question of whether they should be.
+
+---
+
+### A-002 — Draw-offer invalidation: asymmetric policy for correct-time vs. wrong-time offers
+
+**FIDE**: Article 9.1.2.1 — *"the offer cannot be withdrawn and remains valid until the opponent accepts it, rejects it orally, rejects it by touching a piece with the intention of moving or capturing it, or the game is concluded in some other way."*
+
+The trigger is **"touching a piece with the intention of moving or capturing it."** Intention is unknowable to a digital system, so we encode two heuristics — one for each offer-time class.
+
+**Our policy (asymmetric)**:
+
+| Offer made at | Invalidated by | Rationale |
+|---|---|---|
+| **Correct time** (after opponent's own move, before clock-press) | First TOUCH (CLICK or DRAG_*) on any piece | The recipient was waiting on a clean board state. Any piece interaction marks the resumption of their own move-formation, which FIDE treats as rejection. |
+| **Wrong time** (anytime else, e.g. mid-thinking on the recipient's own move) | Move MADE — i.e. a legal release per FIDE 4.7 | The recipient was already mid-deliberation when the offer arrived; touching pieces while deciding is normal play, not rejection. Only completing a move actually constitutes a response. |
+
+**Where in code**: [`GameWebSocketServer.java`](../src/main/java/com/dlb/chess/dumbboard/server/GameWebSocketServer.java) (search "Correct-time offer" / "Wrong-time offer").
+
+**Rationale**: The asymmetry encodes "intention to move" reasonably for the two contexts. A correct-time offer interrupts a moment of stillness; the recipient's first touch is intentional and committal. A wrong-time offer arrives during active play; the recipient may touch many pieces while thinking before committing, and only a *completed* move signals decision.
+
+**Acknowledged tension**: A wrong-time offer plus a recipient who has already released a move (per FIDE 4.7) but hasn't pressed the clock is currently rejected by the system as "too late to accept." This is a side effect of [D-001](#d-001-clock-press-as-the-move-boundary): in our model the move is "made" only at clock-press, so the post-release / pre-clock-press window is unreachable for offer acceptance. A FIDE-strict implementation would allow acceptance up to clock-press.

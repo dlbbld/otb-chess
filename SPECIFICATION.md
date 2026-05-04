@@ -471,6 +471,32 @@ A player may make **at most one claim per move**. This includes both "on board" 
 - Opponent: _"Your opponent attempted a second draw claim on the same move. The claim was rejected."_
 - Counter resets at the start of the next turn.
 
+#### Touch-before-claim rule (FIDE 9.4)
+
+A player **loses the right to claim** under 9.2 / 9.3 once they have touched any piece on the current move. In our model "touched" means any event recorded in the turn's action sequence — CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE, or RESTORE_*. Claims must be made *before* any piece interaction.
+
+When the player attempts a claim after a recorded event:
+
+- Claimer: _"You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). Claims must be made before any piece interaction."_
+- Opponent: not notified.
+- The claim does not consume the once-per-turn allowance, since it never reached the claim machinery.
+
+#### Penalty for rejected claims (FIDE 9.5.3)
+
+A claim that is **completed but incorrect** (rejected on-board, or rejected with-move) adds **2 minutes** to the opponent's clock. This applies to:
+
+- **Rejected on-board**: position has not actually occurred 3 times / 50-move counter not at threshold.
+- **Rejected with-move**: legal SAN, but the resulting position doesn't satisfy the rule.
+
+It does **not** apply to:
+
+- **Accepted** claims (the player was correct).
+- **Invalid-SAN** attempts (the player hasn't completed a real claim — they can re-prompt).
+- **Touched-piece** rejections under 9.4 (the claim never reached the rule machinery).
+- **Once-per-turn** rejections (the penalty already fired on the first rejected attempt).
+
+Note: FIDE Appendix A.3 reduces this penalty to 1 minute in rapid play, but our system does not currently differentiate by time-control category — it always applies 2 minutes. Tracked as a documentation note rather than a deviation entry; revisit if rapid-mode UX deviates further.
+
 #### Cancel button is removed once a claim is committed
 
 - Before the first **"Claim with Move"** click in a turn, the SAN-input panel shows a **Cancel** button.

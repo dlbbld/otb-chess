@@ -6,15 +6,15 @@ Companion: [`SPECIFICATION.md`](../SPECIFICATION.md) for current behaviour, [`fi
 
 ---
 
-## E-001 — Configurable auto-resume timeout after invalid claim
+## E-001 — Configurable auto-resume timeout after a paused claim resolution
 
-**Today**: When a wrong-side draw claim or other invalid claim pauses the game (see [D-002](fide-deviations.md#d-002)), both players must signal agreement to resume. Two clicks required.
+**Background**: This enhancement only becomes relevant if [E-003](#e-003) (interactive wrong-side claim resolution) is implemented. Today, wrong-side claims are simply rejected with a private error to the claimant — no clock pause, no resume step, so no resume timeout to configure.
 
-**Proposed**: A start-screen setting "auto-resume after invalid claim: N seconds" (e.g. default 5s). When set, the game resumes automatically after the timeout instead of requiring dual consent. The offending player still sees the rejection message; the opponent still sees the notification.
+**Proposed**: A start-screen setting "auto-resume after paused claim: N seconds" (e.g. default 5s). When set, after a paused claim resolution the game resumes automatically after the timeout instead of requiring dual consent.
 
-**Rationale**: For most invalid claims, the dual-consent step is unnecessary friction. Tournament-style play might prefer the explicit handshake; casual blitz might prefer auto-resume. Make it configurable rather than choosing one for everyone.
+**Rationale**: If the system ever moves to interactive wrong-side claim resolution (E-003), the dual-consent step might be unnecessary friction in casual play. Make it configurable.
 
-**Status**: Planned but not scheduled.
+**Status**: Conditional on E-003 — without it, no resume to time out.
 
 ---
 
@@ -32,3 +32,22 @@ Companion: [`SPECIFICATION.md`](../SPECIFICATION.md) for current behaviour, [`fi
 **Hard part**: Distinguishing "annoying" from "legitimate change of mind after position changes meaningfully" has no clean signal from the position alone.
 
 **Status**: Think-about-it, not decide-now. Deferred until usage patterns motivate a specific shape.
+
+---
+
+## E-003 — Interactive wrong-side claim resolution
+
+**Today**: When a player who does *not* have the move clicks a claim button, the system simply returns a private error to the claimant ("You cannot claim a draw when not having the move."). The opponent (who has the move) is not notified. The clock is not paused. This is FIDE-aligned: in OTB chess an arbiter would tell the offender "it's not your move" and play would continue without interruption.
+
+**Idea on the table**: A more interactive resolution where wrong-side claims are visible to both players:
+
+- Pause the clock when a wrong-side claim arrives.
+- Show the offender: "You cannot claim a draw when not having the move."
+- Show the having-the-move player: "[opponent] tried to claim a draw, but it isn't their move."
+- Resume by both-player consent (or after [E-001](#e-001)'s timeout if implemented).
+
+**Why might this be wanted**: It surfaces the social-fabric layer that the [`future-ideas.md`](future-ideas.md) distraction-and-complaint mechanics also speak to — making the system's events feel less mechanical. A wrong-side claim is, in OTB terms, a small drama; rendering it as a beat in the game (rather than swallowing it silently) might fit "crazy chessboard" better than "minimal-intervention chessboard."
+
+**Why it's not the default**: It's MORE intrusive than FIDE rather than less. It also opens questions about timing manipulation (could the wrong-side player exploit pauses to disrupt the opponent's thinking?) that the simple-rejection model avoids by construction.
+
+**Status**: Speculative. If pursued, it pairs with E-001 as a configurability layer.
