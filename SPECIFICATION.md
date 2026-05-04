@@ -278,6 +278,14 @@ To avoid double-punishment for a failed castling attempt, the released-piece rul
 
 In every other case the released-piece rule applies normally.
 
+### Castling-specific released-piece message
+
+When the king's release on its castled square commits the player to a castling that **is** legal but the rook hasn't been moved (or was placed wrongly), the released-piece message is castling-specific rather than the generic "put the piece back" wording. Example for kingside white:
+
+> _"Released-piece violation: You released the king on g1, which initiates kingside castling, and castling is legal. Under the released-piece rule, the king must stay on g1. Please complete the castling by moving the rook from h1 to f1 and pressing the clock."_
+
+The king is not moved back — it stays on the castled square because that's where it belongs in the committed move. The player is told exactly which rook move completes the castling.
+
 ---
 
 ## En Passant
@@ -367,18 +375,24 @@ To match the experience of a real board, certain game-ending moves end the game 
 
 1. **Checkmate** → "White/Black won the game by checkmate."
 2. **Stalemate** → "The game is drawn by stalemate."
-3. **Dead position** → "The game is drawn. Neither player can checkmate the opponent." (clean-chess `UnwinnableFullAnalyzer`).
+3. **Insufficient material** → "The game is drawn by insufficient material. Neither player can checkmate." (clean-chess `isInsufficientMaterial()`, a fast structural test — FIDE 9.4 / 5.2.2).
 4. **Fivefold repetition** → "The game is drawn by fivefold repetition."
 5. **75-move rule** → "The game is drawn by the 75-move rule."
+
+The full unwinnability search (`UnwinnableFullAnalyzer`, the deep CUA helpmate search) is **not** used in the in-game pipeline. Positions that are dead by exhaustive search but not by insufficient material continue, and the players resolve them via stalemate / fivefold / 75-move / claim — consistent with the dumb-board's "evaluate at clock press" model.
 
 ### Resignation
 
 - No confirmation. Resign is final.
-- Arbiter checks winnability: if the opponent cannot checkmate by any series of legal moves → draw instead of loss.
+- Arbiter checks winnability via the **fast** `isUnwinnableQuick(opponent)` (microsecond-scale structural analysis): if the opponent cannot checkmate by any series of legal moves → draw instead of loss. `POSSIBLY_WINNABLE` is treated as winnable.
+- Draw message: _"{Side} resigned, but because {Opponent} has no possible win, the game is a draw."_
+- Loss message: _"{Side} resigns. {Opponent} wins the game."_
 
 ### Flag fall
 
-- Arbiter checks winnability: if the opponent cannot checkmate → draw.
+- Arbiter checks winnability via `isUnwinnableQuick(opponent)`: if the opponent cannot checkmate → draw.
+- Draw message: _"{Side}'s time has elapsed, but because {Opponent} has no possible win, the game is a draw."_
+- Loss message: _"{Side} loses on time. {Opponent} wins the game."_
 - Final clock update is sent **before** the `gameEnded` message so the LCD shows `0:00`, not `0:01`.
 
 ### Illegal move game loss
@@ -398,18 +412,52 @@ To match the experience of a real board, certain game-ending moves end the game 
 
 #### "Claim with move"
 
-- The player enters a move in **SAN notation** in an inline panel.
-- The server validates the SAN against the current position via clean-chess's `SanValidation`. Three outcomes:
+The player enters a move in **SAN notation** in an inline panel. The server processes the claim in this fixed order:
 
-| Outcome | Server response | UI behaviour |
-|---|---|---|
-| **Invalid SAN** (clean-chess rejects it) | `accepted: false`, `invalidMove: true`, message = _"Invalid move: «clean-chess reason». Please enter a legal move for the claim."_ | The SAN-input panel **stays open**. The input is cleared and refocused. The arbiter message is shown in red. The player tries again. |
-| **Valid SAN, claim accepted** (the position after the move satisfies the rule) | `accepted: true`, message = _"The game is drawn by …"_ | The panel closes, the game ends. |
-| **Valid SAN, claim rejected** (the move is legal but doesn't satisfy the rule) | `accepted: false`, message = _"Threefold/50-move claim rejected. Please play the specified move."_ + `mustExecuteMove` | The panel closes. The player **must still execute the specified move** on the physical board. The arbiter pipeline tracks `mustExecuteMove` and rejects any other move at the next clock press until the specified move is played. |
+1. **SAN validation first.** The supplied SAN is validated against the current position via clean-chess's `SanValidation.validateSan(...)`. The move is **not performed** for validation — `validateSan` checks the move's legality without mutating the board. If the SAN fails:
+   - Result: `invalidMove`. Message: _"Invalid move: «clean-chess reason». Please enter a legal move for the claim."_
+   - The SAN-input panel stays open and is re-prompted with the input cleared and refocused.
+   - The claim attempt is **not yet committed** — the player is just typo-correcting.
+2. **Feasibility short-circuit.** If the SAN is legal, ask clean-chess whether **any** legal move from the current position could possibly satisfy the rule:
+   - `board.canClaimThreefoldRepetitionRuleWithOwnMove()` for threefold,
+   - `board.canClaimFiftyMoveRuleWithOwnMove()` for the 50-move rule.
+   If neither → reject the claim immediately, without performing the player's move. Message: _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ (or the 50-move equivalent).
+3. **Per-move check.** Otherwise, perform the move speculatively on the internal board, check the rule, and unperform — the board state is restored regardless of outcome.
 
-The SAN validation always **performs the move on the internal board, checks the rule, then unperforms** — the board state is unchanged by the validation itself.
+#### Outcomes (after both filters pass)
 
-The arbiter **never silently accepts an illegal SAN** — the player learns from clean-chess's exact reason ("a knight can only move in an L-shape", "the move puts the king in check", etc.).
+The player's SAN is echoed verbatim in the message so both players see exactly which move was claimed:
+
+| Outcome | Claimer message | Opponent message | Game-end description |
+|---|---|---|---|
+| **Accepted** | _"Your claim was accepted."_ | _"Your opponent requested a draw for threefold repetition after the move «SAN»."_ (or 50-move variant) | _"The game is drawn by threefold repetition."_ (in the result panel — short, no duplication of the long claim text) |
+| **Rejected — legal SAN but rule not satisfied** | _"Claim rejected, because there is no threefold repetition after the mentioned move «SAN». Please play."_ + `mustExecuteMove` | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none — game continues; the player must still play the specified move) |
+| **Rejected — short-circuit** (no move could satisfy) | _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none) |
+
+The arbiter **never silently accepts an illegal SAN** — the player learns from clean-chess's exact reason.
+
+#### Once-per-turn limit (FIDE 9.2 / 9.3)
+
+A player may make **at most one claim per move**. This includes both "on board" and "with move" attempts; an invalid-SAN attempt does **not** consume the allowance (the player hasn't completed an attempt yet). When a player tries a second claim on the same move:
+
+- Claimer: _"You have already made a draw claim on this move. Only one claim per move is allowed."_
+- Opponent: _"Your opponent attempted a second draw claim on the same move. The claim was rejected."_
+- Counter resets at the start of the next turn.
+
+#### Cancel button is removed once a claim is committed
+
+- Before the first **"Claim with Move"** click in a turn, the SAN-input panel shows a **Cancel** button.
+- The moment the player presses **"Claim with Move"** (regardless of SAN validity), the cancel button is hidden. The player must enter a legal SAN to complete the claim — they cannot back out.
+- If the SAN is invalid the panel re-prompts without the cancel button.
+- The next time the SAN-input panel opens (next turn, after the claim resolves), the cancel button is restored.
+
+#### Rejected claim becomes a draw offer (FIDE 9.5)
+
+A rejected claim that came through the proper FIDE channel (claim-on-board, or claim-with-move with a legal SAN) is treated as a regular draw offer to the opponent:
+
+- The session registers the offer via the standard `DrawOfferManager` correct-time path (no escalation penalty — the player had the move).
+- The opponent receives the standard **drawOffered** broadcast with Accept/Reject buttons. Touch-piece invalidation works as for any other correct-time draw offer.
+- Cases that do **not** convert to a draw offer: `invalidMove` (SAN never validated), pre-claim errors (game not in progress, not on move), and second-claim-on-same-move rejections.
 
 ### Draw offer (FIDE 9.1.2.1)
 
@@ -484,6 +532,29 @@ These are checked during play (not only at clock press):
 
 ---
 
+## Internal Errors & Developer Console
+
+User-visible messages must never leak technical detail (exception class names, stack traces, JVM jargon). The server distinguishes two error categories:
+
+### Intentional user errors
+Expected outcomes routed through `sendError(conn, message)` — game not found, game is full, "you are not in a game", unknown message type, invalid FEN. The player sees the direct text, since it's actionable.
+
+### Unexpected exceptions
+Anything that escapes a handler (the catch-all in `onMessage`, the clock-tick swallow, etc.) goes through `sendInternalError(conn, e, context)`:
+
+- **Server side:** the full stack trace is logged to stderr.
+- **Wire:** the `error` message carries two fields:
+  - `message` — a friendly generic line: _"We are sorry — the arbiter lost his concentration for a moment and could not handle the situation. Please try again."_
+  - `devDetail` — `"<context>: <exception class + message>"`, for diagnostics.
+
+### Developer console (frontend)
+
+A small `#devConsole` panel pinned to the bottom of the viewport. Hidden by default; appears the first time a `devDetail` arrives and stays. Distinct from the arbiter panel: dim background, monospace, timestamped. Has **clear** and **hide/show** controls.
+
+The error-message handler renders the friendly line in the arbiter panel and routes any `devDetail` exclusively to the developer console. Technical text never enters the user-visible UI.
+
+---
+
 ## Capture-by-Removal
 
 The board allows the **physical capture sequence**: lift the opponent piece off the board, then move your own piece onto the now-empty square. Both events are observed silently during play — there is no mid-play intervention. At clock press the position is evaluated as usual:
@@ -522,20 +593,34 @@ This is tracked in **Open Items** below.
 
 ### Outbound (server → client)
 
-`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove`), `gameEnded`, `pgn`, `error`, `opponentDisconnected`.
+`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event), `gameEnded`, `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected`.
 
 For `move_accepted`, the `move` block carries `from`, `to`, `piece`. **Castling moves** additionally carry `castling: KING_SIDE | QUEEN_SIDE`; their `from`/`to` are resolved to the king's actual squares (the `MoveSpecification` from/to of a castling move are `Square.NONE`, which would otherwise crash on `getName()`).
+
+For `gameJoined` and `gameStarted`, a `havingMove` field carries the side to move at game start (necessary for custom-FEN games where Black may be to move first).
 
 ---
 
 ## Architecture
 
-- **Separate Maven project** (`dumb-chessboard`) depending on **clean-chess 2.22**.
+- **Separate Maven project** (`dumb-chessboard`) depending on **clean-chess 3.0**.
 - **All business logic in Java.** Frontend is thin presentation only.
 - **Java built-in `HttpServer`** on port **8080** for static files.
 - **Java-WebSocket library** on port **8081** for two-player real-time communication.
 - **Gson** for JSON serialization.
 - The server is single-process; sessions are kept in memory and identified by the 8-character game code.
+
+### Centralised messages (slice 1: arbiter + opponent)
+
+User-visible rule messages flow through a typed message infrastructure rather than freeform string literals scattered across the code:
+
+- `MessageKey` — type-safe enum of message keys; each constant carries its property key and `MessageSeverity` (INFO / WARNING / ERROR / SUCCESS).
+- `MessageSeverity` — colour/severity contract used by the frontend.
+- `Messages.get(key, args...)` — single English `messages.properties` loaded explicitly as UTF-8; fail-loud on missing keys.
+- `ArbiterResponse` carries structured records (`IllegalMoveDetail`, `ReleasedPieceContext`, `ReleasedPieceCastlingContext`) and renders both player-facing and opponent-facing messages from the same data — no string surgery.
+- The `CUSTOM_INFO` / `CUSTOM_WARNING` / `CUSTOM_ERROR` keys are transitional escape hatches for messages not yet migrated; severity is preserved.
+
+Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, position-change). Game-flow / draw-offer / draw-claim messages are still inline literals — slated for a follow-up slice.
 
 ### Three planned modes (future)
 
@@ -550,33 +635,35 @@ For `move_accepted`, the `move` block carries `from`, `to`, `piece`. **Castling 
 | Class | Responsibility |
 |---|---|
 | `PositionComparator` | Enumerates legal moves, compares resulting positions with the player's board state. |
-| `TouchMoveEvaluator` | Scans action sequence for the first touch-move obligation; recognises failed castling attempts where the king has no legal moves. |
-| `ArbiterEngine` | Two-layer evaluation: position comparison + touch-move + released-piece + castling-attempt explanation. |
+| `TouchMoveEvaluator` | Scans action sequence for the first touch-move obligation; recognises failed castling attempts where the king has no legal moves (via `CastlingAttemptDetector`). |
+| `CastlingAttemptDetector` | Shared helper that recognises a king-then-rook drag pattern; used by `TouchMoveEvaluator` and `ArbiterEngine`. |
+| `ArbiterEngine` | Two-layer evaluation: position comparison + touch-move + released-piece + castling-attempt explanation. Builds structured `IllegalMoveDetail` / `ReleasedPieceContext` records used by typed message rendering. |
 | `IllegalMoveTracker` | Tracks illegal-move count per side; configurable limit (1–10 or unlimited, default 2). |
-| `MidPlayValidator` | Validates opponent-piece movement and piece-restoration during play. |
+| `MidPlayValidator` | Validates opponent-piece movement and piece-restoration during play. Allows opponent-piece **removal** (capture-by-removal); blocks opponent-piece drag-on-board. |
 | `DrawOfferManager` | Draw-offer lifecycle: correct-time, wrong-time A/B, repeat counter, wrong-time counter, escalating penalties (info → warning → game lost). |
-| `DrawClaimManager` | Threefold and 50-move claims using `SanValidation`; reports invalid SAN explicitly via the `invalidMove` flag. |
-| `GameSession` | Central orchestrator: board, clock, arbiter, draw, resign, ready-to-continue, restoration state machine, must-execute-move. |
+| `DrawClaimManager` | Threefold and 50-move claims. Validates SAN first (clean-chess `SanValidation`), then short-circuits via `canClaim…WithOwnMove()`, then performs/checks. Returns per-player + opponent + game-end messages. |
+| `GameSession` | Central orchestrator: board, clock, arbiter, draw, resign, ready-to-continue, restoration state machine, must-execute-move, **per-turn claim ledger** (FIDE 9.2/9.3 once-per-turn limit), rejected-claim → draw-offer conversion. |
 | `ClockManager` | Time control with increment, nanoTime precision. |
 | `GameRoom` | Two WebSocket connections + the session; routes messages by side. |
-| `GameWebSocketServer` | WebSocket server handling all message types. |
+| `GameWebSocketServer` | WebSocket server handling all message types. `sendInternalError` routes friendly text to the user and `devDetail` to the developer console. |
 | `MessageConverter` | JSON to/from domain types (`StaticPosition`, `BoardEvent`). |
+| `MessageKey` / `MessageSeverity` / `Messages` | Typed message infrastructure (slice 1: arbiter + opponent); UTF-8 properties + `MessageFormat`. |
 
 ---
 
 ## Test Coverage
 
-**95 tests across 9 test classes** (current):
+**113 tests across 9 test classes** (current):
 
 - `TestPositionComparator` (10) — basic move types.
 - `TestPositionComparatorEdgeCases` (7) — multi-piece moves, missing pieces, castling variants.
-- `TestTouchMoveEvaluator` (15) — touch-move scanning, castling, satisfaction, failed-castling-with-no-king-moves.
-- `TestArbiterEngine` (21) — two-layer evaluation, all response types, released-piece (castling, back-to-origin, first-release-wins), illegal-move count messaging, illegal castling reason + king obligation.
+- `TestTouchMoveEvaluator` (16) — touch-move scanning, castling, satisfaction, failed-castling-with-no-king-moves.
+- `TestArbiterEngine` (27) — two-layer evaluation, all response types, released-piece (castling, back-to-origin, first-release-wins, castling-specific message, rook-moved-to-wrong-square), illegal-move count messaging, illegal castling reason + king obligation.
 - `TestArbiterEngineEdgeCases` (7) — fumbling, no-legal-moves touch, counter tracking.
-- `TestGameSession` (18) — full game flow, checkmate, draw claims, resign, invalid-SAN draw claim (threefold + 50-move).
+- `TestGameSession` (29) — full game flow, checkmate, draw claims, resign, custom-FEN starting position, capture-by-removal, threefold/50-move claim short-circuits, SAN-validation-before-short-circuit ordering, accepted-claim per-player messages + short game-end description, second-claim-on-same-move rejection, rejected-claim registers draw offer, invalid-SAN doesn't lock the turn.
 - `TestGameSessionFlow` (8) — ready-to-continue, illegal-then-valid, touch-move persistence, released-piece restoration, touch-move-after-restoration.
 - `TestMessageConverter` (6) — round-trip serialization, edge cases.
-- `TestGameWebSocketServer` (3) — message-handling smoke tests.
+- `TestGameWebSocketServer` (3) — typed `ArbiterResponse` rendering, opponent-message-not-derived-from-player-prose regression test.
 
 ---
 
@@ -593,6 +680,13 @@ For `move_accepted`, the `move` block carries `from`, `to`, `piece`. **Castling 
 | Flag-fall LCD shows `0:01` | Final `clockUpdate` was sent after `gameEnded` | Manual |
 | Auto-end incremented illegal-move counter | `evaluateForAutoEnd` was reusing `evaluateClockPress` | `TestGameSessionFlow` (released-piece interaction tests) |
 | `Invalid move:` in claim hid the SAN panel | Frontend hid the panel on submit; rejected-with-invalid-move never re-prompted | `TestGameSession.testClaimWithInvalidSanIsRejectedAsInvalidMove` (+ 50-move counterpart) |
+| Misleading "put the king back" on castling-released-piece | Generic released-piece message used regardless of castling commitment | `TestArbiterEngine.testReleasedPieceViolationCastlingRookMovedToWrongSquare` |
+| Asymmetric clock-press latency on opening | `isDeadPositionFull()` (deep CUA) ran on every legal-completing event and clock press | Replaced with `isInsufficientMaterial()`; visible speed-up in `TestGameSession` (≈50× faster) |
+| Opponent claim message derived from player text | `formatOpponentIllegalMove` did `String.replace`-based pronoun rewriting on already-rendered prose | `TestGameWebSocketServer.testOpponentIllegalMoveMessageUsesOpponentReasonNotPlayerMessage` |
+| Claim-accepted text duplicated under result panel | `GameResult.description` reused the long claim-accepted text | `TestGameSession.testAcceptedClaimCarriesShortGameEndDescriptionAndPerPlayerMessages` |
+| Second draw claim on same move silently allowed | No per-turn ledger | `TestGameSession.testSecondClaimOnSameMoveIsRejected` |
+| Rejected claim didn't become a draw offer | No conversion path from `DrawClaimResult` to `DrawOfferManager` | `TestGameSession.testRejectedClaimRegistersDrawOfferToOpponent` |
+| Internal exceptions leaked technical text into the arbiter panel | Catch-all sent raw `e.getMessage()` to the client | `sendInternalError` separates friendly `message` from `devDetail`; manual verification via dev console |
 
 ---
 
@@ -602,7 +696,6 @@ For `move_accepted`, the `move` block carries `from`, `to`, `piece`. **Castling 
 2. **Tournament mode without arbiter** — player must claim illegal moves.
 3. **King-cannot-be-captured immediate intervention.** Today, dragging the opponent's king off the board is silently allowed; the resulting position fires the generic illegal-move flow only at clock press. Per spec the arbiter should intervene immediately when the king is removed: _"You are not allowed to remove the opponent's king from the board. Please restore."_
 4. **Piece-displacement detection** (deferred). When the player removes an opponent piece without subsequently moving onto its square, the position at clock press doesn't match any legal move and the standard illegal-move flow fires — but with a generic message. Future refinement should detect this specific case and produce a wording that names the removed piece and asks the player to either complete the capture or restore the piece.
-5. **Move history display** — step-through with arbiter interventions.
-6. **Insufficient material** — relationship between simple cases and full CUA detection.
+5. **Centralised messages — slice 2.** Arbiter and opponent messages are now typed (`MessageKey`, `Messages.get`); game-flow / draw-offer / draw-claim / game-result strings are still inline literals. Slated for a follow-up slice that finishes the migration and removes the transitional `CUSTOM_*` keys.
+6. **Move history display** — step-through with arbiter interventions.
 7. **Reconnect after disconnect** — current state is preserved server-side; reconnection flow not yet implemented.
-8. **Performance** — `checkAutomaticEndings` is now fast (insufficient-material check only); the deeper CUA helper runs only at flag fall and resignation via `isUnwinnableQuick`.
