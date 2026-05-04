@@ -440,13 +440,16 @@ public class GameWebSocketServer extends WebSocketServer {
     final ArbiterResponse response = room.getSession().offerDrawCorrectTime(side, afterPosition);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
-      // Move is valid and the offer has been registered. Tell the offering player to press
-      // the clock (their move is not committed until then) and forward the offer to the opponent.
+      // Move is valid and the offer has been registered. Acknowledge to the offering player
+      // and forward the offer to the opponent. The acknowledgment is bare — no reminder to
+      // press the clock — per design-principles P-003 (board never gives procedural
+      // instructions). If the offerer forgets to press the clock, their own time keeps
+      // running while the opponent considers the offer; that consequence is part of the rules.
       // Crucially: NO sendClockUpdate — the clock stays on the offering player.
       sendDrawOfferToOpponent(room, side);
       final JsonObject ack = new JsonObject();
       ack.addProperty("type", "drawOfferSent");
-      ack.addProperty("message", "Draw offer sent. Now press the clock to complete your move.");
+      ack.addProperty("message", "Draw offer sent.");
       conn.send(GSON.toJson(ack));
       return;
     }

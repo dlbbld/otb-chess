@@ -347,10 +347,11 @@ class Game {
       this.showArbiterMessage('Your opponent offers a draw.');
     });
 
-    // Acknowledgment to the offering player after a correct-time draw offer:
-    // the move was validated and the offer forwarded to the opponent. The player
-    // still has to press the clock to commit the move (FIDE — the draw offer
-    // does not also press the clock).
+    // Bare acknowledgment to the offering player after a correct-time draw offer:
+    // the move was validated and the offer forwarded to the opponent. No reminder
+    // to press the clock — see design-principles P-003 (board never gives
+    // procedural instructions). If the offerer forgets, time keeps running on
+    // their clock while the opponent considers the offer.
     this.ws.on('drawOfferSent', (data) => {
       this.showArbiterMessage(data.message, 'info');
     });

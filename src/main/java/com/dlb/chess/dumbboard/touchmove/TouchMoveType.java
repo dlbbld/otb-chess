@@ -6,5 +6,9 @@ public enum TouchMoveType {
   OWN_PIECE,
 
   // Touched opponent piece that can be legally captured — must capture it
-  OPPONENT_PIECE
+  OPPONENT_PIECE,
+
+  // Touched own king and then own rook (FIDE 4.4.a), with castling on the touched
+  // rook's side being legal — must perform the castling move on that side.
+  CASTLING
 }

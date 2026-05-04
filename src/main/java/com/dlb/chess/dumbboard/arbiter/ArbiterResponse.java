@@ -102,14 +102,25 @@ public record ArbiterResponse(
   public static ArbiterResponse touchMoveViolation(TouchMoveObligation obligation) {
     final MessageKey playerKey;
     final MessageKey opponentKey;
-    if (obligation.type() == TouchMoveType.OWN_PIECE) {
-      playerKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_PLAYER;
-      opponentKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_OPPONENT;
-    } else {
-      playerKey = MessageKey.ARBITER_TOUCH_MOVE_OPPONENT_PLAYER;
-      opponentKey = MessageKey.ARBITER_TOUCH_MOVE_OPPONENT_OPPONENT;
+    final List<Object> args;
+    switch (obligation.type()) {
+      case OWN_PIECE -> {
+        playerKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_PLAYER;
+        opponentKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_OPPONENT;
+        args = List.of(formatPieceName(obligation.piece()), obligation.square().getName());
+      }
+      case OPPONENT_PIECE -> {
+        playerKey = MessageKey.ARBITER_TOUCH_MOVE_OPPONENT_PLAYER;
+        opponentKey = MessageKey.ARBITER_TOUCH_MOVE_OPPONENT_OPPONENT;
+        args = List.of(formatPieceName(obligation.piece()), obligation.square().getName());
+      }
+      case CASTLING -> {
+        playerKey = MessageKey.ARBITER_TOUCH_MOVE_CASTLING_PLAYER;
+        opponentKey = MessageKey.ARBITER_TOUCH_MOVE_CASTLING_OPPONENT;
+        args = List.of();
+      }
+      default -> throw new IllegalStateException("Unhandled obligation type: " + obligation.type());
     }
-    final List<Object> args = List.of(formatPieceName(obligation.piece()), obligation.square().getName());
     return new ArbiterResponse(ArbiterResponseType.TOUCH_MOVE_VIOLATION, playerKey, args,
         Optional.of(opponentKey), args, Optional.empty(), Optional.of(obligation), Optional.empty(),
         Optional.empty(), Optional.empty());

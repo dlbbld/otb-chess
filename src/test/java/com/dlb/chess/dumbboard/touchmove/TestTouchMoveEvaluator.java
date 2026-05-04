@@ -280,4 +280,153 @@ class TestTouchMoveEvaluator {
     assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
     assertEquals(Square.A2, obligation.get().square());
   }
+
+  // ---- King-then-rook combined touch (FIDE 4.4.a) ----
+
+  /**
+   * Sets up a position where White has both castling rights and the path is clear for kingside
+   * castling. Used by the CASTLING-obligation tests below.
+   */
+  private static ApiBoard whiteKingsideClearBoard() {
+    final ApiBoard board = new Board();
+    board.performMove("e4");
+    board.performMove("e5");
+    board.performMove("Nf3");
+    board.performMove("Nc6");
+    board.performMove("Be2");
+    board.performMove("Nf6");
+    return board;
+  }
+
+  @Test
+  void testKingThenRookClickEstablishesCastlingObligation() {
+    final ApiBoard board = whiteKingsideClearBoard();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // White touches the king on e1, then the kingside rook on h1; kingside castling is legal.
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.CASTLING, obligation.get().type());
+    assertEquals(com.dlb.chess.board.enums.CastlingMove.KING_SIDE, obligation.get().castlingMove());
+    assertEquals(Square.E1, obligation.get().square());
+    assertEquals(Piece.WHITE_KING, obligation.get().piece());
+  }
+
+  @Test
+  void testKingThenRookDragsEstablishCastlingObligation() {
+    final ApiBoard board = whiteKingsideClearBoard();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // The drag-pickup of the king on e1 is a touch on e1; same for the rook on h1.
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.CASTLING, obligation.get().type());
+    assertEquals(com.dlb.chess.board.enums.CastlingMove.KING_SIDE, obligation.get().castlingMove());
+  }
+
+  @Test
+  void testRookThenKingDoesNotEstablishCastlingObligation() {
+    final ApiBoard board = whiteKingsideClearBoard();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // R first, then K — the new rule requires K-then-R order. Falls back to the existing
+    // first-obligation rule. In this position the h1 rook has legal moves (g1 and f1 are
+    // empty after Nf3 / Be2), so the rook-touch carries the OWN_PIECE obligation on h1.
+    // The point of this test is to verify the CASTLING obligation did NOT fire.
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.H1, obligation.get().square());
+  }
+
+  @Test
+  void testCastlingMoveSatisfiesCastlingObligation() {
+    final ApiBoard board = whiteKingsideClearBoard();
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1,
+        Piece.WHITE_KING, com.dlb.chess.board.enums.CastlingMove.KING_SIDE);
+
+    final var castling = board.getLegalMoveSet().stream()
+        .filter(m -> m.moveSpecification().castlingMove() == com.dlb.chess.board.enums.CastlingMove.KING_SIDE)
+        .findFirst().orElseThrow();
+
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation, castling));
+  }
+
+  @Test
+  void testNonCastlingKingMoveDoesNotSatisfyCastlingObligation() {
+    final ApiBoard board = whiteKingsideClearBoard();
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1,
+        Piece.WHITE_KING, com.dlb.chess.board.enums.CastlingMove.KING_SIDE);
+
+    // A plain king move (e1->f1 if legal — but with bishop gone it should be) doesn't satisfy
+    // the castling obligation. Fall back to a search to find any non-castling king move.
+    final var plainKingMove = board.getLegalMoveSet().stream()
+        .filter(m -> m.moveSpecification().castlingMove() == com.dlb.chess.board.enums.CastlingMove.NONE)
+        .filter(m -> m.moveSpecification().fromSquare() == Square.E1)
+        .findFirst().orElseThrow();
+
+    assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation, plainKingMove));
+  }
+
+  @Test
+  void testCastlingObligationOtherSideMoveRejected() {
+    // White: king on e1, both rooks on starting squares, no pieces in the way for either side.
+    final ApiBoard board = new Board("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1,
+        Piece.WHITE_KING, com.dlb.chess.board.enums.CastlingMove.KING_SIDE);
+
+    // Queenside castling is legal in this position but does NOT satisfy a kingside obligation.
+    final var queensideCastling = board.getLegalMoveSet().stream()
+        .filter(m -> m.moveSpecification().castlingMove() == com.dlb.chess.board.enums.CastlingMove.QUEEN_SIDE)
+        .findFirst().orElseThrow();
+
+    assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation, queensideCastling));
+  }
+
+  @Test
+  void testKingThenRookOnIllegalSideDoesNotEstablishCastlingObligation() {
+    // White can castle kingside only — queenside path is blocked (queen on d1 in the standard
+    // opening setup). Touching K then queenside rook should NOT establish the CASTLING
+    // obligation; it falls back to existing rules.
+    final ApiBoard board = whiteKingsideClearBoard();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.click(Square.A1, Piece.WHITE_ROOK, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    // Falls back: king touch establishes OWN_PIECE on e1 (king has legal moves including O-O).
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.E1, obligation.get().square());
+  }
+
+  @Test
+  void testTouchedRookDeterminesSideWhenBothLegal() {
+    // Both castling sides legal for White. Touching K then queenside rook a1 → must castle queenside.
+    final ApiBoard board = new Board("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.click(Square.A1, Piece.WHITE_ROOK, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.CASTLING, obligation.get().type());
+    assertEquals(com.dlb.chess.board.enums.CastlingMove.QUEEN_SIDE, obligation.get().castlingMove());
+  }
 }

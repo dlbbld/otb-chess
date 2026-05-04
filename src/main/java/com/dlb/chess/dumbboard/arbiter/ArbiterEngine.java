@@ -503,6 +503,7 @@ public class ArbiterEngine {
     return switch (obligation.type()) {
       case OWN_PIECE -> ArbiterResponse.touchMoveViolation(obligation);
       case OPPONENT_PIECE -> ArbiterResponse.touchMoveViolation(obligation);
+      case CASTLING -> ArbiterResponse.touchMoveViolation(obligation);
     };
   }
 

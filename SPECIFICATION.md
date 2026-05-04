@@ -207,7 +207,7 @@ While the opponent is moving, the player sees a translucent floating piece follo
 
 ## Touch-Move Rules
 
-Touch-move is evaluated by scanning the action sequence at clock press. There are two **independent obligations**, each established by the first qualifying touch in the sequence; both can be active at the same turn.
+Touch-move is evaluated by scanning the action sequence at clock press. There are two **independent obligations**, each established by the first qualifying touch in the sequence; both can be active at the same turn. A separate, stronger obligation -- the **king-then-rook castling commitment** (FIDE 4.4.a) -- can take precedence over the own-piece obligation when its trigger condition is met (see [King-then-rook combined touch](#king-then-rook-combined-touch-fide-44a) below).
 
 ### Own-piece obligation
 
@@ -236,6 +236,24 @@ When the player presses the clock without satisfying the obligation(s), the mess
 > _"You touched the white knight on g1 -- you must make a legal move with that piece."_
 >
 > _"You touched the black bishop on c8 -- you must capture it."_
+
+### King-then-rook combined touch (FIDE 4.4.a)
+
+If the player **first touches their own king on its starting square and then touches their own rook on a starting rook square**, and **castling on the touched rook's side is legal**, a **CASTLING obligation** is established: the player must perform that castling move on that side. Any other move -- including a plain king move that would have satisfied the underlying own-piece obligation -- is rejected.
+
+- **Trigger:** any kind of touch counts (CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE) on the king at its starting square, then any touch on a rook at a starting rook square. Touches in between are ignored. Drag-pickups count as touches at the source square (the same way they do for the existing rules).
+- **Order:** king must be touched first. Rook-then-king does **not** trigger this rule (consistent with our [King-first rule](#king-first-rule) for castling execution).
+- **Side selection:** the touched rook's starting square determines the side -- kingside if h1/h8, queenside if a1/a8. If both sides would be legal but the player touched only one rook, the touched rook decides; the other side does **not** satisfy the obligation.
+- **Legality precondition:** the rule activates **only if castling on that side is legal in the current position**. If castling on the touched rook's side is not legal, the new rule does **not** fire and the existing rules apply (king touch establishes a normal own-piece obligation; the rook touch may add another own-piece obligation under those existing rules).
+- **Precedence:** the CASTLING obligation supersedes the OWN_PIECE obligation that the king touch would otherwise have created. They cannot both apply -- castling is the strictly more specific commitment.
+
+#### Violation message (CASTLING)
+
+> _"Because you touched the king and the rook, and castling is legal, please perform the castling move."_
+
+The opponent is told:
+
+> _"Your opponent touched the king and the rook, and castling is legal. They are requested to restore the position and perform the castling move."_
 
 ### Persistence across interventions
 
@@ -290,6 +308,10 @@ Because castling counts as a king move, an illegal castling attempt counts as **
 - After the position is restored:
   - If the king has any legal move -> the player **must make a legal move with the king**. The arbiter message says so explicitly.
   - **Special case:** if the king has **no** legal moves, the player is **not** forced to move the rook just because the rook was also moved as part of the failed castling attempt. The player may make any legal move with any piece. The arbiter message reflects this.
+
+### Touch-move commitment to castle (FIDE 4.4.a)
+
+If the player **touches their king first and then a rook on a starting rook square**, and **castling on that side is legal**, the player is bound to perform that castling move; any other move is rejected. See [King-then-rook combined touch](#king-then-rook-combined-touch-fide-44a) under Touch-Move Rules for the full rule, message, and edge cases.
 
 ### Released-piece interaction
 
@@ -518,6 +540,7 @@ A rejected claim that came through the proper FIDE channel (claim-on-board, or c
 
 - Made **after the player has executed their move and before pressing the clock**.
 - Travels to the opponent normally; the opponent gets an Accept/Reject panel.
+- The offerer receives a bare acknowledgment (*"Draw offer sent."*) — **no reminder to press the clock**, per [P-003](docs/design-principles.md#p-003). If the offerer forgets to press the clock, their own time continues to run while the opponent considers the offer; that consequence is part of the rules and the board does not coach the offerer around it.
 
 #### Wrong-time offers
 
@@ -544,7 +567,12 @@ The opponent loses the right to accept the offer when they "do something equival
 - **Offer made at the correct time** -> opponent's **first piece touch** invalidates the offer (FIDE 9.1.2.1).
 - **Offer made at the wrong time** -> invalidation only when the opponent has **legally released a piece** (i.e. completed the released-piece commitment) -- merely touching pieces while deciding their move shouldn't penalise them, since they were already mid-thinking when the offer arrived.
 
-In either case the offerer is told why the offer is no longer acceptable.
+When the trigger fires, the **recipient's** Accept/Reject panel is removed and replaced with a single message stating why the offer is no longer valid:
+
+- Correct-time path: *"The draw offer is no longer valid because you touched a piece."*
+- Wrong-time path: *"The draw offer is no longer valid because you made the move."*
+
+The offerer currently receives no separate notification of invalidation -- their UI has no element waiting on the response, and surfacing the invalidation to them would also flirt with [P-003](docs/design-principles.md#p-003) territory. Whether the offerer should be told ("your offer was declined by your opponent's piece touch") is an open UX question; not changing today.
 
 #### Offer-with-invalid-move
 
@@ -695,7 +723,7 @@ Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, p
 | Class | Responsibility |
 |---|---|
 | `PositionComparator` | Enumerates legal moves, compares resulting positions with the player's board state. |
-| `TouchMoveEvaluator` | Scans action sequence for the first touch-move obligation; recognises failed castling attempts where the king has no legal moves (via `CastlingAttemptDetector`). |
+| `TouchMoveEvaluator` | Scans action sequence for the first touch-move obligation; recognises failed castling attempts where the king has no legal moves (via `CastlingAttemptDetector`); detects the king-then-rook combined touch (FIDE 4.4.a) and emits a `CASTLING` obligation when castling on the touched rook's side is legal. |
 | `CastlingAttemptDetector` | Shared helper that recognises a king-then-rook drag pattern; used by `TouchMoveEvaluator` and `ArbiterEngine`. |
 | `ArbiterEngine` | Two-layer evaluation: position comparison + touch-move + released-piece + castling-attempt explanation. Builds structured `IllegalMoveDetail` / `ReleasedPieceContext` records used by typed message rendering. |
 | `IllegalMoveTracker` | Tracks illegal-move count per side; configurable limit (1-10 or unlimited, default 2). |
@@ -716,7 +744,7 @@ Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, p
 The canonical test count and per-class breakdown are in `src/test/java/...`; that source is the authority and exact numbers will drift faster than the spec is updated. The test layout is:
 
 - `TestPositionComparator` / `...EdgeCases` -- basic move types, multi-piece moves, missing-piece and castling variants.
-- `TestTouchMoveEvaluator` -- touch-move scanning, castling-attempt detection, obligation satisfaction, failed-castling-without-legal-king-moves.
+- `TestTouchMoveEvaluator` -- touch-move scanning, castling-attempt detection, obligation satisfaction, failed-castling-without-legal-king-moves, king-then-rook combined touch (FIDE 4.4.a) including order-sensitivity, side-selection from touched rook, and illegal-side fall-back.
 - `TestArbiterEngine` / `...EdgeCases` -- two-layer evaluation, all response types, released-piece (castling, back-to-origin, first-release-wins, castling-specific message, rook-on-wrong-square), illegal-move count messaging, illegal-castling reason and king obligation, fumbling, counter tracking.
 - `TestGameSession` -- end-to-end game flow, checkmate, draw claims (both variants and all outcomes), resignation, custom-FEN starting position, capture-by-removal, threefold/50-move short-circuits, SAN-validation-before-short-circuit ordering, accepted-claim per-player messages + short game-end description, second-claim-on-same-move rejection, rejected-claim registers draw offer, invalid-SAN doesn't lock the turn.
 - `TestGameSessionFlow` -- ready-to-continue, illegal-then-valid, touch-move persistence, released-piece restoration, touch-move-after-restoration.

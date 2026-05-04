@@ -1,14 +1,25 @@
 package com.dlb.chess.dumbboard.touchmove;
 
+import com.dlb.chess.board.enums.CastlingMove;
 import com.dlb.chess.board.enums.Piece;
 import com.dlb.chess.board.enums.Square;
 
 /**
  * Represents a touch-move obligation arising from a player touching a piece.
  *
- * @param type   whether the obligation is for an own piece (must move it) or opponent piece (must capture it)
- * @param square the square of the touched piece (at the time of touch, in the position before the move)
- * @param piece  the piece that was touched
+ * @param type         the kind of obligation: must move own piece, must capture opponent piece,
+ *                     or must castle on a specific side (FIDE 4.4.a).
+ * @param square       the square of the primary touched piece (at the time of touch, in the
+ *                     position before the move). For {@link TouchMoveType#CASTLING} this is the
+ *                     king's starting square.
+ * @param piece        the primary touched piece. For {@link TouchMoveType#CASTLING} this is the king.
+ * @param castlingMove for {@link TouchMoveType#CASTLING}, the side the player must castle on
+ *                     (KING_SIDE or QUEEN_SIDE). {@link CastlingMove#NONE} for the other types.
  */
-public record TouchMoveObligation(TouchMoveType type, Square square, Piece piece) {
+public record TouchMoveObligation(TouchMoveType type, Square square, Piece piece, CastlingMove castlingMove) {
+
+  /** Convenience constructor for non-castling obligations. */
+  public TouchMoveObligation(TouchMoveType type, Square square, Piece piece) {
+    this(type, square, piece, CastlingMove.NONE);
+  }
 }
