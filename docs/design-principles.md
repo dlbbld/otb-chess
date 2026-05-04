@@ -14,7 +14,7 @@ Cross-reference: SPECIFICATION.md's **Core Principle #9 — "The player has stan
 
 **Why**: An OTB arbiter does not ask "do you really want to claim threefold?" — they record the claim and apply the rules. If the claim was wrong, the consequences (under [A-001](fide-deviations.md#a-001), Article 9.5.3 time penalty, etc.) follow. Confirmation dialogs are an artefact of "undo culture" software UX; chess plays under physical-act rules.
 
-**Applies to**: Resign, draw offer, draw claim (after [D-003](fide-deviations.md#d-003)'s GUI redesign), and any other irrevocable action.
+**Applies to**: Resign, draw offer, draw claim, and any other irrevocable action.
 
 **Does not apply to**: Reversible actions (e.g. moving a piece on the board before clock-press — undo is *part of* the model, not an exception).
 

@@ -100,7 +100,7 @@ The player configures the game on a single screen before clicking **Create**:
   - **Black's view:** clock on the **left** of the board (= Black's right hand).
   - Achieved by toggling the class `clock-on-left-view` on `.game-layout` when the board is flipped.
 - **Game messages (info panel)** sit in the upper spacer of the right column, **directly above the clock**, hugging the clock's top edge.
-- **Action buttons** (Offer Draw, Resign, Request Piece, Claim Threefold, Claim 50-Move, Display PGN, Flip Board) live in a single row beneath the board.
+- **Action buttons** (Offer Draw, Resign, Request Piece, Claim Threefold Position, Claim Threefold Move, Claim 50-Move Position, Claim 50-Move Move, Display PGN, Flip Board) live beneath the board.
 
 The board must always remain visible. There is no popup overlay for the game result -- the result is shown inline (e.g. `1-0`, `0-1`, `1/2-1/2`) with reason text in the info panel.
 
@@ -454,6 +454,15 @@ The full unwinnability search (`UnwinnableFullAnalyzer`, the deep CUA helpmate s
 
 ### Threefold repetition / 50-move rule -- two variants each
 
+The claim action itself is made through four top-level buttons:
+
+- **Claim Threefold Position**
+- **Claim Threefold Move**
+- **Claim 50-Move Position**
+- **Claim 50-Move Move**
+
+Each button commits immediately when pressed. There is no confirmation dialog and no cancel/back-out step. For the two **Move** variants, pressing the button opens an inline SAN input for the claimed move; the player must complete that already-committed claim by entering a legal SAN.
+
 #### "Claim on board"
 
 - The current position already qualifies -> arbiter accepts.
@@ -466,7 +475,7 @@ The player enters a move in **SAN notation** in an inline panel. The server proc
 1. **SAN validation first.** The supplied SAN is validated against the current position via clean-chess's `SanValidation.validateSan(...)`. The move is **not performed** for validation -- `validateSan` checks the move's legality without mutating the board. If the SAN fails:
    - Result: `invalidMove`. Message: _"Invalid move: «clean-chess reason». Please enter a legal move for the claim."_
    - The SAN-input panel stays open and is re-prompted with the input cleared and refocused.
-   - The claim attempt is **not yet committed** -- the player is just typo-correcting.
+   - The chosen claim channel remains committed; the player cannot switch to a different claim or cancel. The invalid SAN submission is treated as typo-correction and does **not** consume the server-side once-per-turn allowance or trigger the incorrect-claim penalty.
 2. **Feasibility short-circuit.** If the SAN is legal, ask clean-chess whether **any** legal move from the current position could possibly satisfy the rule:
    - `board.canClaimThreefoldRepetitionRuleWithOwnMove()` for threefold,
    - `board.canClaimFiftyMoveRuleWithOwnMove()` for the 50-move rule.
@@ -487,7 +496,7 @@ The arbiter **never silently accepts an illegal SAN** -- the player learns from 
 
 #### Once-per-turn limit (FIDE 9.2 / 9.3)
 
-A player may make **at most one claim per move**. This includes both "on board" and "with move" attempts; an invalid-SAN attempt does **not** consume the allowance (the player hasn't completed an attempt yet). When a player tries a second claim on the same move:
+A player may make **at most one claim per move**. This includes both "on board" and "with move" attempts; an invalid-SAN submission in an already-committed with-move claim does **not** consume the server-side allowance (the player is still completing the same claim). When a player tries a second claim on the same move:
 
 - Claimer: _"You have already made a draw claim on this move. Only one claim per move is allowed."_
 - Opponent: _"Your opponent attempted a second draw claim on the same move. The claim was rejected."_
@@ -518,13 +527,6 @@ It does **not** apply to:
 - **Once-per-turn** rejections (the penalty already fired on the first rejected attempt).
 
 Note: FIDE Appendix A.3 reduces this penalty to 1 minute in rapid play, but our system does not currently differentiate by time-control category — it always applies 2 minutes. Tracked as a documentation note rather than a deviation entry; revisit if rapid-mode UX deviates further.
-
-#### Cancel button is removed once a claim is committed
-
-- Before the first **"Claim with Move"** click in a turn, the SAN-input panel shows a **Cancel** button.
-- The moment the player presses **"Claim with Move"** (regardless of SAN validity), the cancel button is hidden. The player must enter a legal SAN to complete the claim -- they cannot back out.
-- If the SAN is invalid the panel re-prompts without the cancel button.
-- The next time the SAN-input panel opens (next turn, after the claim resolves), the cancel button is restored.
 
 #### Rejected claim becomes a draw offer (FIDE 9.5)
 
@@ -746,7 +748,7 @@ The canonical test count and per-class breakdown are in `src/test/java/...`; tha
 - `TestPositionComparator` / `...EdgeCases` -- basic move types, multi-piece moves, missing-piece and castling variants.
 - `TestTouchMoveEvaluator` -- touch-move scanning, castling-attempt detection, obligation satisfaction, failed-castling-without-legal-king-moves, king-then-rook combined touch (FIDE 4.4.a) including order-sensitivity, side-selection from touched rook, and illegal-side fall-back.
 - `TestArbiterEngine` / `...EdgeCases` -- two-layer evaluation, all response types, released-piece (castling, back-to-origin, first-release-wins, castling-specific message, rook-on-wrong-square), illegal-move count messaging, illegal-castling reason and king obligation, fumbling, counter tracking.
-- `TestGameSession` -- end-to-end game flow, checkmate, draw claims (both variants and all outcomes), resignation, custom-FEN starting position, capture-by-removal, threefold/50-move short-circuits, SAN-validation-before-short-circuit ordering, accepted-claim per-player messages + short game-end description, second-claim-on-same-move rejection, rejected-claim registers draw offer, invalid-SAN doesn't lock the turn.
+- `TestGameSession` -- end-to-end game flow, checkmate, draw claims (both variants and all outcomes), resignation, custom-FEN starting position, capture-by-removal, threefold/50-move short-circuits, SAN-validation-before-short-circuit ordering, accepted-claim per-player messages + short game-end description, second-claim-on-same-move rejection, rejected-claim registers draw offer, invalid-SAN doesn't consume the server-side claim allowance.
 - `TestGameSessionFlow` -- ready-to-continue, illegal-then-valid, touch-move persistence, released-piece restoration, touch-move-after-restoration.
 - `TestMessageConverter` -- round-trip serialization, edge cases.
 - `TestGameWebSocketServer` -- typed `ArbiterResponse` rendering, opponent-message-not-derived-from-player-prose regression test.

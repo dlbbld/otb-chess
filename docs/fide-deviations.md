@@ -41,25 +41,6 @@ Each deviation entry includes a *Path to compliance* sub-section so the route to
 
 ---
 
-### D-003 — Claim buttons have a back-out step (current bug, to be fixed)
-
-**FIDE**: Article 9.5.1 — a draw claim cannot be withdrawn once made. The "claim" act is the speech act of telling the arbiter; in our case it should be the button press itself.
-
-**What we do today**: Pressing "Claim Threefold" opens a sub-panel with two options ("on position" / "on whole move"); the user can still cancel out of the sub-panel without committing. So the visible "Claim Threefold" button isn't actually committing — the commitment happens deeper.
-
-**Rationale**: Initial UI choice; doesn't match FIDE's irrevocable-claim semantic. Identified during spec review.
-
-**Path to compliance**: GUI redesign — split into two top-level buttons that each commit immediately on press:
-
-- `Claim threefold on position`
-- `Claim threefold on whole move`
-
-Same shape for the 50-move claim. Once a top-level button is pressed, the claim is recorded and cannot be retracted — matching the OTB reality of telling the arbiter.
-
-This is committed work, scheduled when the surrounding GUI work is touched.
-
----
-
 ### D-004 — J'adoube / piece adjustment is not modeled
 
 **FIDE**:
@@ -69,7 +50,7 @@ This is committed work, scheduled when the surrounding GUI work is touched.
 
 **What we do today**: No j'adoube concept exists. Touch-move is enforced via the digital equivalent (selecting a piece commits you to moving it) but no escape hatch is provided for adjustment. There is no way for a player to "touch without committing" the way an OTB arbiter would allow.
 
-**Rationale for not implementing**: Substantial work — UI button, mode tracking, per-piece event recording, side/turn validation, distinguishing adjusting-own-piece vs. adjusting-opponent-piece. The feature exists primarily to mirror physical-board behaviour. Lower priority than D-001 / D-003.
+**Rationale for not implementing**: Substantial work — UI button, mode tracking, per-piece event recording, side/turn validation, distinguishing adjusting-own-piece vs. adjusting-opponent-piece. The feature exists primarily to mirror physical-board behaviour. Lower priority than D-001.
 
 **Path to compliance (sketch)**:
 
