@@ -27,8 +27,10 @@ test('pawn promotion to a queen appears on both boards', async ({ browser }) => 
   await dragFromSideArea(white, 'WHITE_QUEEN', 'a8');
   await pressClock(white);
 
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expectPiece(white, 'a8', 'WHITE_QUEEN');
   await expectEmpty(white, 'a7');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'a8', 'WHITE_QUEEN');
 });
 
@@ -41,8 +43,10 @@ test('queenside castling is accepted', async ({ browser }) => {
   await dragPiece(white, 'a1', 'd1');
   await pressClock(white);
 
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expectPiece(white, 'c1', 'WHITE_KING');
   await expectPiece(white, 'd1', 'WHITE_ROOK');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'c1', 'WHITE_KING');
   await expectPiece(black, 'd1', 'WHITE_ROOK');
 });
@@ -70,12 +74,17 @@ test('flag fall ends the game for the player who ran out of time', async ({ brow
 
 test('pressing the opponent clock does not commit the move', async ({ browser }) => {
   game = await startTwoPlayerGame(browser, { timeMs: 300_000, incMs: 0 });
-  const { white } = game;
+  const { white, black } = game;
 
   await dragPiece(white, 'e2', 'e4');
-  await pressOpponentClock(white); // wrong lever -> no-op, move not committed
-  await expect(white.locator('#arbiterMessage')).not.toContainText('Move accepted');
+  await pressOpponentClock(white); // wrong lever -> should be a no-op
 
-  await pressClock(white); // own lever -> commits
-  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  // Give any (erroneous) commit time to propagate, then confirm it did not happen: the move was
+  // not committed, so it never becomes Black's turn. (Black sees the drag mirrored live, so we
+  // assert on turn state, not on the piece.)
+  await black.waitForTimeout(500);
+  await expect(black.locator('#arbiterMessage')).not.toContainText('Your turn');
+
+  await pressClock(white); // own lever -> commits, now it is Black's turn
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
 });

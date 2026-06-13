@@ -31,11 +31,12 @@ test('50-move rule claim on a qualifying position draws the game', async ({ brow
 test('50-move rule claim with the move that reaches it draws the game', async ({ browser }) => {
   // Half-move clock 99; a non-pawn, non-capture move (Rd4-d1) brings it to 100.
   game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/3R4/8/8/4K3 w - - 99 51' });
-  const { white } = game;
+  const { white, black } = game;
 
   await claimFiftyMoveWithMove(white, 'Rd1');
 
   await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
 });
 
 test('an invalid claim move is reported as invalid and the game continues', async ({ browser }) => {

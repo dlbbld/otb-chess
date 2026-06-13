@@ -92,9 +92,11 @@ test('kingside castling is accepted', async ({ browser }) => {
   await dragPiece(white, 'h1', 'f1');
   await pressClock(white);
 
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expectPiece(white, 'g1', 'WHITE_KING');
   await expectPiece(white, 'f1', 'WHITE_ROOK');
-  // The opponent receives the castled position too.
+  // The opponent receives the castled position and it becomes their turn.
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'g1', 'WHITE_KING');
   await expectPiece(black, 'f1', 'WHITE_ROOK');
 });
@@ -122,8 +124,10 @@ test('en passant capture is accepted', async ({ browser }) => {
   await removePiece(white, 'd5');
   await pressClock(white);
 
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expectPiece(white, 'd6', 'WHITE_PAWN');
   await expectEmpty(white, 'e5');
   await expectEmpty(white, 'd5');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'd6', 'WHITE_PAWN');
 });
