@@ -4,10 +4,11 @@
   "private": true,
   "description": "End-to-end tests (Playwright) for the Dumb Chessboard web app.",
   "scripts": {
-    "e2e": "playwright test",
-    "e2e:headed": "playwright test --headed",
-    "e2e:ui": "playwright test --ui",
-    "e2e:debug": "playwright test --debug",
+    "build:server": "mvn -q -DskipTests package",
+    "e2e": "npm run build:server && playwright test",
+    "e2e:headed": "npm run build:server && playwright test --headed",
+    "e2e:ui": "npm run build:server && playwright test --ui",
+    "e2e:debug": "npm run build:server && playwright test --debug",
     "e2e:report": "playwright show-report"
   },
   "devDependencies": {
