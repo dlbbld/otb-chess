@@ -55,6 +55,15 @@ public class TouchMoveEvaluator {
       return castlingObligation;
     }
 
+    // FIDE 4.3.3: touching an own piece and an opponent piece it can legally capture binds that
+    // specific capture. This is more specific than the plain own-piece / opponent-piece rules, so
+    // it takes precedence over the first-obligation scan below.
+    final Optional<TouchMoveObligation> specificCapture = findSpecificCaptureObligation(events, sideToMove,
+        legalMoves);
+    if (specificCapture.isPresent()) {
+      return specificCapture;
+    }
+
     for (int i = 0; i < events.size(); i++) {
       if (CastlingAttemptDetector.isFailedAttemptWithNoLegalKingMove(events, i, sideToMove, legalMoves)) {
         i++;
@@ -133,6 +142,61 @@ public class TouchMoveEvaluator {
       }
       if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())
           && legalMove.moveSpecification().castlingMove() == side) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Detects FIDE 4.3.3: the player touched one of their own pieces (that has legal moves) and one of
+   * the opponent's pieces, and the own piece can legally capture the opponent piece. The player must
+   * then make that specific capture. Returns empty when the pattern does not apply, in which case the
+   * caller falls back to the first-touched obligation (which is exactly the 4.3.3 fallback: move or
+   * capture the first piece touched that can be moved or captured).
+   */
+  private static Optional<TouchMoveObligation> findSpecificCaptureObligation(List<BoardEvent> events,
+      Side sideToMove, Set<LegalMove> legalMoves) {
+    Square ownSquare = Square.NONE;
+    Piece ownPiece = Piece.NONE;
+    Square opponentSquare = Square.NONE;
+    Piece opponentPiece = Piece.NONE;
+
+    for (final BoardEvent event : events) {
+      final Piece piece = event.piece();
+      if (piece == Piece.NONE) {
+        continue;
+      }
+      final Square touchedSquare = determineTouchedSquare(event);
+      if (touchedSquare == Square.NONE) {
+        continue;
+      }
+      if (piece.getSide() == sideToMove) {
+        if (ownSquare == Square.NONE && hasLegalMovesFromSquare(legalMoves, touchedSquare)) {
+          ownSquare = touchedSquare;
+          ownPiece = piece;
+        }
+      } else if (opponentSquare == Square.NONE && canBeCapturedOnSquare(legalMoves, touchedSquare)) {
+        opponentSquare = touchedSquare;
+        opponentPiece = piece;
+      }
+    }
+
+    if (ownSquare == Square.NONE || opponentSquare == Square.NONE) {
+      return Optional.empty();
+    }
+    if (!canCapture(legalMoves, ownSquare, opponentSquare)) {
+      return Optional.empty();
+    }
+    return Optional.of(TouchMoveObligation.specificCapture(ownSquare, ownPiece, opponentSquare, opponentPiece));
+  }
+
+  /** Whether there is a legal move from {@code fromSquare} to {@code toSquare} that captures a piece. */
+  private static boolean canCapture(Set<LegalMove> legalMoves, Square fromSquare, Square toSquare) {
+    for (final LegalMove legalMove : legalMoves) {
+      if (legalMove.moveSpecification().fromSquare() == fromSquare
+          && legalMove.moveSpecification().toSquare() == toSquare
+          && legalMove.pieceCaptured() != Piece.NONE) {
         return true;
       }
     }
@@ -243,6 +307,12 @@ public class TouchMoveEvaluator {
       case OPPONENT_PIECE ->
         // Must capture the touched opponent piece: the move must land on the obligation square and be a capture
         legalMove.moveSpecification().toSquare() == obligation.square() && legalMove.pieceCaptured() != Piece.NONE;
+      case SPECIFIC_CAPTURE ->
+        // FIDE 4.3.3: must capture the touched opponent piece with the touched own piece — the move
+        // must originate from the own square, land on the opponent square, and be a capture.
+        legalMove.moveSpecification().fromSquare() == obligation.square()
+            && legalMove.moveSpecification().toSquare() == obligation.toSquare()
+            && legalMove.pieceCaptured() != Piece.NONE;
       case CASTLING ->
         // Must castle on the touched rook's side. Only the matching castling move satisfies it.
         CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())

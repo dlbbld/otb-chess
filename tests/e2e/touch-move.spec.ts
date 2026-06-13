@@ -120,3 +120,34 @@ test('after an illegal move and restore, moving the touched piece legally is acc
   await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
 });
+
+// Case 4 (FIDE 4.3.3): touching an own piece and the opponent piece it can capture binds that
+// specific capture. White Pe4 can take Black Pd5.
+const COMPOUND_FEN = '4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1';
+
+test('touching own piece then the opponent piece it can take binds that capture (another move is a violation)', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: COMPOUND_FEN });
+  const { white } = game;
+
+  await clickSquare(white, 'e4'); // own pawn that can capture d5
+  await clickSquare(white, 'd5'); // the opponent pawn it can take
+  await dragPiece(white, 'e4', 'e5'); // push instead of capturing -> violates the specific capture
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(/capture/i);
+});
+
+test('capturing with the touched piece satisfies the specific-capture obligation', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: COMPOUND_FEN });
+  const { white, black } = game;
+
+  await clickSquare(white, 'e4');
+  await clickSquare(white, 'd5');
+  await dragPiece(white, 'e4', 'd5'); // exd5 — the required capture
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});

@@ -507,6 +507,7 @@ public class ArbiterEngine {
       case OWN_PIECE -> ArbiterResponse.touchMoveViolation(obligation);
       case OPPONENT_PIECE -> ArbiterResponse.touchMoveViolation(obligation);
       case CASTLING -> ArbiterResponse.touchMoveViolation(obligation);
+      case SPECIFIC_CAPTURE -> ArbiterResponse.touchMoveViolation(obligation);
     };
   }
 
