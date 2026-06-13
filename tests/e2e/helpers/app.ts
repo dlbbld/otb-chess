@@ -91,3 +91,27 @@ export async function startTwoPlayerGame(
 
   return { contexts: [creatorContext, joinerContext], creator, joiner, white, black, gameId };
 }
+
+/** The drawn-game score string the result panel shows (U+00BD = ½). */
+export const SCORE_DRAW = '½-½';
+
+/** Clicks the Resign button. */
+export async function resign(page: Page): Promise<void> {
+  await page.locator('#resignBtn').click();
+}
+
+/** Clicks the Offer Draw button. */
+export async function offerDraw(page: Page): Promise<void> {
+  await page.locator('#offerDrawBtn').click();
+}
+
+/** Accepts a pending draw offer (the Accept button in the draw-offer panel). */
+export async function acceptDraw(page: Page): Promise<void> {
+  await page.locator('#acceptDrawBtn').click();
+}
+
+/** Asserts (with auto-retry) the game-result panel shows the given score ("1-0" / "0-1" / SCORE_DRAW). */
+export async function expectGameResult(page: Page, score: string): Promise<void> {
+  await expect(page.locator('#gameResultPanel')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#gameResultScore')).toHaveText(score);
+}
