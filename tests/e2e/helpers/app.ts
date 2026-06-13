@@ -8,6 +8,8 @@ export interface CreateOptions {
   incMs?: number;
   /** Optional starting FEN. The side to move in the FEN plays first; the creator gets that side. */
   fen?: string;
+  /** Server default is true; set false to require an explicit "ready to continue" after a restore. */
+  autoResume?: boolean;
 }
 
 /** Navigates `page` to a freshly created game and returns the game code shown on the board page. */
@@ -17,6 +19,7 @@ export async function createGame(page: Page, opts: CreateOptions = {}): Promise<
   const inc = opts.incMs ?? 0;
   let url = `/game.html?creator=true&side=${side}&time=${time}&inc=${inc}`;
   if (opts.fen) url += `&fen=${encodeURIComponent(opts.fen)}`;
+  if (opts.autoResume === false) url += `&autoResumeAfterRestore=false`;
   await page.goto(url);
 
   // game.js appends the code element only after the server's `gameCreated` message.
@@ -131,4 +134,19 @@ export async function claimFiftyMoveWithMove(page: Page, san: string): Promise<v
   await page.locator('#claimFiftyMoveWithMoveBtn').click();
   await page.locator('#sanInput').fill(san);
   await page.locator('#submitClaimMoveBtn').click();
+}
+
+/** Clicks the "Do this for me" button shown to the offending player after an intervention. */
+export async function clickRestore(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Do this for me' }).click();
+}
+
+/** Clicks the "Ready to continue" button (shown to both players after a restore when auto-resume is off). */
+export async function clickReadyToContinue(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Ready to continue' }).click();
+}
+
+/** Asserts (with auto-retry) that the game resumed after an intervention/restore. */
+export async function expectGameResumed(page: Page): Promise<void> {
+  await expect(page.locator('#arbiterMessage')).toContainText('Game continues', { timeout: 15_000 });
 }

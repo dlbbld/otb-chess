@@ -8,14 +8,7 @@ import {
   expectGameResult,
   SCORE_DRAW,
 } from './helpers/app';
-import {
-  dragPiece,
-  clickSquare,
-  removePiece,
-  pressClock,
-  expectPiece,
-  expectEmpty,
-} from './helpers/board';
+import { dragPiece, removePiece, pressClock, expectPiece, expectEmpty } from './helpers/board';
 
 let game: TwoPlayerGame;
 
@@ -71,17 +64,7 @@ test('an illegal move is rejected (arbiter flags an error)', async ({ browser })
   await expect(white.locator('#arbiterMessage')).toHaveClass(/error/);
 });
 
-test('touch-move: touching one piece then moving another is a violation', async ({ browser }) => {
-  game = await startTwoPlayerGame(browser);
-  const { white } = game;
-
-  // Touch the knight (it has legal moves), then move a different piece.
-  await clickSquare(white, 'g1');
-  await dragPiece(white, 'e2', 'e4');
-  await pressClock(white);
-
-  await expect(white.locator('#arbiterMessage')).toHaveClass(/error/);
-});
+// Touch-move scenarios live in touch-move.spec.ts.
 
 test('kingside castling is accepted', async ({ browser }) => {
   // White: Ke1, Rh1 with O-O rights. Physically castle: king e1->g1, rook h1->f1.
