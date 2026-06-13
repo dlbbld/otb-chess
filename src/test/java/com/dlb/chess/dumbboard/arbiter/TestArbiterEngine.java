@@ -132,6 +132,81 @@ class TestArbiterEngine {
     assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
 
+  private static final String PROMOTION_CAPTURE_FEN = "r3k3/1P6/8/8/8/8/8/4K3 w - - 0 1"; // bxa8 promotes
+
+  @Test
+  void testPromotionCompletedByPlacingQueenIsAccepted() {
+    // bxa8: the pawn lands on a8 (incomplete), is lifted, and a queen is placed on a8 — promotion
+    // complete. The pawn-on-a8 step must not be treated as a released-piece commitment.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_PAWN, 1));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_QUEEN, 2));
+
+    final BitboardPosition queenOnA8 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B7, Piece.NONE)
+        .createChangedPosition(Square.A8, Piece.WHITE_QUEEN).build();
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED,
+        engine.evaluateClockPress(board, queenOnA8, sequence).type());
+  }
+
+  @Test
+  void testPromotionReleasedPieceLocksOnPromotedPieceNotPawn() {
+    // After the queen is released on a8 (bxa8=Q completed), swapping it back for the pawn is a
+    // released-piece violation naming the QUEEN (not the pawn) — and not an illegal move.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_PAWN, 1));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_QUEEN, 2)); // completes bxa8=Q
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_QUEEN, 3));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_PAWN, 4)); // pawn back on a8
+
+    final BitboardPosition pawnOnA8 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B7, Piece.NONE)
+        .createChangedPosition(Square.A8, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, pawnOnA8, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(Piece.WHITE_QUEEN, response.releasedPieceContext().get().piece());
+    assertEquals(Square.A8, response.releasedPieceContext().get().square());
+    assertEquals(BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B7, Piece.NONE)
+        .createChangedPosition(Square.A8, Piece.WHITE_QUEEN).build(), response.restorePosition().get());
+  }
+
+  @Test
+  void testPromotionReleasedPieceCannotBeChangedToAnotherPiece() {
+    // After bxa8=Q is completed, switching the queen for a knight is NOT a new promotion (bxa8=N)
+    // and NOT an illegal move — it is a released-piece violation: the queen is committed.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_PAWN, 1));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_QUEEN, 2)); // completes bxa8=Q
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_QUEEN, 3));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_KNIGHT, 4)); // try to switch to a knight
+
+    final BitboardPosition knightOnA8 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B7, Piece.NONE)
+        .createChangedPosition(Square.A8, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, knightOnA8, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(Piece.WHITE_QUEEN, response.releasedPieceContext().get().piece());
+    assertEquals(Square.A8, response.releasedPieceContext().get().square());
+  }
+
   /** FIDE 4.7: the FIRST legal release in the turn is the one that binds — even if a later
       drop is also a legal move. */
   @Test

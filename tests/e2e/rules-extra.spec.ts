@@ -150,3 +150,20 @@ test('flipping the board, then making a legal move, still works', async ({ brows
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'e4', 'WHITE_PAWN');
 });
+
+test('changing a completed promotion is a released-piece violation, not an illegal move', async ({ browser }) => {
+  // bxa8: pawn captures the rook and promotes. Once the queen is placed on a8 the move is complete;
+  // swapping it back for the pawn is a released-piece violation naming the queen.
+  game = await startTwoPlayerGame(browser, { fen: 'r3k3/1P6/8/8/8/8/8/4K3 w - - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'b7', 'a8'); // pawn captures the rook (lands as a pawn on a8)
+  await removePiece(white, 'a8'); // lift the pawn off
+  await dragFromSideArea(white, 'WHITE_QUEEN', 'a8'); // place the queen -> promotion complete
+  await removePiece(white, 'a8'); // lift the queen off
+  await dragFromSideArea(white, 'WHITE_PAWN', 'a8'); // put the pawn back
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(/released-piece/i);
+  await expect(white.locator('#arbiterMessage')).toContainText(/queen/i);
+});
