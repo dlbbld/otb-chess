@@ -3,16 +3,16 @@ package com.dlb.chess.dumbboard.arbiter;
 import java.util.List;
 import java.util.Optional;
 
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 import com.dlb.chess.dumbboard.message.MessageKey;
 import com.dlb.chess.dumbboard.message.MessageSeverity;
 import com.dlb.chess.dumbboard.message.Messages;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveObligation;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveType;
-import com.dlb.chess.model.LegalMove;
+import io.github.dlbbld.ashlarchess.model.LegalMove;
 
 /**
  * Represents the arbiter's response after evaluating a clock press or a mid-play event.
@@ -36,7 +36,7 @@ public record ArbiterResponse(
     List<Object> opponentMessageArgs,
     Optional<LegalMove> acceptedMove,
     Optional<TouchMoveObligation> obligation,
-    Optional<StaticPosition> restorePosition,
+    Optional<BitboardPosition> restorePosition,
     Optional<IllegalMoveDetail> illegalMoveDetail,
     Optional<ReleasedPieceContext> releasedPieceContext) {
 
@@ -126,7 +126,7 @@ public record ArbiterResponse(
         Optional.empty(), Optional.empty());
   }
 
-  public static ArbiterResponse releasedPieceViolation(ReleasedPieceContext context, StaticPosition restorePosition) {
+  public static ArbiterResponse releasedPieceViolation(ReleasedPieceContext context, BitboardPosition restorePosition) {
     final List<Object> args = List.of(formatPieceName(context.piece()), context.square().getName());
     return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION,
         MessageKey.ARBITER_RELEASED_PIECE_PLAYER, args, Optional.of(MessageKey.ARBITER_RELEASED_PIECE_OPPONENT),
@@ -140,7 +140,7 @@ public record ArbiterResponse(
    * target square; the king is already correctly placed.
    */
   public static ArbiterResponse releasedPieceViolationCastling(ReleasedPieceCastlingContext context,
-      StaticPosition restorePosition) {
+      BitboardPosition restorePosition) {
     final List<Object> args = List.of(
         context.square().getName(),
         context.castlingDirection(),

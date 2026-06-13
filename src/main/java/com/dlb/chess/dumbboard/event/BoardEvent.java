@@ -1,7 +1,7 @@
 package com.dlb.chess.dumbboard.event;
 
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 
 /**
  * Represents a single board manipulation event during a player's turn.

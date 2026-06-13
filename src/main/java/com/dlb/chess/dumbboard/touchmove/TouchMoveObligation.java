@@ -1,8 +1,8 @@
 package com.dlb.chess.dumbboard.touchmove;
 
-import com.dlb.chess.board.enums.CastlingMove;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 
 /**
  * Represents a touch-move obligation arising from a player touching a piece.

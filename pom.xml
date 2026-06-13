@@ -14,18 +14,11 @@
 		<maven.compiler.release>26</maven.compiler.release>
 	</properties>
 
-	<repositories>
-		<repository>
-			<id>jitpack.io</id>
-			<url>https://jitpack.io</url>
-		</repository>
-	</repositories>
-
 	<dependencies>
 		<dependency>
-			<groupId>com.github.dlbbld.clean-chess</groupId>
-			<artifactId>clean-chess</artifactId>
-			<version>3.0</version>
+			<groupId>io.github.dlbbld</groupId>
+			<artifactId>ashlar-chess</artifactId>
+			<version>18.1.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.java-websocket</groupId>

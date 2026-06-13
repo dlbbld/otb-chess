@@ -6,8 +6,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.java_websocket.WebSocket;
 
-import com.dlb.chess.board.Board;
-import com.dlb.chess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
 import com.dlb.chess.dumbboard.game.GameSession;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 

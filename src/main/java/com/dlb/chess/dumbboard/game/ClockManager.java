@@ -1,6 +1,6 @@
 package com.dlb.chess.dumbboard.game;
 
-import com.dlb.chess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 
 /**

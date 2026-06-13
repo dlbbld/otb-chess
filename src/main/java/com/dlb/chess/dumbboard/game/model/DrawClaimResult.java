@@ -2,7 +2,7 @@ package com.dlb.chess.dumbboard.game.model;
 
 import java.util.Optional;
 
-import com.dlb.chess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
 
 /**
  * @param accepted             whether the draw claim was accepted
@@ -12,7 +12,7 @@ import com.dlb.chess.common.model.MoveSpecification;
  * @param gameEndDescription   short description used for the game-result panel when the claim
  *                             ends the game ({@code null} when the game continues)
  * @param moveToPerform        if a claim-with-move is rejected, the move that must still be played
- * @param invalidMove          true iff the player's SAN failed clean-chess validation
+ * @param invalidMove          true iff the player's SAN failed Ashlar Chess validation
  * @param convertsToDrawOffer  true iff this rejection should be treated as a draw offer to the
  *                             opponent (rejected with-move / on-board claims, but not invalid-SAN
  *                             or duplicate-claim rejections)

@@ -6,12 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-import com.dlb.chess.board.Board;
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
-import com.dlb.chess.common.interfaces.ApiBoard;
+import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import com.dlb.chess.dumbboard.core.BitboardPositions;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 import com.dlb.chess.dumbboard.event.ActionSequence;
 import com.dlb.chess.dumbboard.event.BoardEvent;
 import com.dlb.chess.dumbboard.message.MessageKey;
@@ -22,15 +22,15 @@ class TestArbiterEngine {
   @Test
   void testValidSimpleMove() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player drags pawn e2 to e4 and presses clock
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -43,15 +43,15 @@ class TestArbiterEngine {
   @Test
   void testIllegalMoveNoMatchingPosition() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player puts knight on an impossible square
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -66,12 +66,12 @@ class TestArbiterEngine {
   @Test
   void testIllegalMoveWithoutSimpleAttemptKeepsGenericMessage() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -84,15 +84,15 @@ class TestArbiterEngine {
   @Test
   void testReleasedPieceViolationAfterLegalPawnRelease() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E3, Piece.WHITE_PAWN, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.E3, Square.E4, Piece.WHITE_PAWN, 1));
 
-    final StaticPosition afterE4 = board.getStaticPosition()
+    final BitboardPosition afterE4 = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterE4, sequence);
 
@@ -101,16 +101,16 @@ class TestArbiterEngine {
     assertEquals(Piece.WHITE_PAWN, response.releasedPieceContext().get().piece());
     assertEquals(Square.E3, response.releasedPieceContext().get().square());
     assertTrue(response.restorePosition().isPresent());
-    assertEquals(board.getStaticPosition()
+    assertEquals(BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E3, Piece.WHITE_PAWN), response.restorePosition().get());
+        .createChangedPosition(Square.E3, Piece.WHITE_PAWN).build(), response.restorePosition().get());
   }
 
   /** FIDE 4.7: putting the piece back to the original square does not undo a committed release. */
   @Test
   void testReleasedPieceViolationWhenDraggedBackToOrigin() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // White releases pawn on e3 (legal commit), then drags the pawn back to e2.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
@@ -118,16 +118,16 @@ class TestArbiterEngine {
     sequence.addEvent(BoardEvent.dragMove(Square.E3, Square.E2, Piece.WHITE_PAWN, 1));
 
     // Final physical position equals the position before the turn — no move on the board.
-    final StaticPosition afterOriginal = board.getStaticPosition();
+    final BitboardPosition afterOriginal = board.getBitboardPosition();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterOriginal, sequence);
 
     // The committed e3 release still binds; the player must restore to the e3 state.
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
     assertTrue(response.restorePosition().isPresent());
-    assertEquals(board.getStaticPosition()
+    assertEquals(BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E3, Piece.WHITE_PAWN), response.restorePosition().get());
+        .createChangedPosition(Square.E3, Piece.WHITE_PAWN).build(), response.restorePosition().get());
     // No illegal-move counter increment for the procedural violation.
     assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
@@ -137,7 +137,7 @@ class TestArbiterEngine {
   @Test
   void testReleasedPieceViolationFirstReleaseWinsAcrossTwoLegalMoves() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // White releases knight on c3 (legal: Nc3), then drags the same knight to d2 (Nd2 is also
     // a legal move from b1, but the c3 release was the binding one).
@@ -145,18 +145,18 @@ class TestArbiterEngine {
     sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.C3, Piece.WHITE_KNIGHT, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.C3, Square.D2, Piece.WHITE_KNIGHT, 1));
 
-    final StaticPosition afterD2 = board.getStaticPosition()
+    final BitboardPosition afterD2 = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.B1, Piece.NONE)
-        .createChangedPosition(Square.D2, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.D2, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterD2, sequence);
 
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
     assertTrue(response.message().contains("knight on c3"));
     assertTrue(response.restorePosition().isPresent());
-    assertEquals(board.getStaticPosition()
+    assertEquals(BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.B1, Piece.NONE)
-        .createChangedPosition(Square.C3, Piece.WHITE_KNIGHT), response.restorePosition().get());
+        .createChangedPosition(Square.C3, Piece.WHITE_KNIGHT).build(), response.restorePosition().get());
   }
 
   /** FIDE 4.7: the king's release on g1 starts a kingside castling sequence. The only legal
@@ -165,22 +165,22 @@ class TestArbiterEngine {
   @Test
   void testReleasedPieceViolationCastlingKingReleasedButRookNotMoved() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
     // Set up a position where O-O is legal for white.
-    board.performMove("e4");
-    board.performMove("e5");
-    board.performMove("Nf3");
-    board.performMove("Nf6");
-    board.performMove("Bc4");
-    board.performMove("Bc5");
+    board.moveStrict("e4");
+    board.moveStrict("e5");
+    board.moveStrict("Nf3");
+    board.moveStrict("Nf6");
+    board.moveStrict("Bc4");
+    board.moveStrict("Bc5");
 
     // White releases the king on g1 but never moves the rook.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
 
-    final StaticPosition afterKingOnly = board.getStaticPosition()
+    final BitboardPosition afterKingOnly = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE)
-        .createChangedPosition(Square.G1, Piece.WHITE_KING);
+        .createChangedPosition(Square.G1, Piece.WHITE_KING).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterKingOnly, sequence);
 
@@ -204,22 +204,22 @@ class TestArbiterEngine {
   @Test
   void testReleasedPieceViolationCastlingRookMovedToWrongSquare() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
-    board.performMove("e4");
-    board.performMove("e5");
-    board.performMove("Nf3");
-    board.performMove("Nf6");
-    board.performMove("Bc4");
-    board.performMove("Bc5");
+    final Board board = new Board();
+    board.moveStrict("e4");
+    board.moveStrict("e5");
+    board.moveStrict("Nf3");
+    board.moveStrict("Nf6");
+    board.moveStrict("Bc4");
+    board.moveStrict("Bc5");
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.E1, Piece.WHITE_ROOK, 1));
 
-    final StaticPosition wrongAfter = board.getStaticPosition()
+    final BitboardPosition wrongAfter = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.WHITE_ROOK)
         .createChangedPosition(Square.G1, Piece.WHITE_KING)
-        .createChangedPosition(Square.H1, Piece.NONE);
+        .createChangedPosition(Square.H1, Piece.NONE).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, wrongAfter, sequence);
 
@@ -239,23 +239,23 @@ class TestArbiterEngine {
   @Test
   void testReleasedPieceRuleAllowsCompletedCastling() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
-    board.performMove("e4");
-    board.performMove("e5");
-    board.performMove("Nf3");
-    board.performMove("Nf6");
-    board.performMove("Bc4");
-    board.performMove("Bc5");
+    final Board board = new Board();
+    board.moveStrict("e4");
+    board.moveStrict("e5");
+    board.moveStrict("Nf3");
+    board.moveStrict("Nf6");
+    board.moveStrict("Bc4");
+    board.moveStrict("Bc5");
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
 
-    final StaticPosition afterCastled = board.getStaticPosition()
+    final BitboardPosition afterCastled = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE)
         .createChangedPosition(Square.G1, Piece.WHITE_KING)
         .createChangedPosition(Square.H1, Piece.NONE)
-        .createChangedPosition(Square.F1, Piece.WHITE_ROOK);
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterCastled, sequence);
 
@@ -265,14 +265,14 @@ class TestArbiterEngine {
   @Test
   void testSecondIllegalMoveGameLost() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     // First illegal move
     engine.evaluateClockPress(board, afterPosition, sequence);
@@ -290,13 +290,13 @@ class TestArbiterEngine {
   @Test
   void testIllegalMoveMessageNamesMaxOrdinalWhenManyRemain() {
     final ArbiterEngine engine = new ArbiterEngine(4);
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse first = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
@@ -324,13 +324,13 @@ class TestArbiterEngine {
   @Test
   void testIllegalMoveMessageOmitsLossThreatWhenUnlimited() {
     final ArbiterEngine engine = new ArbiterEngine(IllegalMoveTracker.UNLIMITED);
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
@@ -342,12 +342,12 @@ class TestArbiterEngine {
   @Test
   void testIncompleteMoveBoardUnchanged() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player presses clock without changing the board
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
 
-    final ArbiterResponse response = engine.evaluateClockPress(board, board.getStaticPosition(), sequence);
+    final ArbiterResponse response = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
 
     assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, response.type());
   }
@@ -355,16 +355,16 @@ class TestArbiterEngine {
   @Test
   void testTouchMoveViolationOwnPiece() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player touches knight g1, but plays pawn e4
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -377,16 +377,16 @@ class TestArbiterEngine {
   @Test
   void testTouchMoveViolationOwnPawnMessageNamesFirstTouchedPiece() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player touches pawn b2, but plays e4.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.click(Square.B2, Piece.WHITE_PAWN, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -403,19 +403,19 @@ class TestArbiterEngine {
   @Test
   void testTouchMoveViolationOpponentPiece() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
     // Play 1.e4 d5 — now exd5 is possible
-    board.performMove("e4");
-    board.performMove("d5");
+    board.moveStrict("e4");
+    board.moveStrict("d5");
 
     // White touches opponent pawn on d5 (must capture), but plays Nf3 instead
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.click(Square.D5, Piece.BLACK_PAWN, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -426,16 +426,16 @@ class TestArbiterEngine {
   @Test
   void testTouchMoveViolationDoesNotCountAsIllegalMove() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player touches knight g1, but plays pawn e4 — touch-move violation
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -446,16 +446,16 @@ class TestArbiterEngine {
   @Test
   void testTouchMoveObligationSatisfied() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player touches knight g1 and plays Nf3 — satisfies touch-move
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -465,25 +465,25 @@ class TestArbiterEngine {
   @Test
   void testCastlingDetectedViaPositionComparison() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
     // Set up kingside castling
-    board.performMove("e4");
-    board.performMove("e5");
-    board.performMove("Nf3");
-    board.performMove("Nc6");
-    board.performMove("Be2");
-    board.performMove("Nf6");
+    board.moveStrict("e4");
+    board.moveStrict("e5");
+    board.moveStrict("Nf3");
+    board.moveStrict("Nc6");
+    board.moveStrict("Be2");
+    board.moveStrict("Nf6");
 
     // Player moves king to g1 and rook to f1 (castling)
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE)
         .createChangedPosition(Square.H1, Piece.NONE)
         .createChangedPosition(Square.G1, Piece.WHITE_KING)
-        .createChangedPosition(Square.F1, Piece.WHITE_ROOK);
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -493,13 +493,13 @@ class TestArbiterEngine {
   @Test
   void testRookFirstCannotBeAcceptedAsCastling() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
-    board.performMove("e4");
-    board.performMove("e5");
-    board.performMove("Nf3");
-    board.performMove("Nc6");
-    board.performMove("Be2");
-    board.performMove("Nf6");
+    final Board board = new Board();
+    board.moveStrict("e4");
+    board.moveStrict("e5");
+    board.moveStrict("Nf3");
+    board.moveStrict("Nc6");
+    board.moveStrict("Be2");
+    board.moveStrict("Nf6");
 
     // Rook first produces the same final position as castling, but the move may not be
     // accepted as O-O because castling is a king move.
@@ -507,11 +507,11 @@ class TestArbiterEngine {
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE)
         .createChangedPosition(Square.H1, Piece.NONE)
         .createChangedPosition(Square.G1, Piece.WHITE_KING)
-        .createChangedPosition(Square.F1, Piece.WHITE_ROOK);
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -522,18 +522,18 @@ class TestArbiterEngine {
   @Test
   void testIllegalCastlingAttemptReportsCastlingReasonAndKingObligation() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board("k4r2/8/8/8/8/8/8/4K2R w K - 0 1");
+    final Board board = new Board("k4r2/8/8/8/8/8/8/4K2R w K - 0 1");
 
     // White tries to castle through f1, which is attacked by the black rook on f8.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE)
         .createChangedPosition(Square.H1, Piece.NONE)
         .createChangedPosition(Square.G1, Piece.WHITE_KING)
-        .createChangedPosition(Square.F1, Piece.WHITE_ROOK);
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -548,7 +548,7 @@ class TestArbiterEngine {
   @Test
   void testFailedAdjacentCastlingAttemptWithNoKingMovesDoesNotBindRook() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+    final Board board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
 
     // White attempts a malformed kingside castling motion. Castling is impossible because f1 is
     // attacked, and the king has no legal move at all from e1.
@@ -556,11 +556,11 @@ class TestArbiterEngine {
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.F1, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.G1, Piece.WHITE_ROOK, 1));
 
-    final StaticPosition afterFailedCastling = board.getStaticPosition()
+    final BitboardPosition afterFailedCastling = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE)
         .createChangedPosition(Square.H1, Piece.NONE)
         .createChangedPosition(Square.F1, Piece.WHITE_KING)
-        .createChangedPosition(Square.G1, Piece.WHITE_ROOK);
+        .createChangedPosition(Square.G1, Piece.WHITE_ROOK).build();
 
     final ArbiterResponse failedCastling = engine.evaluateClockPress(board, afterFailedCastling, sequence);
 
@@ -573,9 +573,9 @@ class TestArbiterEngine {
     // player to a rook move. A different legal move is acceptable.
     sequence.resetReleasedPieceRule();
     sequence.addEvent(BoardEvent.dragMove(Square.A2, Square.A3, Piece.WHITE_PAWN, 2));
-    final StaticPosition afterPawnMove = board.getStaticPosition()
+    final BitboardPosition afterPawnMove = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.A2, Piece.NONE)
-        .createChangedPosition(Square.A3, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.A3, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse laterMove = engine.evaluateClockPress(board, afterPawnMove, sequence);
 
@@ -588,17 +588,17 @@ class TestArbiterEngine {
   @Test
   void testNonCastlingKingAndRookMovesDoNotReportCastlingFailure() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+    final Board board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.E3, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F2, Piece.WHITE_ROOK, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE)
         .createChangedPosition(Square.H1, Piece.NONE)
         .createChangedPosition(Square.E3, Piece.WHITE_KING)
-        .createChangedPosition(Square.F2, Piece.WHITE_ROOK);
+        .createChangedPosition(Square.F2, Piece.WHITE_ROOK).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -609,17 +609,17 @@ class TestArbiterEngine {
   @Test
   void testFailedAdjacentCastlingAttemptWithLegalKingReleaseStillBindsReleasedPiece() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board("k7/8/8/8/8/8/P2PPP2/3QK2R w - - 0 1");
+    final Board board = new Board("k7/8/8/8/8/8/P2PPP2/3QK2R w - - 0 1");
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.F1, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.G1, Piece.WHITE_ROOK, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE)
         .createChangedPosition(Square.H1, Piece.NONE)
         .createChangedPosition(Square.F1, Piece.WHITE_KING)
-        .createChangedPosition(Square.G1, Piece.WHITE_ROOK);
+        .createChangedPosition(Square.G1, Piece.WHITE_ROOK).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -630,22 +630,22 @@ class TestArbiterEngine {
   @Test
   void testEnPassantDetectedViaPositionComparison() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
     // Set up en passant
-    board.performMove("e4");
-    board.performMove("d5");
-    board.performMove("e5");
-    board.performMove("f5");
+    board.moveStrict("e4");
+    board.moveStrict("d5");
+    board.moveStrict("e5");
+    board.moveStrict("f5");
 
     // Player executes en passant: pawn e5 to f6, removes pawn from f5
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.remove(Square.F5, Piece.BLACK_PAWN, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.E5, Square.F6, Piece.WHITE_PAWN, 1));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E5, Piece.NONE)
         .createChangedPosition(Square.F5, Piece.NONE)
-        .createChangedPosition(Square.F6, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.F6, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -655,7 +655,7 @@ class TestArbiterEngine {
   @Test
   void testPlayerFumblesButEndsWithValidPosition() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player drags knight to illegal square, then moves it back, then plays e4
     // All that matters is the final position and the touch-move scan
@@ -663,9 +663,9 @@ class TestArbiterEngine {
     // Touches the pawn first (pawn on e2 has legal moves → touch-move obligation)
     sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -676,16 +676,16 @@ class TestArbiterEngine {
   @Test
   void testPlayerFumblesWithKnightButPlaysLegalKnightMove() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final ApiBoard board = new Board();
+    final Board board = new Board();
 
     // Player touches knight on b1, fumbles around, ends up with knight on c3
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0)); // illegal intermediate
     sequence.addEvent(BoardEvent.dragMove(Square.B3, Square.C3, Piece.WHITE_KNIGHT, 1)); // correction
 
-    final StaticPosition afterPosition = board.getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.B1, Piece.NONE)
-        .createChangedPosition(Square.C3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.C3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 

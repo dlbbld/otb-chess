@@ -4,12 +4,11 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import com.dlb.chess.board.Board;
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
-import com.dlb.chess.common.interfaces.ApiBoard;
-import com.dlb.chess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
 import com.dlb.chess.dumbboard.arbiter.ArbiterEngine;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponseType;
@@ -22,8 +21,8 @@ import com.dlb.chess.dumbboard.game.model.GameResult;
 import com.dlb.chess.dumbboard.game.model.GameResultType;
 import com.dlb.chess.dumbboard.game.model.GameState;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
-import com.dlb.chess.pgn.create.PgnCreate;
-import com.dlb.chess.unwinnability.quick.enums.UnwinnableQuick;
+import io.github.dlbbld.ashlarchess.pgn.PgnCreate;
+import io.github.dlbbld.ashlarchess.unwinnability.UnwinnabilityQuickVerdict;
 
 /**
  * Central orchestrator for a dumb chessboard game.
@@ -47,7 +46,7 @@ public class GameSession {
 
   // Per-turn state
   private ActionSequence currentSequence;
-  private StaticPosition positionBeforeTurn;
+  private BitboardPosition positionBeforeTurn;
   private final Set<Square> removedSquaresThisTurn;
 
   // State for "must execute specified move" after rejected draw claim
@@ -69,7 +68,7 @@ public class GameSession {
   private boolean blackReady;
   private boolean waitingForRestoration;
   private boolean restorationResumePending;
-  private StaticPosition restorationTargetPosition;
+  private BitboardPosition restorationTargetPosition;
 
   public GameSession(TimeControl timeControl) {
     this(timeControl, com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES);
@@ -105,7 +104,7 @@ public class GameSession {
     this.state = GameState.WAITING_FOR_PLAYERS;
     this.result = null;
     this.currentSequence = new ActionSequence(board.getHavingMove());
-    this.positionBeforeTurn = board.getStaticPosition();
+    this.positionBeforeTurn = board.getBitboardPosition();
     this.removedSquaresThisTurn = new HashSet<>();
     this.mustExecuteMove = null;
     this.waitingForReady = false;
@@ -155,12 +154,12 @@ public class GameSession {
     //     as the first step of a capture-by-removal sequence. The opponent piece is
     //     identified by event.piece(); displacedPiece is NONE for REMOVE events.
     if (event.type() == com.dlb.chess.dumbboard.event.BoardEventType.DRAG_CAPTURE) {
-      if (event.displacedPiece() != com.dlb.chess.board.enums.Piece.NONE
+      if (event.displacedPiece() != io.github.dlbbld.ashlarchess.board.enums.Piece.NONE
           && event.displacedPiece().getSide() != side) {
         removedSquaresThisTurn.add(event.targetSquare());
       }
     } else if (event.type() == com.dlb.chess.dumbboard.event.BoardEventType.REMOVE) {
-      if (event.piece() != com.dlb.chess.board.enums.Piece.NONE
+      if (event.piece() != io.github.dlbbld.ashlarchess.board.enums.Piece.NONE
           && event.piece().getSide() != side) {
         removedSquaresThisTurn.add(event.square());
       }
@@ -179,7 +178,7 @@ public class GameSession {
    * @param afterPosition the current board state as seen on the physical board
    * @return the arbiter response
    */
-  public synchronized ArbiterResponse pressClockButton(Side side, StaticPosition afterPosition) {
+  public synchronized ArbiterResponse pressClockButton(Side side, BitboardPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
@@ -210,7 +209,7 @@ public class GameSession {
    * clock press (or an offered draw, etc.) goes through the full {@link ArbiterEngine}
    * evaluation that records illegal moves.
    */
-  public synchronized Optional<ArbiterResponse> evaluateForAutoEnd(Side side, StaticPosition afterPosition) {
+  public synchronized Optional<ArbiterResponse> evaluateForAutoEnd(Side side, BitboardPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
       return Optional.empty();
     }
@@ -225,12 +224,12 @@ public class GameSession {
 
     // Position match — pure read, no side effects. Most intermediate positions during piece
     // manipulation will produce no match and we exit immediately.
-    final java.util.Set<com.dlb.chess.model.LegalMove> matchingMoves =
+    final java.util.Set<io.github.dlbbld.ashlarchess.model.LegalMove> matchingMoves =
         com.dlb.chess.dumbboard.core.PositionComparator.findMatchingMoves(board, afterPosition);
     if (matchingMoves.isEmpty()) {
       return Optional.empty();
     }
-    final com.dlb.chess.model.LegalMove matchedMove = matchingMoves.iterator().next();
+    final io.github.dlbbld.ashlarchess.model.LegalMove matchedMove = matchingMoves.iterator().next();
 
     // Released-piece guard (FIDE 4.7): if the player has already committed a release in this
     // turn and the current physical position is NOT one of the committed move's allowed final
@@ -253,11 +252,11 @@ public class GameSession {
     // Speculatively perform the matched move and check whether the resulting position ends the
     // game (checkmate, stalemate, dead position, fivefold, 75-move).
     final MoveSpecification spec = matchedMove.moveSpecification();
-    board.performMove(spec);
+    board.move(spec);
     final Optional<GameResult> ending = checkAutomaticEndings();
     if (ending.isEmpty()) {
       // Not a game-ending move — leave evaluation to the clock press, undo our speculative move.
-      board.unperformMove();
+      board.unmove();
       return Optional.empty();
     }
 
@@ -273,7 +272,7 @@ public class GameSession {
     switch (response.type()) {
       case MOVE_ACCEPTED -> {
         // Perform the move on the internal board
-        board.performMove(response.acceptedMove().get().moveSpecification());
+        board.move(response.acceptedMove().get().moveSpecification());
 
         // Switch the clock
         clock.switchClock();
@@ -318,19 +317,19 @@ public class GameSession {
     return response;
   }
 
-  private ArbiterResponse evaluateMustExecuteMove(StaticPosition afterPosition) {
+  private ArbiterResponse evaluateMustExecuteMove(BitboardPosition afterPosition) {
     // Compute expected position after the specified move
-    final StaticPosition expectedPosition = Board.createPositionAfterMove(positionBeforeTurn, board.getHavingMove(),
-        mustExecuteMove);
+    final BitboardPosition expectedPosition = positionBeforeTurn.afterMove(
+        mustExecuteMove, board.getHavingMove());
 
     if (expectedPosition.equals(afterPosition)) {
       // Correct — perform the move
       final MoveSpecification executedMove = mustExecuteMove;
-      final com.dlb.chess.model.LegalMove matchedLegalMove = board.getLegalMoveSet().stream()
+      final io.github.dlbbld.ashlarchess.model.LegalMove matchedLegalMove = board.getLegalMoves().stream()
           .filter(lm -> lm.moveSpecification().equals(executedMove))
           .findFirst()
           .orElseThrow(() -> new IllegalStateException("Specified move is not in the legal move set"));
-      board.performMove(executedMove);
+      board.move(executedMove);
       mustExecuteMove = null;
       clock.switchClock();
 
@@ -362,7 +361,7 @@ public class GameSession {
    * offering player to press the clock). Returns the appropriate intervention type if the
    * move is invalid (in which case the offer is dropped without penalty).
    */
-  public synchronized ArbiterResponse offerDrawCorrectTime(Side side, StaticPosition afterPosition) {
+  public synchronized ArbiterResponse offerDrawCorrectTime(Side side, BitboardPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
@@ -499,7 +498,7 @@ public class GameSession {
               : GameResultType.FIFTY_MOVE_CLAIM;
 
       if (claimResult.moveToPerform().isPresent()) {
-        board.performMove(claimResult.moveToPerform().get());
+        board.move(claimResult.moveToPerform().get());
       }
 
       // Use the short game-end description for the result panel; the long claim-feedback
@@ -543,8 +542,8 @@ public class GameSession {
   public synchronized GameResult resign(Side side) {
     final Side opponent = side.getOppositeSide();
 
-    final UnwinnableQuick winnability = board.isUnwinnableQuick(opponent);
-    if (winnability == UnwinnableQuick.UNWINNABLE) {
+    final UnwinnabilityQuickVerdict winnability = board.isUnwinnableQuick(opponent);
+    if (winnability == UnwinnabilityQuickVerdict.UNWINNABLE) {
       final String sideName = sideName(side);
       final String opponentName = sideName(opponent);
       final GameResult drawResult = new GameResult(GameResultType.RESIGNATION, Side.NONE,
@@ -584,12 +583,12 @@ public class GameSession {
     for (final Side side : new Side[] { Side.WHITE, Side.BLACK }) {
       if (clock.isFlagFall(side)) {
         final Side opponent = side.getOppositeSide();
-        final UnwinnableQuick winnability = board.isUnwinnableQuick(opponent);
+        final UnwinnabilityQuickVerdict winnability = board.isUnwinnableQuick(opponent);
 
         final String sideName = sideName(side);
         final String opponentName = sideName(opponent);
         final GameResult flagResult;
-        if (winnability == UnwinnableQuick.UNWINNABLE) {
+        if (winnability == UnwinnabilityQuickVerdict.UNWINNABLE) {
           flagResult = new GameResult(GameResultType.FLAG_FALL, Side.NONE,
               sideName + "'s time has elapsed, but because " + opponentName
                   + " has no possible win, the game is a draw.");
@@ -643,7 +642,7 @@ public class GameSession {
     }
 
     // 5. 75-move rule
-    if (board.isSeventyFiftyMove()) {
+    if (board.isSeventyFiveMove()) {
       return Optional.of(new GameResult(GameResultType.SEVENTY_FIVE_MOVE, Side.NONE,
           "The game is drawn by the 75-move rule."));
     }
@@ -655,7 +654,7 @@ public class GameSession {
 
   private void startNewTurn() {
     this.currentSequence = new ActionSequence(board.getHavingMove());
-    this.positionBeforeTurn = board.getStaticPosition();
+    this.positionBeforeTurn = board.getBitboardPosition();
     this.restorationTargetPosition = positionBeforeTurn;
     this.removedSquaresThisTurn.clear();
     this.mustExecuteMove = null;
@@ -702,7 +701,7 @@ public class GameSession {
     enterWaitingForRestoration(positionBeforeTurn);
   }
 
-  public synchronized void enterWaitingForRestoration(StaticPosition restorationTargetPosition) {
+  public synchronized void enterWaitingForRestoration(BitboardPosition restorationTargetPosition) {
     this.waitingForRestoration = true;
     this.restorationResumePending = false;
     this.waitingForReady = false;
@@ -765,7 +764,7 @@ public class GameSession {
   /**
    * Returns the position before the current turn, for restoring after an illegal move.
    */
-  public synchronized StaticPosition getRestorePosition() {
+  public synchronized BitboardPosition getRestorePosition() {
     return restorationTargetPosition;
   }
 
@@ -781,7 +780,7 @@ public class GameSession {
     return restorationResumePending;
   }
 
-  public synchronized boolean isRestoredPosition(StaticPosition position) {
+  public synchronized boolean isRestoredPosition(BitboardPosition position) {
     return restorationTargetPosition.equals(position);
   }
 
@@ -792,7 +791,7 @@ public class GameSession {
   // ===== PGN export =====
 
   public synchronized String exportPgn() {
-    return PgnCreate.createPgnFileString(board);
+    return PgnCreate.createPgnString(board);
   }
 
   // ===== Getters =====
@@ -809,7 +808,7 @@ public class GameSession {
     return board.getHavingMove();
   }
 
-  public synchronized ApiBoard getBoard() {
+  public synchronized Board getBoard() {
     return board;
   }
 
@@ -825,7 +824,7 @@ public class GameSession {
     return board.isCheck();
   }
 
-  public synchronized StaticPosition getPositionBeforeTurn() {
+  public synchronized BitboardPosition getPositionBeforeTurn() {
     return positionBeforeTurn;
   }
 

@@ -59,7 +59,7 @@ class GameWebSocket {
       maxIllegalMoves: maxIllegalMoves,
       autoResumeAfterRestore: autoResumeAfterRestore
     };
-    // Optional starting FEN — when supplied the server validates via clean-chess and
+    // Optional starting FEN — when supplied the server validates via Ashlar Chess and
     // overrides the creator's side to whichever side is to move in the FEN.
     if (fen) {
       msg.fen = fen;

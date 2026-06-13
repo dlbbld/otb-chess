@@ -2,7 +2,7 @@
 
 ## Context
 
-The chess library (clean-chess) has two validation pipelines: SAN (for PGN import) and MoveSpecification (for programmatic moves). The "dumb chessboard" is a third pipeline -- an educational electronic chessboard that simulates physical board play. The player must execute all actions manually. The board acts as a silent observer during play and evaluates at clock press.
+The chess library (Ashlar Chess) has two validation pipelines: SAN (for PGN import) and MoveSpecification (for programmatic moves). The "dumb chessboard" is a third pipeline -- an educational electronic chessboard that simulates physical board play. The player must execute all actions manually. The board acts as a silent observer during play and evaluates at clock press.
 
 ### Companion docs
 
@@ -63,7 +63,7 @@ The player configures the game on a single screen before clicking **Create**:
    `FenParserAdvanced.parseFenAdvanced` -> `FenAdvancedValidationException`); the
    exception's message is forwarded verbatim. This is consistent with the
    "no-leak" rule for unexpected exceptions (see *Internal Errors* below):
-   clean-chess validation messages -- whether for FEN, SAN, or move legality --
+   Ashlar Chess validation messages -- whether for FEN, SAN, or move legality --
    are deliberately user-facing strings produced by the library as user feedback,
    not technical exception text. The "no-leak" rule applies to **unexpected**
    server-side exceptions (NPEs, programming mistakes, JVM jargon), which are
@@ -422,7 +422,7 @@ To match the experience of a real board, certain game-ending moves end the game 
 
 1. **Checkmate** -> "White/Black won the game by checkmate."
 2. **Stalemate** -> "The game is drawn by stalemate."
-3. **Insufficient material** -> "The game is drawn by insufficient material. Neither player can checkmate." (clean-chess `isInsufficientMaterial()`, a fast structural test -- FIDE 9.4 / 5.2.2).
+3. **Insufficient material** -> "The game is drawn by insufficient material. Neither player can checkmate." (Ashlar Chess `isInsufficientMaterial()`, a fast structural test -- FIDE 9.4 / 5.2.2).
 4. **Fivefold repetition** -> "The game is drawn by fivefold repetition."
 5. **75-move rule** -> "The game is drawn by the 75-move rule."
 
@@ -472,11 +472,11 @@ Each button commits immediately when pressed. There is no confirmation dialog an
 
 The player enters a move in **SAN notation** in an inline panel. The server processes the claim in this fixed order:
 
-1. **SAN validation first.** The supplied SAN is validated against the current position via clean-chess's `SanValidation.validateSan(...)`. The move is **not performed** for validation -- `validateSan` checks the move's legality without mutating the board. If the SAN fails:
-   - Result: `invalidMove`. Message: _"Invalid move: «clean-chess reason». Please enter a legal move for the claim."_
+1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `StrictSanParser.parseText(...)`. The move is **not performed** for validation -- `parseText` checks the move's legality without mutating the board. If the SAN fails:
+   - Result: `invalidMove`. Message: _"Invalid move: «Ashlar Chess reason». Please enter a legal move for the claim."_
    - The SAN-input panel stays open and is re-prompted with the input cleared and refocused.
    - The chosen claim channel remains committed; the player cannot switch to a different claim or cancel. The invalid SAN submission is treated as typo-correction and does **not** consume the server-side once-per-turn allowance or trigger the incorrect-claim penalty.
-2. **Feasibility short-circuit.** If the SAN is legal, ask clean-chess whether **any** legal move from the current position could possibly satisfy the rule:
+2. **Feasibility short-circuit.** If the SAN is legal, ask Ashlar Chess whether **any** legal move from the current position could possibly satisfy the rule:
    - `board.canClaimThreefoldRepetitionRuleWithOwnMove()` for threefold,
    - `board.canClaimFiftyMoveRuleWithOwnMove()` for the 50-move rule.
    If neither -> reject the claim immediately, without performing the player's move. Message: _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ (or the 50-move equivalent).
@@ -492,7 +492,7 @@ The player's SAN is echoed verbatim in the message so both players see exactly w
 | **Rejected -- legal SAN but rule not satisfied** | _"Claim rejected, because there is no threefold repetition after the mentioned move «SAN». Please play."_ + `mustExecuteMove` | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none -- game continues; the player must still play the specified move) |
 | **Rejected -- short-circuit** (no move could satisfy) | _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none) |
 
-The arbiter **never silently accepts an illegal SAN** -- the player learns from clean-chess's exact reason.
+The arbiter **never silently accepts an illegal SAN** -- the player learns from Ashlar Chess's exact reason.
 
 #### Once-per-turn limit (FIDE 9.2 / 9.3)
 
@@ -693,7 +693,7 @@ Messages without a `style` field are interpreted by the client at default (info)
 
 ## Architecture
 
-- **Separate Maven project** (`dumb-chessboard`) depending on **clean-chess 3.0**.
+- **Separate Maven project** (`dumb-chessboard`) depending on **ashlar-chess 18.1.0**.
 - **All business logic in Java.** Frontend is thin presentation only.
 - **Java built-in `HttpServer`** on port **8080** for static files.
 - **Java-WebSocket library** on port **8081** for two-player real-time communication.
@@ -731,12 +731,12 @@ Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, p
 | `IllegalMoveTracker` | Tracks illegal-move count per side; configurable limit (1-10 or unlimited, default 2). |
 | `MidPlayValidator` | Validates opponent-piece movement and piece-restoration during play. Allows opponent-piece **removal** (capture-by-removal); blocks opponent-piece drag-on-board. |
 | `DrawOfferManager` | Draw-offer lifecycle: correct-time, wrong-time A/B, repeat counter, wrong-time counter, escalating penalties (info -> warning -> game lost). |
-| `DrawClaimManager` | Threefold and 50-move claims. Validates SAN first (clean-chess `SanValidation`), then short-circuits via `canClaim...WithOwnMove()`, then performs/checks. Returns per-player + opponent + game-end messages. |
+| `DrawClaimManager` | Threefold and 50-move claims. Validates SAN first (Ashlar Chess `StrictSanParser`), then short-circuits via `canClaim...WithOwnMove()`, then performs/checks. Returns per-player + opponent + game-end messages. |
 | `GameSession` | Central orchestrator: board, clock, arbiter, draw, resign, ready-to-continue, restoration state machine, must-execute-move, **per-turn claim ledger** (FIDE 9.2/9.3 once-per-turn limit), rejected-claim -> draw-offer conversion. |
 | `ClockManager` | Time control with increment, nanoTime precision. |
 | `GameRoom` | Two WebSocket connections + the session; routes messages by side. |
 | `GameWebSocketServer` | WebSocket server handling all message types. `sendInternalError` routes friendly text to the user and `devDetail` to the developer console. |
-| `MessageConverter` | JSON to/from domain types (`StaticPosition`, `BoardEvent`). |
+| `MessageConverter` | JSON to/from domain types (`BitboardPosition`, `BoardEvent`). |
 | `MessageKey` / `MessageSeverity` / `Messages` | Typed message infrastructure (slice 1: arbiter + opponent); UTF-8 properties + `MessageFormat`. |
 
 ---
@@ -763,7 +763,7 @@ Each row names a verification path: an automated test (where applicable) or a ma
 |---|---|---|
 | Board flip loses pieces | `buildBoard()` replaced state before saving | Manual (frontend) |
 | Second player can't see moves | Lobby created the game on a separate WebSocket | Manual (frontend flow fix) |
-| `NONE`-to-`NONE` `StaticPosition` error | `createChangedPosition` rejects no-op updates | Automated -- `TestMessageConverter.testRoundTripPositionWithManyEmptySquares` |
+| `NONE`-to-`NONE` update error | Old `StaticPosition.createChangedPosition` rejected no-op updates; the post-Ashlar `BitboardPositions` overlay applies them harmlessly | Automated -- `TestMessageConverter.testRoundTripPositionWithManyEmptySquares` |
 | Touch-move not recognising castling | Castling `fromSquare` is `NONE` | Automated -- `TestTouchMoveEvaluator.testCastlingSatisfiesKingTouchObligation` |
 | Failed castling double-punishment | Released-piece rule fired on king release in addition to failed-castling | Automated -- `TestArbiterEngine.testFailedAdjacentCastlingAttemptWithNoKingMovesDoesNotBindRook` |
 | Castling broadcast crash with `NonePointerException` | `MoveSpecification.from/toSquare` are `Square.NONE` for castling; `Square.NONE.getName()` throws | Manual -- safeguarded by `CastlingUtility.calculateIsCastlingMove` branch in `sendArbiterResponse` |

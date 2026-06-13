@@ -6,19 +6,18 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import com.dlb.chess.board.Board;
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.ValidateNewMove;
-import com.dlb.chess.board.model.UpdateSquare;
-import com.dlb.chess.board.enums.CastlingMove;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
-import com.dlb.chess.common.interfaces.ApiBoard;
-import com.dlb.chess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
+import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse.IllegalMoveDetail;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse.ReleasedPieceContext;
 import com.dlb.chess.dumbboard.castling.CastlingAttemptDetector;
+import com.dlb.chess.dumbboard.core.BitboardPositions;
 import com.dlb.chess.dumbboard.core.PositionComparator;
 import com.dlb.chess.dumbboard.event.ActionSequence;
 import com.dlb.chess.dumbboard.event.BoardEvent;
@@ -26,9 +25,9 @@ import com.dlb.chess.dumbboard.event.BoardEventType;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveEvaluator;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveObligation;
 import com.dlb.chess.dumbboard.touchmove.TouchMoveType;
-import com.dlb.chess.exceptions.InvalidMoveException;
-import com.dlb.chess.model.LegalMove;
-import com.dlb.chess.moves.utility.CastlingUtility;
+import io.github.dlbbld.ashlarchess.exceptions.InvalidMoveException;
+import io.github.dlbbld.ashlarchess.model.LegalMove;
+import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
 
 /**
  * The arbiter engine combines touch-move evaluation with position comparison.
@@ -68,7 +67,7 @@ public class ArbiterEngine {
    * as a move — the committed move must be played via the normal clock-press
    * flow, where the violation is reported and the recovery flow runs.
    */
-  public boolean hasReleasedPieceViolation(ApiBoard board, StaticPosition afterPosition, ActionSequence sequence) {
+  public boolean hasReleasedPieceViolation(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
     return findReleasedPieceViolation(board, afterPosition, sequence).isPresent();
   }
 
@@ -78,8 +77,8 @@ public class ArbiterEngine {
    * "has the on-move player committed to a move via FIDE 4.7?" without comparing against any
    * particular {@code afterPosition}.
    */
-  public boolean hasReleasedPieceCommitment(ApiBoard board, ActionSequence sequence) {
-    StaticPosition currentPosition = board.getStaticPosition();
+  public boolean hasReleasedPieceCommitment(Board board, ActionSequence sequence) {
+    BitboardPosition currentPosition = board.getBitboardPosition();
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
       currentPosition = applyEvent(currentPosition, event);
       if (isReleaseOnBoard(event)) {
@@ -100,7 +99,7 @@ public class ArbiterEngine {
    * @param sequence       the action sequence recorded during this turn
    * @return the arbiter's response
    */
-  public ArbiterResponse evaluateClockPress(ApiBoard board, StaticPosition afterPosition, ActionSequence sequence) {
+  public ArbiterResponse evaluateClockPress(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
     final Side sideToMove = board.getHavingMove();
 
     final Optional<ReleasedPieceLock> releasedPieceViolation = findReleasedPieceViolation(board, afterPosition,
@@ -131,7 +130,7 @@ public class ArbiterEngine {
     }
 
     // Check if the board position even changed
-    if (board.getStaticPosition().equals(afterPosition)) {
+    if (board.getBitboardPosition().equals(afterPosition)) {
       return ArbiterResponse.incompleteMove("Please complete your move.");
     }
 
@@ -160,8 +159,8 @@ public class ArbiterEngine {
   }
 
   private record ReleasedPieceLock(
-      StaticPosition releasePosition,
-      Set<StaticPosition> allowedFinalPositions,
+      BitboardPosition releasePosition,
+      Set<BitboardPosition> allowedFinalPositions,
       Set<LegalMove> committedMoves,
       Piece piece,
       Square square) {
@@ -189,7 +188,7 @@ public class ArbiterEngine {
     }
   }
 
-  private static Optional<ReleasedPieceLock> findReleasedPieceViolation(ApiBoard board, StaticPosition afterPosition,
+  private static Optional<ReleasedPieceLock> findReleasedPieceViolation(Board board, BitboardPosition afterPosition,
       ActionSequence sequence) {
     final Optional<AttemptedMove> attemptedCastling = inferPhysicalCastlingAttempt(board, afterPosition,
         sequence.getEventsSinceReleasedPieceRuleReset());
@@ -198,7 +197,7 @@ public class ArbiterEngine {
       return Optional.empty();
     }
 
-    StaticPosition currentPosition = board.getStaticPosition();
+    BitboardPosition currentPosition = board.getBitboardPosition();
     Optional<ReleasedPieceLock> firstReleasedLegalPosition = Optional.empty();
 
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
@@ -227,17 +226,17 @@ public class ArbiterEngine {
    * code recognise a castling-only commitment and produce the castling-specific
    * arbiter message.
    */
-  private record ReleaseCommitment(Set<StaticPosition> allowedFinalPositions, Set<LegalMove> committedMoves) {
+  private record ReleaseCommitment(Set<BitboardPosition> allowedFinalPositions, Set<LegalMove> committedMoves) {
   }
 
-  private static ReleaseCommitment findCommitmentForRelease(ApiBoard board, BoardEvent event) {
-    final Set<StaticPosition> positions = new HashSet<>();
+  private static ReleaseCommitment findCommitmentForRelease(Board board, BoardEvent event) {
+    final Set<BitboardPosition> positions = new HashSet<>();
     final Set<LegalMove> moves = new HashSet<>();
-    for (final LegalMove legalMove : board.getLegalMoveSet()) {
+    for (final LegalMove legalMove : board.getLegalMoves()) {
       if (isReleasePartOfLegalMove(board.getHavingMove(), event, legalMove)) {
         moves.add(legalMove);
-        positions.add(Board.createPositionAfterMove(board.getStaticPosition(), board.getHavingMove(),
-            legalMove.moveSpecification()));
+        positions.add(board.getBitboardPosition().afterMove(
+            legalMove.moveSpecification(), board.getHavingMove()));
       }
     }
     return new ReleaseCommitment(positions, moves);
@@ -257,7 +256,7 @@ public class ArbiterEngine {
         && event.targetSquare() == legalMove.moveSpecification().toSquare();
   }
 
-  private static StaticPosition applyEvent(StaticPosition position, BoardEvent event) {
+  private static BitboardPosition applyEvent(BitboardPosition position, BoardEvent event) {
     final List<UpdateSquare> updates = new ArrayList<>();
     switch (event.type()) {
       case CLICK -> {
@@ -273,10 +272,10 @@ public class ArbiterEngine {
     if (updates.isEmpty()) {
       return position;
     }
-    return position.createChangedPosition(updates);
+    return BitboardPositions.withUpdates(position, updates);
   }
 
-  private static void addUpdate(List<UpdateSquare> updates, StaticPosition position, Square square, Piece piece) {
+  private static void addUpdate(List<UpdateSquare> updates, BitboardPosition position, Square square, Piece piece) {
     if (square != Square.NONE && position.get(square) != piece) {
       updates.add(new UpdateSquare(square, piece));
     }
@@ -290,7 +289,7 @@ public class ArbiterEngine {
     };
   }
 
-  private ArbiterResponse handleIllegalMove(ApiBoard board, StaticPosition afterPosition, ActionSequence sequence,
+  private ArbiterResponse handleIllegalMove(Board board, BitboardPosition afterPosition, ActionSequence sequence,
       Side sideToMove) {
     illegalMoveTracker.recordIllegalMove(sideToMove);
     final Optional<IllegalMoveReason> reason = explainSimpleIllegalMove(board, afterPosition, sequence);
@@ -322,7 +321,7 @@ public class ArbiterEngine {
   private record IllegalMoveReason(String playerReason, String opponentReason) {
   }
 
-  private static Optional<IllegalMoveReason> explainSimpleIllegalMove(ApiBoard board, StaticPosition afterPosition,
+  private static Optional<IllegalMoveReason> explainSimpleIllegalMove(Board board, BitboardPosition afterPosition,
       ActionSequence sequence) {
     final Optional<AttemptedMove> attemptedMove = inferAttemptedMove(board, afterPosition, sequence);
     if (attemptedMove.isEmpty()) {
@@ -330,23 +329,26 @@ public class ArbiterEngine {
     }
 
     final MoveSpecification moveSpecification = attemptedMove.get().moveSpecification();
+    final BitboardPosition beforePosition = board.getBitboardPosition();
     try {
-      ValidateNewMove.validateNewMove(board, moveSpecification);
-      final StaticPosition expectedPosition = Board.createPositionAfterMove(board.getStaticPosition(),
-          board.getHavingMove(), moveSpecification);
-      if (!expectedPosition.equals(afterPosition)) {
-        final String reason = "the move itself is legal, but the final board position is not correct";
-        return Optional.of(new IllegalMoveReason(reason, reason));
-      }
+      // move() runs the same legality validation as the library's internal check and throws
+      // InvalidMoveException for an illegal move; unmove() restores the board afterwards.
+      board.move(moveSpecification);
+      board.unmove();
     } catch (final InvalidMoveException e) {
       return Optional.of(formatIllegalMoveExplanation(e.getMessage(), board, sequence, attemptedMove.get()));
     } catch (final RuntimeException e) {
       return Optional.empty();
     }
+    final BitboardPosition expectedPosition = beforePosition.afterMove(moveSpecification, board.getHavingMove());
+    if (!expectedPosition.equals(afterPosition)) {
+      final String reason = "the move itself is legal, but the final board position is not correct";
+      return Optional.of(new IllegalMoveReason(reason, reason));
+    }
     return Optional.empty();
   }
 
-  private static Optional<AttemptedMove> inferAttemptedMove(ApiBoard board, StaticPosition afterPosition,
+  private static Optional<AttemptedMove> inferAttemptedMove(Board board, BitboardPosition afterPosition,
       ActionSequence sequence) {
     final Optional<AttemptedMove> castlingAttempt = inferPhysicalCastlingAttempt(board, afterPosition,
         sequence.getEvents());
@@ -356,36 +358,37 @@ public class ArbiterEngine {
     return inferSimpleAttemptedMove(board, afterPosition, sequence);
   }
 
-  private static Optional<AttemptedMove> inferPhysicalCastlingAttempt(ApiBoard board, StaticPosition afterPosition,
+  private static Optional<AttemptedMove> inferPhysicalCastlingAttempt(Board board, BitboardPosition afterPosition,
       List<BoardEvent> events) {
     return CastlingAttemptDetector.findPhysicalAttempt(board, afterPosition, events)
         .map(attempt -> new AttemptedMove(attempt.moveSpecification(), true, attempt.kingReleaseSquare()));
   }
 
-  private static boolean shouldBypassReleasedPieceForInvalidCastlingAttempt(ApiBoard board, AttemptedMove attempt) {
+  private static boolean shouldBypassReleasedPieceForInvalidCastlingAttempt(Board board, AttemptedMove attempt) {
     if (!attempt.castlingAttempt() || isCastlingLegal(board, attempt.moveSpecification())) {
       return false;
     }
     return !isKingReleaseLegalMove(board, attempt);
   }
 
-  private static boolean isCastlingLegal(ApiBoard board, MoveSpecification moveSpecification) {
+  private static boolean isCastlingLegal(Board board, MoveSpecification moveSpecification) {
     try {
-      ValidateNewMove.validateNewMove(board, moveSpecification);
+      board.move(moveSpecification);
+      board.unmove();
       return true;
     } catch (final RuntimeException e) {
       return false;
     }
   }
 
-  private static boolean isKingReleaseLegalMove(ApiBoard board, AttemptedMove attempt) {
+  private static boolean isKingReleaseLegalMove(Board board, AttemptedMove attempt) {
     if (attempt.kingReleaseSquare() == Square.NONE) {
       return false;
     }
     final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getHavingMove(),
         attempt.moveSpecification());
     final Piece kingPiece = Piece.calculateKingPiece(board.getHavingMove());
-    for (final LegalMove legalMove : board.getLegalMoveSet()) {
+    for (final LegalMove legalMove : board.getLegalMoves()) {
       if (!CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())
           && legalMove.movingPiece() == kingPiece
           && legalMove.moveSpecification().fromSquare() == kingFrom
@@ -396,7 +399,7 @@ public class ArbiterEngine {
     return false;
   }
 
-  private static Optional<AttemptedMove> inferSimpleAttemptedMove(ApiBoard board, StaticPosition afterPosition,
+  private static Optional<AttemptedMove> inferSimpleAttemptedMove(Board board, BitboardPosition afterPosition,
       ActionSequence sequence) {
     BoardEvent moveEvent = null;
 
@@ -418,7 +421,7 @@ public class ArbiterEngine {
         || moveEvent.square() == moveEvent.targetSquare()) {
       return Optional.empty();
     }
-    if (board.getStaticPosition().get(moveEvent.square()) != moveEvent.piece()) {
+    if (board.getBitboardPosition().get(moveEvent.square()) != moveEvent.piece()) {
       return Optional.empty();
     }
     if (afterPosition.get(moveEvent.square()) != Piece.NONE
@@ -455,7 +458,7 @@ public class ArbiterEngine {
     return Optional.empty();
   }
 
-  private static IllegalMoveReason formatIllegalMoveExplanation(String reason, ApiBoard board, ActionSequence sequence,
+  private static IllegalMoveReason formatIllegalMoveExplanation(String reason, Board board, ActionSequence sequence,
       AttemptedMove attemptedMove) {
     final String formattedReason;
     if (attemptedMove.castlingAttempt() && !reason.startsWith("castling is not possible")) {
@@ -468,7 +471,7 @@ public class ArbiterEngine {
         formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, true));
   }
 
-  private static String formatCastlingTouchMoveConsequence(ApiBoard board, ActionSequence sequence,
+  private static String formatCastlingTouchMoveConsequence(Board board, ActionSequence sequence,
       AttemptedMove attemptedMove, boolean opponent) {
     if (!attemptedMove.castlingAttempt()) {
       return "";

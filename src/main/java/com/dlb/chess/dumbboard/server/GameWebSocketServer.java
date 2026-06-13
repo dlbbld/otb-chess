@@ -13,11 +13,11 @@ import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
-import com.dlb.chess.board.Board;
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
-import com.dlb.chess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponseType;
 import com.dlb.chess.dumbboard.event.BoardEvent;
@@ -29,7 +29,7 @@ import com.dlb.chess.dumbboard.game.model.GameState;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 import com.dlb.chess.dumbboard.server.message.MessageConverter;
 import com.dlb.chess.dumbboard.server.model.GameRoom;
-import com.dlb.chess.moves.utility.CastlingUtility;
+import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
@@ -128,7 +128,7 @@ public class GameWebSocketServer extends WebSocketServer {
         || json.get("autoResumeAfterRestore").getAsBoolean();
 
     // Optional FEN — when supplied, the game starts from that position. Validation goes
-    // through clean-chess so the player gets the chess library's specific reason. The
+    // through Ashlar Chess so the player gets the chess library's specific reason. The
     // creator's side is overridden to the side-to-move from the FEN, so the creator can
     // play first regardless of which colour they originally selected on the start screen.
     final String fenInput = (json.has("fen") && !json.get("fen").isJsonNull())
@@ -143,8 +143,8 @@ public class GameWebSocketServer extends WebSocketServer {
       final Board parsed;
       try {
         parsed = new Board(fenInput);
-      } catch (final com.dlb.chess.common.exceptions.FenAdvancedValidationException
-          | com.dlb.chess.common.exceptions.FenAdvancedFurtherValidationException e) {
+      } catch (final io.github.dlbbld.ashlarchess.common.exceptions.FenAdvancedValidationException
+          | io.github.dlbbld.ashlarchess.common.exceptions.FenRawValidationException e) {
         // Expected user error — surface the chess library's specific validation reason.
         sendError(conn, "Invalid FEN: " + e.getMessage());
         return;
@@ -157,7 +157,7 @@ public class GameWebSocketServer extends WebSocketServer {
       startingBoard = parsed;
       // Side-to-move from the FEN wins. If the FEN has Black to move, the creator
       // (who joins first) plays Black; the second player gets White.
-      creatorSide = parsed.getHavingMove() == com.dlb.chess.board.enums.Side.WHITE ? "white" : "black";
+      creatorSide = parsed.getHavingMove() == io.github.dlbbld.ashlarchess.board.enums.Side.WHITE ? "white" : "black";
     }
 
     final String gameId = UUID.randomUUID().toString().substring(0, 8);
@@ -180,7 +180,7 @@ public class GameWebSocketServer extends WebSocketServer {
     response.addProperty("gameId", gameId);
     response.addProperty("side", creatorSide);
     response.add("board",
-        GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getStaticPosition())));
+        GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
     response.addProperty("havingMove", startingBoard.getHavingMove().name().toLowerCase());
     conn.send(GSON.toJson(response));
 
@@ -215,7 +215,7 @@ public class GameWebSocketServer extends WebSocketServer {
     // Send join confirmation to the joining player. Send the actual starting board
     // (not the hard-coded initial position) so a custom-FEN game shows the right
     // pieces in the joiner's first render.
-    final var startingPosition = room.getSession().getBoard().getStaticPosition();
+    final var startingPosition = room.getSession().getBoard().getBitboardPosition();
     final var havingMove = room.getSession().getHavingMove();
     final JsonObject joinResponse = new JsonObject();
     joinResponse.addProperty("type", "gameJoined");
@@ -284,7 +284,7 @@ public class GameWebSocketServer extends WebSocketServer {
       if (json.has("boardState")) {
         @SuppressWarnings("unchecked")
         final Map<String, String> boardStateMap = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
-        final StaticPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
+        final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
         if (room.getSession().isRestoredPosition(afterPosition)) {
           completeRestoration(room);
         }
@@ -346,7 +346,7 @@ public class GameWebSocketServer extends WebSocketServer {
     if (midPlayResponse.isEmpty() && json.has("boardState")) {
       @SuppressWarnings("unchecked")
       final Map<String, String> boardStateMap = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
-      final StaticPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
+      final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
       final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, afterPosition);
       if (autoEndResponse.isPresent()) {
         sendArbiterResponse(room, side, autoEndResponse.get());
@@ -366,7 +366,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
     @SuppressWarnings("unchecked")
     final Map<String, String> boardState = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
-    final StaticPosition afterPosition = MessageConverter.toStaticPosition(boardState);
+    final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardState);
 
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     sendArbiterResponse(room, side, response);
@@ -398,7 +398,7 @@ public class GameWebSocketServer extends WebSocketServer {
     final Side side = room.getSide(conn);
 
     // Parse the boardState (it's required for the correct-time validation path).
-    StaticPosition afterPosition = null;
+    BitboardPosition afterPosition = null;
     if (json.has("boardState")) {
       @SuppressWarnings("unchecked")
       final Map<String, String> boardState = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
@@ -436,7 +436,7 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void handleCorrectTimeDrawOffer(GameRoom room, WebSocket conn, Side side,
-      StaticPosition afterPosition) {
+      BitboardPosition afterPosition) {
     final ArbiterResponse response = room.getSession().offerDrawCorrectTime(side, afterPosition);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
@@ -626,7 +626,7 @@ public class GameWebSocketServer extends WebSocketServer {
     completeRestoration(room, room.getSession().getRestorePosition());
   }
 
-  private void completeRestoration(GameRoom room, StaticPosition restorePosition) {
+  private void completeRestoration(GameRoom room, BitboardPosition restorePosition) {
     room.getSession().completeRestoration();
 
     final JsonObject msg = new JsonObject();
@@ -723,7 +723,7 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendRestoreInstructions(GameRoom room, Side side, String message, String style,
-      StaticPosition restorePosition) {
+      BitboardPosition restorePosition) {
     room.getSession().enterWaitingForRestoration(restorePosition);
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "restoreRequired");
@@ -812,7 +812,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
     // Also notify opponent of accepted moves — include full board state
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
-      final var position = room.getSession().getBoard().getStaticPosition();
+      final var position = room.getSession().getBoard().getBitboardPosition();
       final var havingMove = room.getSession().getHavingMove();
       final var isCheck = room.getSession().isCheck();
 
@@ -847,7 +847,7 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendBoardUpdate(GameRoom room) {
-    final var position = room.getSession().getBoard().getStaticPosition();
+    final var position = room.getSession().getBoard().getBitboardPosition();
     final var havingMove = room.getSession().getHavingMove();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "boardUpdate");

@@ -5,17 +5,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.CastlingMove;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
-import com.dlb.chess.common.interfaces.ApiBoard;
-import com.dlb.chess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
+import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
+import com.dlb.chess.dumbboard.core.BitboardPositions;
 import com.dlb.chess.dumbboard.event.BoardEvent;
 import com.dlb.chess.dumbboard.event.BoardEventType;
-import com.dlb.chess.model.LegalMove;
-import com.dlb.chess.moves.utility.CastlingUtility;
+import io.github.dlbbld.ashlarchess.model.LegalMove;
+import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
 
 public final class CastlingAttemptDetector {
 
@@ -27,7 +29,7 @@ public final class CastlingAttemptDetector {
       Square kingReleaseSquare) {
   }
 
-  public static Optional<Attempt> findPhysicalAttempt(ApiBoard board, StaticPosition afterPosition,
+  public static Optional<Attempt> findPhysicalAttempt(Board board, BitboardPosition afterPosition,
       List<BoardEvent> events) {
     final List<BoardEvent> moveEvents = filterDragEventsOnly(events);
     if (moveEvents.size() != 2) {
@@ -39,7 +41,7 @@ public final class CastlingAttemptDetector {
     for (final CastlingMove castlingMove : List.of(CastlingMove.KING_SIDE, CastlingMove.QUEEN_SIDE)) {
       final MoveSpecification moveSpecification = new MoveSpecification(castlingMove);
       if (isCastlingAttempt(board.getHavingMove(), moveSpecification, castlingMove, kingEvent, rookEvent)
-          && isPositionAfterEvents(board.getStaticPosition(), afterPosition, kingEvent, rookEvent)) {
+          && isPositionAfterEvents(board.getBitboardPosition(), afterPosition, kingEvent, rookEvent)) {
         return Optional.of(new Attempt(moveSpecification, kingEvent.targetSquare()));
       }
     }
@@ -136,13 +138,13 @@ public final class CastlingAttemptDetector {
     };
   }
 
-  private static boolean isPositionAfterEvents(StaticPosition beforePosition, StaticPosition afterPosition,
+  private static boolean isPositionAfterEvents(BitboardPosition beforePosition, BitboardPosition afterPosition,
       BoardEvent kingEvent, BoardEvent rookEvent) {
-    final StaticPosition expectedPhysicalPosition = beforePosition
-        .createChangedPosition(kingEvent.square(), Piece.NONE)
-        .createChangedPosition(rookEvent.square(), Piece.NONE)
-        .createChangedPosition(kingEvent.targetSquare(), kingEvent.piece())
-        .createChangedPosition(rookEvent.targetSquare(), rookEvent.piece());
+    final BitboardPosition expectedPhysicalPosition = BitboardPositions.withUpdates(beforePosition, List.of(
+        new UpdateSquare(kingEvent.square(), Piece.NONE),
+        new UpdateSquare(rookEvent.square(), Piece.NONE),
+        new UpdateSquare(kingEvent.targetSquare(), kingEvent.piece()),
+        new UpdateSquare(rookEvent.targetSquare(), rookEvent.piece())));
     return expectedPhysicalPosition.equals(afterPosition);
   }
 

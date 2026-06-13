@@ -2,7 +2,7 @@ package com.dlb.chess.dumbboard.game;
 
 import java.util.Optional;
 
-import com.dlb.chess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
 
 /**
  * Manages draw offer lifecycle per FIDE rule 9.1.2.1.

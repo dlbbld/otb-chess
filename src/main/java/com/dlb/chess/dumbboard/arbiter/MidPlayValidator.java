@@ -3,10 +3,10 @@ package com.dlb.chess.dumbboard.arbiter;
 import java.util.Optional;
 import java.util.Set;
 
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 import com.dlb.chess.dumbboard.event.BoardEvent;
 import com.dlb.chess.dumbboard.event.BoardEventType;
 
@@ -31,7 +31,7 @@ public class MidPlayValidator {
    * @return an arbiter response if intervention is needed, empty otherwise
    */
   public static Optional<ArbiterResponse> validate(BoardEvent event, Side sideToMove,
-      StaticPosition positionBeforeTurn, Set<Square> removedSquares) {
+      BitboardPosition positionBeforeTurn, Set<Square> removedSquares) {
 
     final Optional<ArbiterResponse> positionChangeCheck = validateOpponentPiecePositionChange(event, sideToMove);
     if (positionChangeCheck.isPresent()) {
@@ -97,7 +97,7 @@ public class MidPlayValidator {
    * </ol>
    */
   private static Optional<ArbiterResponse> validateRestoration(BoardEvent event, Side sideToMove,
-      StaticPosition positionBeforeTurn, Set<Square> removedSquares) {
+      BitboardPosition positionBeforeTurn, Set<Square> removedSquares) {
 
     if (event.type() != BoardEventType.RESTORE_TO_EMPTY && event.type() != BoardEventType.RESTORE_TO_OCCUPIED) {
       return Optional.empty();

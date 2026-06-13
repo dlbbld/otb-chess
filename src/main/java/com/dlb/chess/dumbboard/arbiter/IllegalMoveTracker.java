@@ -1,6 +1,6 @@
 package com.dlb.chess.dumbboard.arbiter;
 
-import com.dlb.chess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
 
 /**
  * Tracks illegal move count per player.

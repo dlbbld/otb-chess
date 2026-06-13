@@ -10,11 +10,12 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
-import com.dlb.chess.board.Board;
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import com.dlb.chess.dumbboard.core.BitboardPositions;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponseType;
 import com.dlb.chess.dumbboard.event.ActionSequence;
@@ -35,16 +36,16 @@ class TestGameSession {
    */
   private ArbiterResponse makeMove(GameSession session, Square from, Square to, Piece movingPiece) {
     final Side side = session.getHavingMove();
-    final StaticPosition before = session.getBoard().getStaticPosition();
+    final BitboardPosition before = session.getBoard().getBitboardPosition();
 
     // Record the drag event
     session.recordEvent(side,
         BoardEvent.dragMove(from, to, movingPiece, System.currentTimeMillis()));
 
     // Construct after-position
-    final StaticPosition afterPosition = before
+    final BitboardPosition afterPosition = BitboardPositions.from(before)
         .createChangedPosition(from, Piece.NONE)
-        .createChangedPosition(to, movingPiece);
+        .createChangedPosition(to, movingPiece).build();
 
     return session.pressClockButton(side, afterPosition);
   }
@@ -55,14 +56,14 @@ class TestGameSession {
   private ArbiterResponse makeCapture(GameSession session, Square from, Square to, Piece movingPiece,
       Piece capturedPiece) {
     final Side side = session.getHavingMove();
-    final StaticPosition before = session.getBoard().getStaticPosition();
+    final BitboardPosition before = session.getBoard().getBitboardPosition();
 
     session.recordEvent(side,
         BoardEvent.dragCapture(from, to, movingPiece, capturedPiece, System.currentTimeMillis()));
 
-    final StaticPosition afterPosition = before
+    final BitboardPosition afterPosition = BitboardPositions.from(before)
         .createChangedPosition(from, Piece.NONE)
-        .createChangedPosition(to, movingPiece);
+        .createChangedPosition(to, movingPiece).build();
 
     return session.pressClockButton(side, afterPosition);
   }
@@ -97,9 +98,9 @@ class TestGameSession {
     session.recordEvent(side,
         BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
 
-    final StaticPosition illegalPos = session.getBoard().getStaticPosition()
+    final BitboardPosition illegalPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = session.pressClockButton(side, illegalPos);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
@@ -137,9 +138,9 @@ class TestGameSession {
     assertTrue(touchResponse.isEmpty());
 
     session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 1));
-    final StaticPosition afterPosition = session.getBoard().getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterPosition);
 
@@ -192,9 +193,9 @@ class TestGameSession {
 
     // Step 3: Press the clock. The resulting position equals the position after the legal
     // capture Nxe5, so the arbiter accepts it as a normal capture move.
-    final StaticPosition afterCapture = session.getBoard().getStaticPosition()
+    final BitboardPosition afterCapture = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.E5, Piece.WHITE_KNIGHT)
-        .createChangedPosition(Square.F3, Piece.NONE);
+        .createChangedPosition(Square.F3, Piece.NONE).build();
     final ArbiterResponse pressResponse = session.pressClockButton(Side.WHITE, afterCapture);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, pressResponse.type());
     assertEquals(Side.BLACK, session.getHavingMove());
@@ -223,9 +224,9 @@ class TestGameSession {
     session.startGame();
 
     final Side side = session.getHavingMove();
-    final StaticPosition illegalPos = session.getBoard().getStaticPosition()
+    final BitboardPosition illegalPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     // First illegal move
     session.recordEvent(side, BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
@@ -259,15 +260,15 @@ class TestGameSession {
     // Black's clock is the one running — verify by attempting a White move first
     // and confirming it's rejected as "not your turn".
     final ArbiterResponse rejected = session.pressClockButton(Side.WHITE,
-        session.getBoard().getStaticPosition());
+        session.getBoard().getBitboardPosition());
     assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, rejected.type());
 
     // Black plays e5 (the natural reply) and the move is accepted.
     session.recordEvent(Side.BLACK,
         BoardEvent.dragMove(Square.E7, Square.E5, Piece.BLACK_PAWN, 0));
-    final StaticPosition afterE5 = session.getBoard().getStaticPosition()
+    final BitboardPosition afterE5 = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.E7, Piece.NONE)
-        .createChangedPosition(Square.E5, Piece.BLACK_PAWN);
+        .createChangedPosition(Square.E5, Piece.BLACK_PAWN).build();
     final ArbiterResponse accepted = session.pressClockButton(Side.BLACK, afterE5);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, accepted.type());
     assertEquals(Side.WHITE, session.getHavingMove());
@@ -294,9 +295,9 @@ class TestGameSession {
     final Side white = session.getHavingMove();
     session.recordEvent(white, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
 
-    final StaticPosition afterE4 = session.getBoard().getStaticPosition()
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     session.offerDrawCorrectTime(white, afterE4);
     assertTrue(session.getDrawOfferManager().isDrawOffered());
@@ -317,9 +318,9 @@ class TestGameSession {
     final Side white = session.getHavingMove();
     session.recordEvent(white, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
 
-    final StaticPosition afterE4 = session.getBoard().getStaticPosition()
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     session.offerDrawCorrectTime(white, afterE4);
 
@@ -338,9 +339,9 @@ class TestGameSession {
     final Side white = session.getHavingMove();
     session.recordEvent(white, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
 
-    final StaticPosition afterE4 = session.getBoard().getStaticPosition()
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     session.offerDrawCorrectTime(white, afterE4);
 
@@ -475,9 +476,9 @@ class TestGameSession {
     assertNotNull(session.getMustExecuteMove());
 
     // Now white must play e4.
-    final StaticPosition afterE4 = session.getBoard().getStaticPosition()
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterE4);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
@@ -491,7 +492,7 @@ class TestGameSession {
     session.startGame();
     shuffleKnightsToReachThreefoldClaimable(session);
 
-    // SAN "e9" is structurally invalid (no rank 9). Clean-chess rejects it; we surface the
+    // SAN "e9" is structurally invalid (no rank 9). Ashlar Chess rejects it; we surface the
     // reason via invalidMove so the SAN-input panel re-prompts.
     final DrawClaimResult result = session.claimDraw(
         Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
@@ -501,7 +502,7 @@ class TestGameSession {
         "Illegal SAN must be reported via the invalidMove flag, not as a regular rejection");
     assertTrue(result.moveToPerform().isEmpty());
     assertTrue(result.message().startsWith("Invalid move:"),
-        "Message should surface the clean-chess validation reason: " + result.message());
+        "Message should surface the Ashlar Chess validation reason: " + result.message());
 
     // Game state is unchanged: no must-execute move was set, white still has the move.
     assertNull(session.getMustExecuteMove());
@@ -514,7 +515,7 @@ class TestGameSession {
     // Custom FEN with halfMoveClock = 99, white to move, K+R vs K. Any non-capture
     // non-pawn move advances the clock to 100 ⇒ canClaimFiftyMoveRuleWithOwnMove() == true,
     // so the short-circuit does not fire and the SAN-validation path is reachable.
-    final Board startingBoard = new Board("4k3/8/8/8/3R4/8/8/4K3 w - - 99 50");
+    final Board startingBoard = new Board("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
     final GameSession session = new GameSession(TEST_TIME,
         com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
         true, startingBoard);
@@ -542,9 +543,9 @@ class TestGameSession {
 
     // White plays d4 instead of e4 — the must-execute-move is still e4, so this fails as
     // INCOMPLETE_MOVE.
-    final StaticPosition afterD4 = session.getBoard().getStaticPosition()
+    final BitboardPosition afterD4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.D2, Piece.NONE)
-        .createChangedPosition(Square.D4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.D4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterD4);
     assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, response.type());

@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.dlb.chess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
 
 /**
  * Records the full sequence of board events within a single turn (between clock presses).

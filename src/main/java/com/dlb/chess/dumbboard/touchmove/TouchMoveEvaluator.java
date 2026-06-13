@@ -1,19 +1,20 @@
 package com.dlb.chess.dumbboard.touchmove;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import com.dlb.chess.board.enums.CastlingMove;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
-import com.dlb.chess.common.interfaces.ApiBoard;
+import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.Board;
 import com.dlb.chess.dumbboard.castling.CastlingAttemptDetector;
 import com.dlb.chess.dumbboard.event.ActionSequence;
 import com.dlb.chess.dumbboard.event.BoardEvent;
-import com.dlb.chess.moves.utility.CastlingUtility;
-import com.dlb.chess.model.LegalMove;
+import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
+import io.github.dlbbld.ashlarchess.model.LegalMove;
 
 /**
  * Evaluates touch-move obligations from the action sequence.
@@ -44,9 +45,9 @@ public class TouchMoveEvaluator {
    * @param board    the board state before the player's turn (used to check legal moves)
    * @return the binding touch-move obligation, or empty if none
    */
-  public static Optional<TouchMoveObligation> findObligation(ActionSequence sequence, ApiBoard board) {
+  public static Optional<TouchMoveObligation> findObligation(ActionSequence sequence, Board board) {
     final Side sideToMove = sequence.getSideToMove();
-    final Set<LegalMove> legalMoves = board.getLegalMoveSet();
+    final Set<LegalMove> legalMoves = new HashSet<>(board.getLegalMoves());
     final List<BoardEvent> events = sequence.getEvents();
 
     final Optional<TouchMoveObligation> castlingObligation = findCastlingObligation(events, sideToMove, legalMoves);
@@ -80,7 +81,7 @@ public class TouchMoveEvaluator {
   private static Optional<TouchMoveObligation> findCastlingObligation(List<BoardEvent> events, Side sideToMove,
       Set<LegalMove> legalMoves) {
     final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(sideToMove,
-        new com.dlb.chess.common.model.MoveSpecification(CastlingMove.KING_SIDE));
+        new io.github.dlbbld.ashlarchess.common.model.MoveSpecification(CastlingMove.KING_SIDE));
     final Piece kingPiece = Piece.calculateKingPiece(sideToMove);
     final Piece rookPiece = Piece.calculateRookPiece(sideToMove);
     final Square kingSideRook = Square.calculateKingSideRookOriginalSquare(sideToMove);

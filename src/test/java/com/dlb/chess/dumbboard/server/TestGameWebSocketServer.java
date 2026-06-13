@@ -8,9 +8,9 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse.IllegalMoveDetail;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse.ReleasedPieceContext;
