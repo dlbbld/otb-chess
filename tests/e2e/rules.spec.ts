@@ -40,12 +40,13 @@ test('checkmate ends the game 1-0', async ({ browser }) => {
 test('stalemate ends the game as a draw', async ({ browser }) => {
   // White: Kg6, Qf1. Black: Kh8 (only piece). Qf1-f7 leaves Black with no legal move, not in check.
   game = await startTwoPlayerGame(browser, { fen: '7k/8/6K1/8/8/8/8/5Q2 w - - 0 1' });
-  const { white } = game;
+  const { white, black } = game;
 
   await dragPiece(white, 'f1', 'f7');
   await pressClock(white);
 
   await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
 });
 
 test('resignation ends the game for the opponent', async ({ browser }) => {

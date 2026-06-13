@@ -29,30 +29,41 @@ public class DumbChessboardServer {
     // before :8081 was bound (the client has no WebSocket-reconnect path).
     final var wsServer = new GameWebSocketServer(WS_PORT);
     wsServer.start();
-    if (!wsServer.awaitStarted(10, TimeUnit.SECONDS)) {
-      throw new IOException("WebSocket server did not start within 10 seconds");
-    }
-    System.out.println("WebSocket server running at ws://localhost:" + WS_PORT);
-
-    // Start HTTP server for static files. The /api/lastGameId endpoint queries the WebSocket server.
-    final var httpServer = HttpServer.create(new InetSocketAddress(HTTP_PORT), 0);
-    final var staticHandler = new StaticFileHandler(STATIC_DIR.toAbsolutePath());
-    // TESTING-ONLY: /api/lastGameId returns the most recently created joinable game ID so the
-    // lobby in a second browser session can pre-fill the join code. Remove once development is done.
-    httpServer.createContext("/api/lastGameId", exchange -> {
-      final String id = wsServer.getJoinableLastCreatedGameId();
-      final byte[] body = (id == null ? "" : id).getBytes(java.nio.charset.StandardCharsets.UTF_8);
-      exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
-      exchange.getResponseHeaders().set("Cache-Control", "no-store");
-      exchange.sendResponseHeaders(200, body.length);
-      try (var os = exchange.getResponseBody()) {
-        os.write(body);
+    try {
+      if (!wsServer.awaitStarted(10, TimeUnit.SECONDS)) {
+        throw new IOException("WebSocket server did not start within 10 seconds");
       }
-    });
-    httpServer.createContext("/", staticHandler::handle);
-    httpServer.setExecutor(null);
-    httpServer.start();
-    System.out.println("HTTP server running at http://localhost:" + HTTP_PORT);
+      System.out.println("WebSocket server running at ws://localhost:" + WS_PORT);
+
+      // Start HTTP server for static files. The /api/lastGameId endpoint queries the WebSocket server.
+      final var httpServer = HttpServer.create(new InetSocketAddress(HTTP_PORT), 0);
+      final var staticHandler = new StaticFileHandler(STATIC_DIR.toAbsolutePath());
+      // TESTING-ONLY: /api/lastGameId returns the most recently created joinable game ID so the
+      // lobby in a second browser session can pre-fill the join code. Remove once development is done.
+      httpServer.createContext("/api/lastGameId", exchange -> {
+        final String id = wsServer.getJoinableLastCreatedGameId();
+        final byte[] body = (id == null ? "" : id).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(200, body.length);
+        try (var os = exchange.getResponseBody()) {
+          os.write(body);
+        }
+      });
+      httpServer.createContext("/", staticHandler::handle);
+      httpServer.setExecutor(null);
+      httpServer.start();
+      System.out.println("HTTP server running at http://localhost:" + HTTP_PORT);
+    } catch (IOException | InterruptedException | RuntimeException e) {
+      // Startup failed after the WebSocket server began listening (e.g. the HTTP port is taken).
+      // Stop it so the JVM can exit instead of lingering on :8081 (its selector thread is non-daemon).
+      try {
+        wsServer.stop();
+      } catch (InterruptedException stopInterrupted) {
+        Thread.currentThread().interrupt();
+      }
+      throw e;
+    }
 
     System.out.println();
     System.out.println("Dumb Chessboard is ready!");
