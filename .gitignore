@@ -1,2 +1,9 @@
 /target/
 /.claude/
+
+# E2E (Playwright / Node)
+/node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
