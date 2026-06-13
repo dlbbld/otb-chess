@@ -61,6 +61,39 @@ export async function removePiece(page: Page, from: Square): Promise<void> {
 }
 
 /**
+ * Drags a piece from a side area onto a board square (e.g. placing a promoted queen).
+ * Side pieces carry their piece name in the `title` attribute. Requires the board enabled.
+ */
+export async function dragFromSideArea(page: Page, piece: string, to: Square): Promise<void> {
+  const src = page.locator(`.side-piece[title="${piece}"]`).first();
+  const s = await src.boundingBox();
+  const d = await squareLocator(page, to).boundingBox();
+  if (!s || !d) throw new Error(`Cannot drag ${piece} from side area to ${to}`);
+  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(d.x + d.width / 2, d.y + d.height / 2, { steps: 10 });
+  await page.mouse.up();
+}
+
+/** Presses the opponent's clock lever (the top lever in this player's view) — expected to be a no-op. */
+export async function pressOpponentClock(page: Page): Promise<void> {
+  await page.locator('#topClockBtn').click();
+}
+
+/** Presses this player's own clock lever, whichever side it is on (robust to a flipped board). */
+export async function pressOwnClock(page: Page): Promise<void> {
+  const bottomOwn = await page
+    .locator('#bottomClockDisplay')
+    .evaluate((el) => el.classList.contains('own-clock'));
+  await page.locator(bottomOwn ? '#bottomClockBtn' : '#topClockBtn').click();
+}
+
+/** Flips this player's board view. */
+export async function flipBoard(page: Page): Promise<void> {
+  await page.locator('#flipBoardBtn').click();
+}
+
+/**
  * Presses this player's own clock lever. The board flips per player so a player's own pieces
  * are always at the bottom, which makes the bottom lever always this player's clock.
  */

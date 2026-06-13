@@ -8,6 +8,8 @@ export interface CreateOptions {
   incMs?: number;
   /** Optional starting FEN. The side to move in the FEN plays first; the creator gets that side. */
   fen?: string;
+  /** Server default is true; set false to require an explicit "ready to continue" after a restore. */
+  autoResume?: boolean;
 }
 
 /** Navigates `page` to a freshly created game and returns the game code shown on the board page. */
@@ -17,6 +19,7 @@ export async function createGame(page: Page, opts: CreateOptions = {}): Promise<
   const inc = opts.incMs ?? 0;
   let url = `/game.html?creator=true&side=${side}&time=${time}&inc=${inc}`;
   if (opts.fen) url += `&fen=${encodeURIComponent(opts.fen)}`;
+  if (opts.autoResume === false) url += `&autoResumeAfterRestore=false`;
   await page.goto(url);
 
   // game.js appends the code element only after the server's `gameCreated` message.
@@ -114,4 +117,49 @@ export async function acceptDraw(page: Page): Promise<void> {
 export async function expectGameResult(page: Page, score: string): Promise<void> {
   await expect(page.locator('#gameResultPanel')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('#gameResultScore')).toHaveText(score);
+}
+
+/** Clicks the "Claim 50-move (position)" button. */
+export async function claimFiftyMoveOnBoard(page: Page): Promise<void> {
+  await page.locator('#claimFiftyMoveOnBoardBtn').click();
+}
+
+/** Clicks the "Claim threefold (position)" button. */
+export async function claimThreefoldOnBoard(page: Page): Promise<void> {
+  await page.locator('#claimThreefoldOnBoardBtn').click();
+}
+
+/** Claims threefold repetition with a move: opens the SAN panel, enters the move, and submits. */
+export async function claimThreefoldWithMove(page: Page, san: string): Promise<void> {
+  await page.locator('#claimThreefoldWithMoveBtn').click();
+  await page.locator('#sanInput').fill(san);
+  await page.locator('#submitClaimMoveBtn').click();
+}
+
+/** Opens the "Request Piece" chooser and selects the given type (e.g. 'KNIGHT'), adding it to the side area. */
+export async function requestPiece(page: Page, pieceType: string): Promise<void> {
+  await page.locator('#requestPieceBtn').click();
+  await page.locator(`#promotionPieces .promo-piece[title="${pieceType}"]`).click();
+}
+
+/** Claims the 50-move rule with a move: opens the SAN panel, enters the move, and submits. */
+export async function claimFiftyMoveWithMove(page: Page, san: string): Promise<void> {
+  await page.locator('#claimFiftyMoveWithMoveBtn').click();
+  await page.locator('#sanInput').fill(san);
+  await page.locator('#submitClaimMoveBtn').click();
+}
+
+/** Clicks the "Do this for me" button shown to the offending player after an intervention. */
+export async function clickRestore(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Do this for me' }).click();
+}
+
+/** Clicks the "Ready to continue" button (shown to both players after a restore when auto-resume is off). */
+export async function clickReadyToContinue(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Ready to continue' }).click();
+}
+
+/** Asserts (with auto-retry) that the game resumed after an intervention/restore. */
+export async function expectGameResumed(page: Page): Promise<void> {
+  await expect(page.locator('#arbiterMessage')).toContainText('Game continues', { timeout: 15_000 });
 }

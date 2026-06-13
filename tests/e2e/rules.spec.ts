@@ -8,14 +8,7 @@ import {
   expectGameResult,
   SCORE_DRAW,
 } from './helpers/app';
-import {
-  dragPiece,
-  clickSquare,
-  removePiece,
-  pressClock,
-  expectPiece,
-  expectEmpty,
-} from './helpers/board';
+import { dragPiece, removePiece, pressClock, expectPiece, expectEmpty } from './helpers/board';
 
 let game: TwoPlayerGame;
 
@@ -71,17 +64,7 @@ test('an illegal move is rejected (arbiter flags an error)', async ({ browser })
   await expect(white.locator('#arbiterMessage')).toHaveClass(/error/);
 });
 
-test('touch-move: touching one piece then moving another is a violation', async ({ browser }) => {
-  game = await startTwoPlayerGame(browser);
-  const { white } = game;
-
-  // Touch the knight (it has legal moves), then move a different piece.
-  await clickSquare(white, 'g1');
-  await dragPiece(white, 'e2', 'e4');
-  await pressClock(white);
-
-  await expect(white.locator('#arbiterMessage')).toHaveClass(/error/);
-});
+// Touch-move scenarios live in touch-move.spec.ts.
 
 test('kingside castling is accepted', async ({ browser }) => {
   // White: Ke1, Rh1 with O-O rights. Physically castle: king e1->g1, rook h1->f1.
@@ -92,9 +75,11 @@ test('kingside castling is accepted', async ({ browser }) => {
   await dragPiece(white, 'h1', 'f1');
   await pressClock(white);
 
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expectPiece(white, 'g1', 'WHITE_KING');
   await expectPiece(white, 'f1', 'WHITE_ROOK');
-  // The opponent receives the castled position too.
+  // The opponent receives the castled position and it becomes their turn.
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'g1', 'WHITE_KING');
   await expectPiece(black, 'f1', 'WHITE_ROOK');
 });
@@ -122,8 +107,10 @@ test('en passant capture is accepted', async ({ browser }) => {
   await removePiece(white, 'd5');
   await pressClock(white);
 
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expectPiece(white, 'd6', 'WHITE_PAWN');
   await expectEmpty(white, 'e5');
   await expectEmpty(white, 'd5');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'd6', 'WHITE_PAWN');
 });

@@ -197,6 +197,56 @@ class TestTouchMoveEvaluator {
   }
 
   @Test
+  void testTouchOwnThenCapturableOpponentBindsSpecificCapture() {
+    // FIDE 4.3.3: after 1.e4 d5, touching the white pawn on e4 and then the black pawn on d5 (which
+    // the e4 pawn can capture) binds the specific capture exd5.
+    final Board board = new Board();
+    board.moveStrict("e4");
+    board.moveStrict("d5");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.E4, Piece.WHITE_PAWN, 0));
+    sequence.addEvent(BoardEvent.click(Square.D5, Piece.BLACK_PAWN, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.SPECIFIC_CAPTURE, obligation.get().type());
+    assertEquals(Square.E4, obligation.get().square());
+    assertEquals(Square.D5, obligation.get().toSquare());
+
+    final var exd5 = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.E4 && m.moveSpecification().toSquare() == Square.D5)
+        .findFirst().orElseThrow();
+    final var e5 = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.E4 && m.moveSpecification().toSquare() == Square.E5)
+        .findFirst().orElseThrow();
+
+    // Only the specific capture satisfies it; another legal move of the touched pawn does not.
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation.get(), exd5));
+    assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation.get(), e5));
+  }
+
+  @Test
+  void testTouchOwnThenOpponentItCannotCaptureFallsBackToOwnPiece() {
+    // FIDE 4.3.3 fallback: if the touched own piece cannot capture the touched opponent piece, the
+    // obligation is just to move the first touched piece. The g1 knight cannot capture the d5 pawn.
+    final Board board = new Board();
+    board.moveStrict("e4");
+    board.moveStrict("d5");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.click(Square.D5, Piece.BLACK_PAWN, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.G1, obligation.get().square());
+  }
+
+  @Test
   void testDoesNotSatisfyObligationOpponentPieceDifferentMove() {
     final Board board = new Board();
     board.moveStrict("e4");

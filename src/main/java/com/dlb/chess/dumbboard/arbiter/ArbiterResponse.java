@@ -119,6 +119,12 @@ public record ArbiterResponse(
         opponentKey = MessageKey.ARBITER_TOUCH_MOVE_CASTLING_OPPONENT;
         args = List.of();
       }
+      case SPECIFIC_CAPTURE -> {
+        playerKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_PLAYER;
+        opponentKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT;
+        args = List.of(formatPieceName(obligation.piece()), obligation.square().getName(),
+            formatPieceName(obligation.capturedPiece()), obligation.toSquare().getName());
+      }
       default -> throw new IllegalStateException("Unhandled obligation type: " + obligation.type());
     }
     return new ArbiterResponse(ArbiterResponseType.TOUCH_MOVE_VIOLATION, playerKey, args,
