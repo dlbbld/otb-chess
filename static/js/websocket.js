@@ -50,21 +50,29 @@ class GameWebSocket {
     }
   }
 
-  createGame(side, initialTimeMs, incrementMs) {
-    this.send({
+  createGame(side, initialTimeMs, incrementMs, maxIllegalMoves, autoResumeAfterRestore, fen) {
+    const msg = {
       type: 'createGame',
       side: side,
       initialTimeMs: initialTimeMs,
-      incrementMs: incrementMs
-    });
+      incrementMs: incrementMs,
+      maxIllegalMoves: maxIllegalMoves,
+      autoResumeAfterRestore: autoResumeAfterRestore
+    };
+    // Optional starting FEN — when supplied the server validates via Ashlar Chess and
+    // overrides the creator's side to whichever side is to move in the FEN.
+    if (fen) {
+      msg.fen = fen;
+    }
+    this.send(msg);
   }
 
   joinGame(gameId) {
     this.send({ type: 'joinGame', gameId: gameId });
   }
 
-  sendBoardEvent(event) {
-    this.send({ type: 'boardEvent', event: event });
+  sendBoardEvent(event, boardState) {
+    this.send({ type: 'boardEvent', event: event, boardState: boardState });
   }
 
   sendClockPress(boardState) {

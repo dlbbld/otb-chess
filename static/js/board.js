@@ -170,9 +170,12 @@ class ChessBoard {
     e.preventDefault();
     this.startDrag(sq.piece, squareName, false, e.clientX, e.clientY);
 
-    // Dim piece on board
-    const pieceEl = squareEl.querySelector('.piece');
-    if (pieceEl) pieceEl.classList.add('dragging');
+    // Match a real chessboard: once the piece is in the player's hand the source
+    // square is empty until something is placed there again. The piece value is
+    // remembered in this.dragging so we can restore it on a CLICK (drop on the
+    // same square).
+    sq.piece = 'NONE';
+    this.renderSquare(squareName);
   }
 
   // Start dragging from the side area
@@ -188,6 +191,7 @@ class ChessBoard {
       piece: piece,
       fromSideArea: fromSideArea
     };
+    this.lastHoverSquare = null;
 
     this.floatingPiece = document.createElement('div');
     this.floatingPiece.className = 'floating-piece';
@@ -195,12 +199,29 @@ class ChessBoard {
     this.floatingPiece.style.left = x + 'px';
     this.floatingPiece.style.top = y + 'px';
     document.body.appendChild(this.floatingPiece);
+
+    // Tell the opponent's board the drag has begun so they can spawn a floating piece
+    // and dim the source square — exactly mirroring what the dragging player sees.
+    this.emitEvent('DRAG_START', squareName || 'NONE', 'NONE', piece, 'NONE');
   }
 
   onMouseMove(e) {
     if (!this.floatingPiece) return;
     this.floatingPiece.style.left = e.clientX + 'px';
     this.floatingPiece.style.top = e.clientY + 'px';
+
+    // Square-change-throttled hover stream for the opponent's view.
+    // We only emit when the cursor crosses into a new square (or off the board),
+    // which keeps the bandwidth tiny — at most ~10 events for a typical drag —
+    // while still showing the opponent the piece gliding to its destination.
+    const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+    const squareEl = targetEl ? targetEl.closest('.square') : null;
+    const onBoard = squareEl && this.boardEl.contains(squareEl);
+    const currentSquare = onBoard ? squareEl.dataset.square : 'NONE';
+    if (currentSquare !== this.lastHoverSquare && this.dragging) {
+      this.lastHoverSquare = currentSquare;
+      this.emitEvent('DRAG_HOVER', 'NONE', currentSquare, this.dragging.piece, 'NONE');
+    }
   }
 
   onMouseUp(e) {
@@ -253,9 +274,10 @@ class ChessBoard {
         const targetSquare = squareEl.dataset.square;
 
         if (targetSquare === fromSquare) {
-          // Dropped on same square -> CLICK
-          const pieceEl = squareEl.querySelector('.piece');
-          if (pieceEl) pieceEl.classList.remove('dragging');
+          // Dropped on same square -> CLICK. The source square was emptied at
+          // mousedown, so restore the piece now that it's back in place.
+          this.squares[fromSquare].piece = fromPiece;
+          this.renderSquare(fromSquare);
           this.emitEvent('CLICK', fromSquare, 'NONE', fromPiece, 'NONE');
         } else {
           const targetPiece = this.squares[targetSquare].piece;
@@ -310,9 +332,63 @@ class ChessBoard {
     const targetSquare = event.targetSquare;
     const piece = event.piece;
 
+    // Any non-cosmetic event ends the drag visualisation: the dragging player has
+    // either dropped the piece, removed it, or done something equivalent. Clear
+    // the floating piece and un-dim the source before applying the new state.
+    if (type !== 'DRAG_START' && type !== 'DRAG_HOVER') {
+      this.clearOpponentDragVisuals();
+    }
+
     switch (type) {
+      case 'DRAG_START': {
+        // Opponent began a drag — empty the source square (the piece is now in
+        // their hand) and float a copy at its centre. For side-area drags the
+        // source square is 'NONE'; we leave the floating piece hidden until the
+        // first DRAG_HOVER places it on the board.
+        this.opponentDragSource = square;
+        this.opponentDragPiece = piece;
+        if (square !== 'NONE' && this.squares[square]) {
+          this.squares[square].piece = 'NONE';
+          this.renderSquare(square);
+        }
+        this.opponentFloating = document.createElement('div');
+        this.opponentFloating.className = 'floating-piece opponent-floating-piece';
+        this.opponentFloating.innerHTML = getPieceSvg(piece);
+        document.body.appendChild(this.opponentFloating);
+        if (square !== 'NONE' && this.squares[square]) {
+          const rect = this.squares[square].element.getBoundingClientRect();
+          this.opponentFloating.style.left = (rect.left + rect.width / 2) + 'px';
+          this.opponentFloating.style.top = (rect.top + rect.height / 2) + 'px';
+        } else {
+          this.opponentFloating.style.display = 'none';
+        }
+        break;
+      }
+      case 'DRAG_HOVER': {
+        // Opponent's cursor entered a different square (or left the board).
+        // Move the floating piece to that square's centre on THIS player's screen,
+        // which works correctly even when the two players have flipped boards
+        // because we look up the square element by name in our own DOM.
+        if (!this.opponentFloating) break;
+        if (targetSquare === 'NONE' || !this.squares[targetSquare]) {
+          this.opponentFloating.style.display = 'none';
+        } else {
+          const rect = this.squares[targetSquare].element.getBoundingClientRect();
+          this.opponentFloating.style.left = (rect.left + rect.width / 2) + 'px';
+          this.opponentFloating.style.top = (rect.top + rect.height / 2) + 'px';
+          this.opponentFloating.style.display = '';
+        }
+        break;
+      }
       case 'CLICK': {
-        // Opponent touched a piece — show a brief blue highlight
+        // Opponent picked up the piece and put it back on the same square. The
+        // source was emptied during DRAG_START, so restore the piece now that
+        // the click ended where it began. The brief blue highlight tells the
+        // viewer the square was touched (touch-move-relevant).
+        if (square !== 'NONE' && this.squares[square] && piece !== 'NONE') {
+          this.squares[square].piece = piece;
+          this.renderSquare(square);
+        }
         if (square !== 'NONE' && this.squares[square]) {
           const el = this.squares[square].element;
           el.classList.add('opponent-touch');
@@ -367,5 +443,27 @@ class ChessBoard {
         break;
       }
     }
+  }
+
+  /**
+   * Removes the floating piece spawned by the opponent's drag stream and, if the
+   * source square was emptied at DRAG_START, puts the piece back. Safe to call
+   * when no opponent drag is in progress. Called automatically before any
+   * non-DRAG_* event in applyOpponentEvent (so DRAG_MOVE / DRAG_CAPTURE / REMOVE
+   * see a restored source which they then re-clear normally) and from external
+   * callers on flip / opponent disconnect / game reset.
+   */
+  clearOpponentDragVisuals() {
+    if (this.opponentFloating) {
+      this.opponentFloating.remove();
+      this.opponentFloating = null;
+    }
+    if (this.opponentDragSource && this.opponentDragSource !== 'NONE'
+        && this.squares[this.opponentDragSource] && this.opponentDragPiece) {
+      this.squares[this.opponentDragSource].piece = this.opponentDragPiece;
+      this.renderSquare(this.opponentDragSource);
+    }
+    this.opponentDragSource = null;
+    this.opponentDragPiece = null;
   }
 }

@@ -36,6 +36,34 @@
         <label>Increment (sec): <input type="number" id="customIncrement" value="0" min="0" max="60"></label>
       </div>
 
+      <label>Number of illegal moves causing game loss:</label>
+      <select id="maxIllegalMoves">
+        <option value="1">1</option>
+        <option value="2" selected>2 (FIDE default)</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+        <option value="-1">Unlimited</option>
+      </select>
+
+      <label>Continue clock without confirmation after restored position:</label>
+      <div class="radio-group">
+        <label><input type="radio" name="autoResumeAfterRestore" value="true" checked> Yes</label>
+        <label><input type="radio" name="autoResumeAfterRestore" value="false"> No</label>
+      </div>
+
+      <label>Starting position FEN <span style="font-weight:normal;color:#888;">(optional — leave empty for normal start)</span>:</label>
+      <input type="text" id="startingFen" placeholder="e.g. rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
+      <p style="font-size:12px;color:#777;margin:-4px 0 12px;">
+        If supplied, the game starts from this position. The side to move in the FEN plays first;
+        the player creating the game is given that side automatically.
+      </p>
+
       <button id="createGameBtn" class="primary-btn">Create Game</button>
     </div>
 
@@ -77,8 +105,18 @@
     // Create game — just redirect to game.html with params, game.js handles the WebSocket
     document.getElementById('createGameBtn').addEventListener('click', () => {
       const side = document.querySelector('input[name="side"]:checked').value;
-      window.location.href = '/game.html?creator=true&side=' + side
-        + '&time=' + selectedTime + '&inc=' + selectedInc;
+      const maxIllegal = document.getElementById('maxIllegalMoves').value;
+      const autoResumeAfterRestore =
+        document.querySelector('input[name="autoResumeAfterRestore"]:checked').value;
+      const fen = document.getElementById('startingFen').value.trim();
+      let url = '/game.html?creator=true&side=' + side
+        + '&time=' + selectedTime + '&inc=' + selectedInc
+        + '&maxIllegal=' + encodeURIComponent(maxIllegal)
+        + '&autoResumeAfterRestore=' + encodeURIComponent(autoResumeAfterRestore);
+      if (fen) {
+        url += '&fen=' + encodeURIComponent(fen);
+      }
+      window.location.href = url;
     });
 
     // Join game
@@ -96,11 +134,17 @@
       if (e.key === 'Enter') joinGame();
     });
 
-    // Auto-fill last game ID for easy testing
-    const lastGameId = localStorage.getItem('lastGameId');
-    if (lastGameId) {
-      document.getElementById('gameCodeInput').value = lastGameId;
-    }
+    // TESTING-ONLY: fetch the most recently created joinable game ID from the server so a second
+    // browser session can join without copy/paste. Remove once development is done.
+    fetch('/api/lastGameId', { cache: 'no-store' })
+      .then(r => r.ok ? r.text() : '')
+      .then(id => {
+        const trimmed = (id || '').trim();
+        if (trimmed) {
+          document.getElementById('gameCodeInput').value = trimmed;
+        }
+      })
+      .catch(() => { /* ignore — endpoint is testing convenience only */ });
   </script>
 </body>
 </html>

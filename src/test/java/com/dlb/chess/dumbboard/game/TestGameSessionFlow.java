@@ -6,10 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import com.dlb.chess.dumbboard.core.BitboardPositions;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponse;
 import com.dlb.chess.dumbboard.arbiter.ArbiterResponseType;
 import com.dlb.chess.dumbboard.event.BoardEvent;
@@ -31,9 +32,9 @@ class TestGameSessionFlow {
     // White makes an illegal move
     session.recordEvent(Side.WHITE,
         BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
-    final StaticPosition illegalPos = session.getBoard().getStaticPosition()
+    final BitboardPosition illegalPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
     session.pressClockButton(Side.WHITE, illegalPos);
 
     // Enter waiting for ready
@@ -54,14 +55,14 @@ class TestGameSessionFlow {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
 
-    final StaticPosition originalPosition = session.getBoard().getStaticPosition();
+    final BitboardPosition originalPosition = session.getBoard().getBitboardPosition();
 
     // White makes a move (valid)
     session.recordEvent(Side.WHITE,
         BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
-    final StaticPosition afterE4 = originalPosition
+    final BitboardPosition afterE4 = BitboardPositions.from(originalPosition)
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
     session.pressClockButton(Side.WHITE, afterE4);
 
     // Now it's Black's turn — the restore position should be the position after e4
@@ -76,9 +77,9 @@ class TestGameSessionFlow {
     // White makes an illegal move (knight to g3 — impossible)
     session.recordEvent(Side.WHITE,
         BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
-    final StaticPosition illegalPos = session.getBoard().getStaticPosition()
+    final BitboardPosition illegalPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
     final ArbiterResponse illegalResponse = session.pressClockButton(Side.WHITE, illegalPos);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, illegalResponse.type());
 
@@ -91,9 +92,9 @@ class TestGameSessionFlow {
     // from the earlier touch, so he must move the knight
     session.recordEvent(Side.WHITE,
         BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 0));
-    final StaticPosition validPos = session.getBoard().getStaticPosition()
+    final BitboardPosition validPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
     final ArbiterResponse validResponse = session.pressClockButton(Side.WHITE, validPos);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, validResponse.type());
     assertEquals(Side.BLACK, session.getHavingMove());
@@ -107,9 +108,9 @@ class TestGameSessionFlow {
     // White touches knight (illegal move to g3)
     session.recordEvent(Side.WHITE,
         BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
-    final StaticPosition illegalPos = session.getBoard().getStaticPosition()
+    final BitboardPosition illegalPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
     session.pressClockButton(Side.WHITE, illegalPos);
 
     // Ready to continue
@@ -120,9 +121,9 @@ class TestGameSessionFlow {
     // White tries to play pawn instead — touch-move violation (knight was touched)
     session.recordEvent(Side.WHITE,
         BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
-    final StaticPosition pawnPos = session.getBoard().getStaticPosition()
+    final BitboardPosition pawnPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, pawnPos);
     assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
   }
@@ -161,9 +162,9 @@ class TestGameSessionFlow {
         BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
     session.recordEvent(Side.WHITE,
         BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
-    final StaticPosition afterE4 = session.getBoard().getStaticPosition()
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN);
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
     final ArbiterResponse violation = session.pressClockButton(Side.WHITE, afterE4);
     assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, violation.type());
 
@@ -175,19 +176,106 @@ class TestGameSessionFlow {
     // White now moves the knight correctly
     session.recordEvent(Side.WHITE,
         BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 0));
-    final StaticPosition afterNf3 = session.getBoard().getStaticPosition()
+    final BitboardPosition afterNf3 = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT);
+        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
     final ArbiterResponse valid = session.pressClockButton(Side.WHITE, afterNf3);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, valid.type());
+  }
+
+  @Test
+  void testTouchMovePawnObligationPersistsAfterRestoration() {
+    final GameSession session = new GameSession(TEST_TIME, 2, false);
+    session.startGame();
+
+    // White touches pawn b2, but plays e4.
+    session.recordEvent(Side.WHITE, BoardEvent.click(Square.B2, Piece.WHITE_PAWN, 0));
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE)
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse violation = session.pressClockButton(Side.WHITE, afterE4);
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, violation.type());
+    assertTrue(violation.message().contains("pawn on b2"));
+
+    // The restore flow should not clear the touch-move obligation.
+    session.enterWaitingForRestoration();
+    assertTrue(session.isWaitingForRestoration());
+    assertTrue(session.isRestoredPosition(session.getRestorePosition()));
+    session.completeRestoration();
+    assertFalse(session.isWaitingForRestoration());
+    assertTrue(session.isWaitingForReady());
+    session.playerReady(Side.WHITE);
+    session.playerReady(Side.BLACK);
+
+    // White now performs a legal move with the touched b2 pawn.
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.B2, Square.B4, Piece.WHITE_PAWN, 2));
+    final BitboardPosition afterB4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.B2, Piece.NONE)
+        .createChangedPosition(Square.B4, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse valid = session.pressClockButton(Side.WHITE, afterB4);
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, valid.type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+  }
+
+  /** End-to-end released-piece flow: legal release commits, second drop violates, restoration
+      target is the release position, and after the player puts the piece back on the release
+      square and both Ready, the committed move is accepted. */
+  @Test
+  void testReleasedPieceViolationRestoresToReleasePosition() {
+    final GameSession session = new GameSession(TEST_TIME, 2, false);
+    session.startGame();
+
+    // White releases the e2 pawn on e3 (legal commit), then drags it on to e4, then presses clock.
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E3, Piece.WHITE_PAWN, 0));
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E3, Square.E4, Piece.WHITE_PAWN, 1));
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE)
+        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse violation = session.pressClockButton(Side.WHITE, afterE4);
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, violation.type());
+    assertTrue(violation.message().contains("pawn on e3"));
+
+    // Restoration target is the release position (e2 empty, e3 occupied), NOT positionBeforeTurn.
+    final BitboardPosition releasePosition = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE)
+        .createChangedPosition(Square.E3, Piece.WHITE_PAWN).build();
+    assertTrue(violation.restorePosition().isPresent());
+    assertEquals(releasePosition, violation.restorePosition().get());
+
+    // Server would call this; simulate the same path here.
+    session.enterWaitingForRestoration(releasePosition);
+    assertTrue(session.isWaitingForRestoration());
+    // The session reports "restored" once the physical board matches the release position.
+    assertTrue(session.isRestoredPosition(releasePosition));
+
+    // Complete the restoration; with autoResume=false the session enters waitingForReady.
+    session.completeRestoration();
+    assertFalse(session.isWaitingForRestoration());
+    assertTrue(session.isWaitingForReady());
+
+    // Both players Ready.
+    session.playerReady(Side.WHITE);
+    session.playerReady(Side.BLACK);
+    assertFalse(session.isWaitingForReady());
+
+    // White presses the clock with the committed release position — the e2-e3 move is accepted.
+    final ArbiterResponse accepted = session.pressClockButton(Side.WHITE, releasePosition);
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, accepted.type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+    // (The illegal-move counter is asserted at the engine level in TestArbiterEngine —
+    //  released-piece violation does not contribute to it.)
   }
 
   private void makeSimpleMove(GameSession session, Square from, Square to, Piece piece) {
     final Side side = session.getHavingMove();
     session.recordEvent(side, BoardEvent.dragMove(from, to, piece, System.currentTimeMillis()));
-    final StaticPosition afterPosition = session.getBoard().getStaticPosition()
+    final BitboardPosition afterPosition = BitboardPositions.from(session.getBoard().getBitboardPosition())
         .createChangedPosition(from, Piece.NONE)
-        .createChangedPosition(to, piece);
+        .createChangedPosition(to, piece).build();
     final ArbiterResponse response = session.pressClockButton(side, afterPosition);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
   }

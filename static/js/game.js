@@ -6,6 +6,10 @@ class Game {
     this.side = null; // 'white' or 'black'
     this.gameId = null;
     this.isMyTurn = false;
+    // FIDE 9.2 / 9.3: at most one draw claim per move. Set when the server reports a
+    // non-invalid claim outcome; reset whenever a new turn starts on this side.
+    this.claimMadeThisTurn = false;
+    this.pendingClaimWithMoveType = null;
     this.gameActive = false;
     this.sideAreaPieces = [];
     this.draggedSidePieceIndex = -1;
@@ -37,18 +41,24 @@ class Game {
     if (isCreator) {
       const initialTimeMs = parseInt(params.get('time') || '1800000');
       const incrementMs = parseInt(params.get('inc') || '0');
-      this.ws.createGame(this.side, initialTimeMs, incrementMs);
+      // maxIllegal: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
+      const maxIllegalMoves = parseInt(params.get('maxIllegal') || '2');
+      const autoResumeAfterRestore = params.get('autoResumeAfterRestore') !== 'false';
+      const fen = params.get('fen') || '';
+      this.ws.createGame(this.side, initialTimeMs, incrementMs, maxIllegalMoves,
+          autoResumeAfterRestore, fen);
     } else {
       this.ws.joinGame(this.gameId);
     }
 
     this.setupButtons();
     this.setupClockButtons();
+    this.setupDevConsoleControls();
   }
 
   // === Clock buttons ===
-  // Bottom lever = this player's side, Top lever = opponent's side.
-  // This is fixed regardless of board flip — the clock is a physical device.
+  // The clock rotates with the board for testing, so the lever nearest the
+  // player's pieces is always treated as that player's clock.
 
   setupClockButtons() {
     document.getElementById('topClockBtn').addEventListener('click', () => {
@@ -62,37 +72,66 @@ class Game {
   }
 
   updateClockLabels() {
-    // Bottom lever = own side, Top lever = opponent's side. Always.
-    const ownColor = this.side || 'white';
-    const opponentColor = ownColor === 'white' ? 'black' : 'white';
+    // The bottom lever is always near the pieces at the bottom of the board.
+    // When board is NOT flipped: White pieces at bottom → bottom lever = White
+    // When board IS flipped: Black pieces at bottom → bottom lever = Black
+    const whiteOnBottom = !this.board.flipped;
+
+    this.bottomClockColor = whiteOnBottom ? 'white' : 'black';
+    this.topClockColor = whiteOnBottom ? 'black' : 'white';
 
     document.getElementById('bottomClockLabel').textContent =
-      ownColor === 'white' ? 'White' : 'Black';
+      this.bottomClockColor === 'white' ? 'White' : 'Black';
     document.getElementById('topClockLabel').textContent =
-      opponentColor === 'white' ? 'White' : 'Black';
+      this.topClockColor === 'white' ? 'White' : 'Black';
 
-    // Clock color mapping: bottom = own, top = opponent
-    this.bottomClockColor = ownColor;
-    this.topClockColor = opponentColor;
+    const bottomDisplay = document.getElementById('bottomClockDisplay');
+    const topDisplay = document.getElementById('topClockDisplay');
+    if (bottomDisplay && topDisplay) {
+      bottomDisplay.classList.toggle('own-clock', this.bottomClockColor === this.side);
+      bottomDisplay.classList.toggle('opponent-clock', this.bottomClockColor !== this.side);
+      topDisplay.classList.toggle('own-clock', this.topClockColor === this.side);
+      topDisplay.classList.toggle('opponent-clock', this.topClockColor !== this.side);
+    }
+
+    // Physical clock position: always on White's right side of the board.
+    // White view keeps the clock on the right; Black view moves it to the left.
+    // Top/bottom DOM positions stay fixed while their assigned colors change,
+    // so the far lever stays far and the near lever stays near.
+    const whiteView = !this.board.flipped;
+    const gameLayout = document.querySelector('.game-layout');
+    if (gameLayout) {
+      gameLayout.classList.toggle('clock-on-left-view', !whiteView);
+    }
   }
 
   onClockButtonPressed(position) {
     if (!this.gameActive) return;
 
-    // Bottom = own side, Top = opponent's side
-    if (position === 'bottom') {
-      // Press own clock = submit move
-      this.ws.sendClockPress(this.board.getBoardState());
-    } else {
-      // Press opponent's clock = arbiter intervenes
-      this.ws.send({ type: 'opponentClockPressed' });
-    }
+    const pressedColor = position === 'bottom' ? this.bottomClockColor : this.topClockColor;
+
+    // Only a press of the player's OWN lever while it's their turn does anything —
+    // exactly like a real chess clock where pressing the wrong side does not register.
+    // We intentionally do NOT notify the server about clicks on the opponent's lever
+    // (or on the player's own lever when it's not their turn): no message, no arbiter
+    // intervention, no "do not press the opponent's clock" feedback. Silence keeps
+    // the cursor-and-click behaviour identical for both halves and avoids leaking
+    // which lever belongs to whom.
+    if (pressedColor !== this.side) return;
+    if (!this.isMyTurn) return;
+
+    this.ws.sendClockPress(this.board.getBoardState());
   }
 
   setupMessageHandlers() {
     this.ws.on('gameCreated', (data) => {
       this.gameId = data.gameId;
+      // The server may override the requested side when a custom FEN is supplied
+      // (the side-to-move from the FEN wins so the creator can play first).
       this.side = data.side;
+      if (this.side === 'black' && !this.board.flipped) {
+        this.board.flip();
+      }
       localStorage.setItem('lastGameId', data.gameId);
       this.board.setPosition(data.board);
       this.board.renderAll();
@@ -136,7 +175,10 @@ class Game {
 
     this.ws.on('gameStarted', (data) => {
       this.gameActive = true;
-      this.isMyTurn = this.side === 'white';
+      // Use the server-supplied side to move (necessary for custom-FEN games where
+      // Black may be to move first); fall back to White for the normal case.
+      const havingMove = data.havingMove || 'white';
+      this.isMyTurn = havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.updateButtons();
       this.showArbiterMessage('Game started! ' + (this.isMyTurn ? 'Your turn.' : "Opponent's turn."));
@@ -156,17 +198,18 @@ class Game {
 
     // After the OPPONENT's move is accepted — we receive the new board state
     this.ws.on('opponentMoved', (data) => {
-      console.log('opponentMoved received');
       if (data.board) {
+        // setPosition already calls renderSquare on every entry in data.board
+        // (the server sends all 64 squares), so a follow-up renderAll is pure
+        // redundant DOM work. Skip it.
         this.board.setPosition(data.board);
-        this.board.renderAll();
         this.board.clearHighlights();
         this.recomputeSideArea();
       }
       if (data.havingMove) {
         this.isMyTurn = data.havingMove === this.side;
         this.board.setEnabled(this.isMyTurn);
-        this.updateButtons();
+        this.resetClaimUiForNewTurn();
       }
       if (data.isCheck && this.isMyTurn) {
         this.highlightKingInCheck();
@@ -185,13 +228,14 @@ class Game {
     });
 
     this.ws.on('boardUpdate', (data) => {
+      // setPosition renders every server-supplied square; the explicit
+      // renderAll afterwards is redundant.
       this.board.setPosition(data.board);
-      this.board.renderAll();
       this.board.clearHighlights();
       this.recomputeSideArea();
       this.isMyTurn = data.havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
-      this.updateButtons();
+      this.resetClaimUiForNewTurn();
       if (data.isCheck && this.isMyTurn) {
         this.highlightKingInCheck();
       }
@@ -209,8 +253,12 @@ class Game {
       this.showArbiterMessage(data.message, 'error');
     });
 
+    this.ws.on('released_piece_violation', (data) => {
+      this.showArbiterMessage(data.message, 'error');
+    });
+
     this.ws.on('restoreRequired', (data) => {
-      this.showArbiterMessage(data.message, 'info');
+      this.showArbiterMessage(data.message, data.style || 'info');
       this.clearArbiterButtons();
       this.showArbiterButton('Do this for me', () => {
         this.ws.send({ type: 'restorePosition' });
@@ -219,13 +267,16 @@ class Game {
 
     this.ws.on('positionRestored', (data) => {
       if (data.board) {
+        // setPosition already re-renders every supplied square.
         this.board.setPosition(data.board);
-        this.board.renderAll();
         this.board.clearHighlights();
         this.recomputeSideArea();
       }
       this.showArbiterMessage(data.message, 'info');
       this.clearArbiterButtons();
+      if (data.autoResumePending) {
+        this.board.setEnabled(false);
+      }
     });
 
     this.ws.on('waitingForReady', (data) => {
@@ -245,6 +296,11 @@ class Game {
     this.ws.on('gameResumed', (data) => {
       this.showArbiterMessage(data.message);
       this.clearArbiterButtons();
+      if (data.havingMove) {
+        this.isMyTurn = data.havingMove === this.side;
+        this.board.setEnabled(this.isMyTurn);
+        this.updateButtons();
+      }
     });
 
     this.ws.on('incomplete_move', (data) => {
@@ -260,6 +316,10 @@ class Game {
     });
 
     this.ws.on('revert_restoration', (data) => {
+      this.showArbiterMessage(data.message, 'error');
+    });
+
+    this.ws.on('position_change', (data) => {
       this.showArbiterMessage(data.message, 'error');
     });
 
@@ -285,16 +345,49 @@ class Game {
       this.showArbiterMessage('Your opponent offers a draw.');
     });
 
+    // Bare acknowledgment to the offering player after a correct-time draw offer:
+    // the move was validated and the offer forwarded to the opponent. No reminder
+    // to press the clock — see design-principles P-003 (board never gives
+    // procedural instructions). If the offerer forgets, time keeps running on
+    // their clock while the opponent considers the offer.
+    this.ws.on('drawOfferSent', (data) => {
+      this.showArbiterMessage(data.message, 'info');
+    });
+
+    // The on-move player just touched a piece while a draw offer was pending.
+    // Per FIDE 9.1.2.1 the right to accept is lost; hide the Accept/Reject panel
+    // and show the explanation.
+    this.ws.on('drawOfferInvalidated', (data) => {
+      document.getElementById('drawOfferPanel').style.display = 'none';
+      this.showArbiterMessage(data.message, 'error');
+    });
+
     this.ws.on('drawRejected', (data) => {
       document.getElementById('drawOfferPanel').style.display = 'none';
       this.showArbiterMessage('Draw offer rejected.');
     });
 
     this.ws.on('drawClaimResult', (data) => {
-      this.showArbiterMessage(data.message);
-      if (data.mustExecuteMove) {
-        this.showSanInput(false);
+      this.showArbiterMessage(data.message, data.invalidMove ? 'error' : null);
+      if (data.invalidMove) {
+        const input = document.getElementById('sanInput');
+        if (input) {
+          input.value = '';
+          input.focus();
+        }
+      } else {
+        // The claim has resolved for this turn. The server-side claim ledger now owns the
+        // once-per-turn state; the UI stays locked until a new turn starts.
+        this.claimMadeThisTurn = true;
+        this.pendingClaimWithMoveType = null;
+        this.updateButtons();
+        this.hideSanInput();
       }
+    });
+
+    // Opponent broadcast: the other side made a claim event we need to display.
+    this.ws.on('drawClaimOpponent', (data) => {
+      this.showArbiterMessage(data.message);
     });
 
     this.ws.on('pgn', (data) => {
@@ -306,6 +399,10 @@ class Game {
       this.gameActive = false;
       this.board.setEnabled(false);
       this.updateButtons();
+      // Game has ended — drop the PAUSE overlay because no further clockUpdate
+      // will arrive to clear it via the updateClocks path.
+      const clockEl = document.getElementById('chessClock');
+      if (clockEl) clockEl.classList.remove('paused');
       const scoreText = data.winner === 'none' ? '\u00BD-\u00BD'
         : (data.winner === 'white' ? '1-0' : '0-1');
       document.getElementById('gameResultScore').textContent = scoreText;
@@ -315,10 +412,62 @@ class Game {
 
     this.ws.on('opponentDisconnected', (data) => {
       this.showArbiterMessage(data.message, 'info');
+      // Drop any in-flight opponent drag visualisation — no more events will arrive.
+      this.board.clearOpponentDragVisuals();
     });
 
     this.ws.on('error', (data) => {
-      this.showArbiterMessage('Error: ' + data.message, 'error');
+      // The user sees only the friendly server-supplied message. Raw technical
+      // detail (exception class, message, calling context) lives in `devDetail`
+      // and is routed to the developer console at the bottom of the page —
+      // never into the arbiter message area.
+      this.showArbiterMessage(data.message, 'error');
+      if (data.devDetail) {
+        this.appendDevConsole(data.devDetail);
+      }
+    });
+  }
+
+  // === Developer console ===
+
+  /**
+   * Appends a technical error detail to the dev-console pane and reveals the
+   * pane on first use. Out of band from the arbiter message area — the user-
+   * visible UI does not see this text.
+   */
+  appendDevConsole(detail) {
+    const console = document.getElementById('devConsole');
+    const body = document.getElementById('devConsoleBody');
+    if (!console || !body) return;
+    const entry = document.createElement('div');
+    entry.className = 'dev-console-entry';
+    const ts = document.createElement('span');
+    ts.className = 'ts';
+    const now = new Date();
+    ts.textContent = now.toTimeString().slice(0, 8);
+    const text = document.createElement('span');
+    text.className = 'detail';
+    text.textContent = detail;
+    entry.appendChild(ts);
+    entry.appendChild(text);
+    body.appendChild(entry);
+    body.scrollTop = body.scrollHeight;
+    console.style.display = 'flex';
+    console.classList.remove('collapsed');
+  }
+
+  setupDevConsoleControls() {
+    const console = document.getElementById('devConsole');
+    const body = document.getElementById('devConsoleBody');
+    const clearBtn = document.getElementById('devConsoleClearBtn');
+    const toggleBtn = document.getElementById('devConsoleToggleBtn');
+    if (!console || !body || !clearBtn || !toggleBtn) return;
+    clearBtn.addEventListener('click', () => {
+      body.innerHTML = '';
+    });
+    toggleBtn.addEventListener('click', () => {
+      const collapsed = console.classList.toggle('collapsed');
+      toggleBtn.textContent = collapsed ? 'show' : 'hide';
     });
   }
 
@@ -343,30 +492,33 @@ class Game {
       document.getElementById('drawOfferPanel').style.display = 'none';
     });
 
-    document.getElementById('claimThreefoldBtn').addEventListener('click', () => {
-      this.showSanInput(true, 'THREEFOLD');
+    document.getElementById('claimThreefoldOnBoardBtn').addEventListener('click', () => {
+      this.sendClaimOnBoard('THREEFOLD_ON_BOARD');
     });
 
-    document.getElementById('claimFiftyMoveBtn').addEventListener('click', () => {
-      this.showSanInput(true, 'FIFTY_MOVE');
+    document.getElementById('claimThreefoldWithMoveBtn').addEventListener('click', () => {
+      this.beginClaimWithMove('THREEFOLD_WITH_MOVE', 'Threefold move:');
     });
 
-    document.getElementById('claimOnBoardBtn').addEventListener('click', () => {
-      const claimType = document.getElementById('sanInputPanel').dataset.claimPrefix;
-      this.ws.sendClaimDraw(claimType + '_ON_BOARD');
-      this.hideSanInput();
+    document.getElementById('claimFiftyMoveOnBoardBtn').addEventListener('click', () => {
+      this.sendClaimOnBoard('FIFTY_MOVE_ON_BOARD');
     });
 
-    document.getElementById('claimWithMoveBtn').addEventListener('click', () => {
+    document.getElementById('claimFiftyMoveWithMoveBtn').addEventListener('click', () => {
+      this.beginClaimWithMove('FIFTY_MOVE_WITH_MOVE', '50-move rule move:');
+    });
+
+    document.getElementById('submitClaimMoveBtn').addEventListener('click', () => {
       const san = document.getElementById('sanInput').value.trim();
       if (!san) { this.showArbiterMessage('Please enter a move in SAN notation.'); return; }
-      const claimType = document.getElementById('sanInputPanel').dataset.claimPrefix;
-      this.ws.sendClaimDraw(claimType + '_WITH_MOVE', san);
-      this.hideSanInput();
+      if (!this.pendingClaimWithMoveType) return;
+      this.ws.sendClaimDraw(this.pendingClaimWithMoveType, san);
     });
 
-    document.getElementById('cancelClaimBtn').addEventListener('click', () => {
-      this.hideSanInput();
+    document.getElementById('sanInput').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      document.getElementById('submitClaimMoveBtn').click();
     });
 
     document.getElementById('exportPgnBtn').addEventListener('click', () => {
@@ -379,7 +531,17 @@ class Game {
 
     document.getElementById('flipBoardBtn').addEventListener('click', () => {
       this.board.flip();
-      // Clock labels don't change on flip — the clock is a separate physical device
+      // After a flip the floating piece's screen position is stale; clearing it
+      // keeps the visual coherent. Next opponent DRAG_HOVER will not respawn it
+      // (DRAG_START is what spawns), but on the dragger's next square change a
+      // hover event still fires; the small visual gap until the next drag is
+      // acceptable. Most flips happen between turns anyway.
+      this.board.clearOpponentDragVisuals();
+      this.renderSideAreas();
+      this.updateClockLabels();
+      if (this._lastClockData) {
+        this.updateClocks(this._lastClockData);
+      }
     });
 
     document.getElementById('newGameBtn').addEventListener('click', () => {
@@ -402,7 +564,9 @@ class Game {
   }
 
   onBoardEvent(event) {
-    this.ws.sendBoardEvent(event);
+    // Send the current physical board state with every event so the server can detect
+    // game-ending moves (checkmate/stalemate/etc.) without waiting for a clock press.
+    this.ws.sendBoardEvent(event, this.board.getBoardState());
   }
 
   highlightKingInCheck() {
@@ -461,6 +625,11 @@ class Game {
       this.sideAreaPieces.push({ piece: p, originalSquare: 'NONE' });
     }
 
+    const whitePieces = this.sideAreaPieces.filter(p => p.piece.startsWith('WHITE')).map(p => p.piece);
+    const blackPieces = this.sideAreaPieces.filter(p => p.piece.startsWith('BLACK')).map(p => p.piece);
+    console.log('[SIDE-AREA] recompute: WHITE=[' + whitePieces.join(',') + '] BLACK=[' + blackPieces.join(',') + '] extras=[' + (this.extraPieces||[]).join(',') + ']');
+    // Trace who called this
+    console.trace('[SIDE-AREA] recompute caller');
     this.renderSideAreas();
   }
 
@@ -482,17 +651,29 @@ class Game {
   }
 
   renderSideAreas() {
-    // Left = opponent's pieces, Right = own pieces (matches physical board)
-    const leftColor = this.side === 'white' ? 'BLACK' : 'WHITE';
-    const rightColor = this.side === 'white' ? 'WHITE' : 'BLACK';
+    // The side areas follow the current board view.
+    // White view: left = Black pieces, right = White pieces.
+    // Black view: left = White pieces, right = Black pieces.
+    const isWhiteView = !this.board.flipped;
+    const leftColor = isWhiteView ? 'BLACK' : 'WHITE';
+    const rightColor = isWhiteView ? 'WHITE' : 'BLACK';
 
     document.getElementById('leftSideLabel').textContent = leftColor === 'WHITE' ? 'White' : 'Black';
     document.getElementById('rightSideLabel').textContent = rightColor === 'WHITE' ? 'White' : 'Black';
 
     const leftEl = document.getElementById('leftSidePieces');
     const rightEl = document.getElementById('rightSidePieces');
+
+    if (!leftEl || !rightEl) {
+      console.error('[SIDE-AREA] DOM elements not found! leftEl=' + !!leftEl + ' rightEl=' + !!rightEl);
+      return;
+    }
+
     leftEl.innerHTML = '';
     rightEl.innerHTML = '';
+
+    let leftCount = 0;
+    let rightCount = 0;
 
     this.sideAreaPieces.forEach((item, index) => {
       const el = document.createElement('div');
@@ -508,10 +689,15 @@ class Game {
       });
       if (item.piece.startsWith(leftColor)) {
         leftEl.appendChild(el);
+        leftCount++;
       } else {
         rightEl.appendChild(el);
+        rightCount++;
       }
     });
+
+    console.log('[SIDE-AREA] render: view=' + (isWhiteView ? 'White' : 'Black') +
+      ' left(' + leftColor + ')=' + leftCount + ' right(' + rightColor + ')=' + rightCount);
   }
 
   // === Inline panels ===
@@ -538,17 +724,39 @@ class Game {
     panel.style.display = 'block';
   }
 
-  showSanInput(show, claimPrefix) {
+  sendClaimOnBoard(claimType) {
+    if (!this.gameActive || this.claimMadeThisTurn) return;
+    this.claimMadeThisTurn = true;
+    this.pendingClaimWithMoveType = null;
+    this.hideSanInput();
+    this.updateButtons();
+    this.ws.sendClaimDraw(claimType);
+  }
+
+  beginClaimWithMove(claimType, label) {
+    if (!this.gameActive || this.claimMadeThisTurn) return;
+    this.claimMadeThisTurn = true;
+    this.pendingClaimWithMoveType = claimType;
+    this.showSanInput(label);
+    this.updateButtons();
+  }
+
+  showSanInput(label) {
     const panel = document.getElementById('sanInputPanel');
-    if (show) {
-      panel.style.display = 'flex';
-      panel.dataset.claimPrefix = claimPrefix;
-      document.getElementById('sanInput').value = '';
-      document.getElementById('sanInput').focus();
-    }
+    document.getElementById('sanClaimLabel').textContent = label;
+    panel.style.display = 'flex';
+    document.getElementById('sanInput').value = '';
+    document.getElementById('sanInput').focus();
   }
 
   hideSanInput() { document.getElementById('sanInputPanel').style.display = 'none'; }
+
+  resetClaimUiForNewTurn() {
+    this.claimMadeThisTurn = false;
+    this.pendingClaimWithMoveType = null;
+    this.hideSanInput();
+    this.updateButtons();
+  }
 
   showConfirmation(message, callback) {
     document.getElementById('confirmMessage').textContent = message;
@@ -567,7 +775,6 @@ class Game {
     this._lastClockData = data;
     this.clockRunning = data.running;
 
-    // Bottom = own side, Top = opponent's side
     const bottomColor = this.bottomClockColor || this.side || 'white';
     const topColor = this.topClockColor || (this.side === 'white' ? 'black' : 'white');
 
@@ -580,6 +787,15 @@ class Game {
     const topActive = data.running === topColor;
     const bottomActive = data.running === bottomColor;
     const neutral = data.running === 'none';
+
+    // Show the PAUSE indicator and flip the time displays when the clock is stopped
+    // mid-game (arbiter intervention, restoration handshake, etc.). Skipped when the
+    // game is not active so the indicator does not show before the game starts or
+    // after it has ended.
+    const clockEl = document.getElementById('chessClock');
+    if (clockEl) {
+      clockEl.classList.toggle('paused', neutral && this.gameActive);
+    }
 
     const bottomLever = document.getElementById('bottomClockBtn');
     const topLever = document.getElementById('topClockBtn');
@@ -632,8 +848,12 @@ class Game {
     document.getElementById('offerDrawBtn').disabled = !this.gameActive;
     document.getElementById('resignBtn').disabled = !this.gameActive;
     document.getElementById('requestPieceBtn').disabled = !this.gameActive;
-    document.getElementById('claimThreefoldBtn').disabled = !this.gameActive;
-    document.getElementById('claimFiftyMoveBtn').disabled = !this.gameActive;
+    // Claim buttons are disabled once a claim has been committed on this turn.
+    const claimsAllowed = this.gameActive && !this.claimMadeThisTurn;
+    document.getElementById('claimThreefoldOnBoardBtn').disabled = !claimsAllowed;
+    document.getElementById('claimThreefoldWithMoveBtn').disabled = !claimsAllowed;
+    document.getElementById('claimFiftyMoveOnBoardBtn').disabled = !claimsAllowed;
+    document.getElementById('claimFiftyMoveWithMoveBtn').disabled = !claimsAllowed;
   }
 
   showArbiterMessage(message, style) {

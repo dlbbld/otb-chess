@@ -1,34 +1,24 @@
 package com.dlb.chess.dumbboard.game;
 
-import com.dlb.chess.board.Board;
-import com.dlb.chess.common.interfaces.ApiBoard;
-import com.dlb.chess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
 import com.dlb.chess.dumbboard.game.model.DrawClaimResult;
 import com.dlb.chess.dumbboard.game.model.DrawClaimType;
-import com.dlb.chess.san.exceptions.SanValidationException;
-import com.dlb.chess.san.validate.SanValidation;
+import io.github.dlbbld.ashlarchess.san.SanValidationException;
+import io.github.dlbbld.ashlarchess.san.StrictSanParser;
 
 /**
  * Handles draw claims: threefold repetition and 50-move rule.
  *
- * <p>Two variants each:
- * <ul>
- *   <li>"On the board": the current position already qualifies</li>
- *   <li>"With move": a specified move will create the qualifying position.
- *       If the claim is rejected, the specified move must still be played.</li>
- * </ul>
+ * <p>Each result carries three messages: one for the claiming player, one broadcast to the
+ * opponent, and (on acceptance) a short game-end description for the result panel.
  */
 public class DrawClaimManager {
 
-  /**
-   * Processes a draw claim.
-   *
-   * @param board the current board state
-   * @param type  the type of draw claim
-   * @param san   the SAN move (only for "with move" claims, null otherwise)
-   * @return the result of the claim
-   */
-  public DrawClaimResult processClaim(ApiBoard board, DrawClaimType type, String san) {
+  private static final String THREEFOLD_ENDED = "The game is drawn by threefold repetition.";
+  private static final String FIFTY_MOVE_ENDED = "The game is drawn by the 50-move rule.";
+
+  public DrawClaimResult processClaim(Board board, DrawClaimType type, String san) {
     return switch (type) {
       case THREEFOLD_ON_BOARD -> claimThreefoldOnBoard(board);
       case THREEFOLD_WITH_MOVE -> claimThreefoldWithMove(board, san);
@@ -37,64 +27,99 @@ public class DrawClaimManager {
     };
   }
 
-  private DrawClaimResult claimThreefoldOnBoard(ApiBoard board) {
+  private DrawClaimResult claimThreefoldOnBoard(Board board) {
     if (board.canClaimThreefoldRepetitionRule()) {
-      return DrawClaimResult.accepted("The game is drawn by threefold repetition.");
-    }
-    return DrawClaimResult.rejected("Threefold repetition claim rejected. The position has not occurred three times.");
-  }
-
-  private DrawClaimResult claimThreefoldWithMove(ApiBoard board, String san) {
-    // Validate the SAN move
-    final MoveSpecification moveSpec;
-    try {
-      moveSpec = SanValidation.validateSan(san, board);
-    } catch (final SanValidationException e) {
-      return DrawClaimResult.rejected("Invalid move: " + e.getMessage());
-    }
-
-    // Temporarily perform the move and check
-    board.performMove(moveSpec);
-    final boolean isThreefold = board.isThreefoldRepetition();
-    board.unperformMove();
-
-    if (isThreefold) {
-      // Claim accepted — the move will be performed by the game session
-      return DrawClaimResult.accepted("The game is drawn by threefold repetition.");
-    }
-
-    // Claim rejected — the player must still execute this move
-    return DrawClaimResult.rejectedWithMove(
-        "Threefold claim rejected. Please play the specified move.", moveSpec);
-  }
-
-  private DrawClaimResult claimFiftyMoveOnBoard(ApiBoard board) {
-    if (board.canClaimFiftyMoveRule()) {
-      return DrawClaimResult.accepted("The game is drawn by the 50-move rule.");
+      return DrawClaimResult.accepted(
+          "Your claim was accepted.",
+          "Your opponent claimed a draw by threefold repetition. The claim was accepted.",
+          THREEFOLD_ENDED);
     }
     return DrawClaimResult.rejected(
-        "50-move rule claim rejected. 50 moves have not been played without a pawn move or capture.");
+        "Threefold repetition claim rejected. The position has not occurred three times.",
+        "Your opponent claimed a draw by threefold repetition. The claim was rejected.");
   }
 
-  private DrawClaimResult claimFiftyMoveWithMove(ApiBoard board, String san) {
-    // Validate the SAN move
+  private DrawClaimResult claimThreefoldWithMove(Board board, String san) {
     final MoveSpecification moveSpec;
     try {
-      moveSpec = SanValidation.validateSan(san, board);
+      moveSpec = StrictSanParser.parseText(san, board).moveSpecification();
     } catch (final SanValidationException e) {
-      return DrawClaimResult.rejected("Invalid move: " + e.getMessage());
+      return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
+          + " Please enter a legal move for the claim.");
     }
 
-    // Temporarily perform the move and check
-    board.performMove(moveSpec);
-    final boolean isFiftyMove = board.isFiftyMove();
-    board.unperformMove();
+    if (!board.canClaimThreefoldRepetitionRuleWithOwnMove()) {
+      return DrawClaimResult.rejected(
+          "Claim rejected, because no move from the current position can lead to a threefold"
+              + " repetition. Please play.",
+          "Your opponent claimed a draw by threefold repetition after the move " + san
+              + ". The claim was rejected.");
+    }
 
-    if (isFiftyMove) {
-      return DrawClaimResult.accepted("The game is drawn by the 50-move rule.");
+    board.move(moveSpec);
+    final boolean isThreefold = board.isThreefoldRepetition();
+    board.unmove();
+
+    if (isThreefold) {
+      return DrawClaimResult.accepted(
+          "Your claim was accepted.",
+          "Your opponent requested a draw for threefold repetition after the move " + san + ".",
+          THREEFOLD_ENDED);
     }
 
     return DrawClaimResult.rejectedWithMove(
-        "50-move rule claim rejected. Please play the specified move.", moveSpec);
+        "Claim rejected, because there is no threefold repetition after the mentioned move "
+            + san + ". Please play.",
+        "Your opponent claimed a draw by threefold repetition after the move " + san
+            + ". The claim was rejected.",
+        moveSpec);
+  }
+
+  private DrawClaimResult claimFiftyMoveOnBoard(Board board) {
+    if (board.canClaimFiftyMoveRule()) {
+      return DrawClaimResult.accepted(
+          "Your claim was accepted.",
+          "Your opponent claimed a draw by the 50-move rule. The claim was accepted.",
+          FIFTY_MOVE_ENDED);
+    }
+    return DrawClaimResult.rejected(
+        "50-move rule claim rejected. 50 moves have not been played without a pawn move or capture.",
+        "Your opponent claimed a draw by the 50-move rule. The claim was rejected.");
+  }
+
+  private DrawClaimResult claimFiftyMoveWithMove(Board board, String san) {
+    final MoveSpecification moveSpec;
+    try {
+      moveSpec = StrictSanParser.parseText(san, board).moveSpecification();
+    } catch (final SanValidationException e) {
+      return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
+          + " Please enter a legal move for the claim.");
+    }
+
+    if (!board.canClaimFiftyMoveRuleWithOwnMove()) {
+      return DrawClaimResult.rejected(
+          "Claim rejected, because no move from the current position can satisfy the 50-move"
+              + " rule. Please play.",
+          "Your opponent claimed a draw by the 50-move rule after the move " + san
+              + ". The claim was rejected.");
+    }
+
+    board.move(moveSpec);
+    final boolean isFiftyMove = board.isFiftyMove();
+    board.unmove();
+
+    if (isFiftyMove) {
+      return DrawClaimResult.accepted(
+          "Your claim was accepted.",
+          "Your opponent requested a draw by the 50-move rule after the move " + san + ".",
+          FIFTY_MOVE_ENDED);
+    }
+
+    return DrawClaimResult.rejectedWithMove(
+        "Claim rejected, because the 50-move rule does not apply after the mentioned move "
+            + san + ". Please play.",
+        "Your opponent claimed a draw by the 50-move rule after the move " + san
+            + ". The claim was rejected.",
+        moveSpec);
   }
 }

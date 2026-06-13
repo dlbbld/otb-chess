@@ -1,6 +1,6 @@
 package com.dlb.chess.dumbboard.game.model;
 
-import com.dlb.chess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
 
 /**
  * Represents the result of a completed game.

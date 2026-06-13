@@ -48,8 +48,16 @@ input[type="text"] {
 .game-layout {
   display: flex;
   gap: 12px;
-  align-items: flex-start;
+  /* stretch — so the right column (messages + clock) matches the board column's
+     height, putting the clock at the bottom-right with messages filling above. */
+  align-items: stretch;
   margin-top: 16px;
+}
+
+/* Left-align the page when the game layout is present, so the leftSideArea stays visible
+   even if the total content width exceeds the viewport. The lobby keeps body centering. */
+body:has(.game-layout) {
+  justify-content: flex-start;
 }
 
 .board-column {
@@ -64,50 +72,150 @@ input[type="text"] {
   gap: 0;
 }
 
-/* === Chess Clock (to the right of the board) === */
-.chess-clock {
-  display: flex;
-  flex-direction: column;
-  /* Total height = board height = 8 * 64px = 512px */
-  height: 512px;
-  margin-left: 8px;
+/* === Right column: messages above the clock, clock vertically centered next to
+   the board (so it sits at the same height as the middle of the board). === */
+.right-column {
+  display: grid;
+  /* Three rows: top spacer with messages aligned to its bottom, clock at natural
+     height in the middle, and bottom spacer. The clock ends up at the vertical
+     middle of the board because the two 1fr rows are equal. */
+  grid-template-rows: 1fr auto 1fr;
+  width: 200px;       /* narrow — only as wide as needed for clock + small margin */
+  gap: 0;
 }
 
-.clock-half {
-  flex: 1;
+/* Black's view: the right column moves to the LEFT of the board. */
+.game-layout.clock-on-left-view .right-column {
+  order: -1;
+}
+
+/* Messages sit in the upper spacer, aligned to its bottom edge so they hug the
+   clock from above. */
+.right-column .info-panel {
+  grid-row: 1;
+  align-self: end;
+  width: 100%;
+}
+
+/* Clock is in the middle row, horizontally centered in the column. A small right
+   margin leaves a bit of breathing room past the rocker, then the column ends. */
+.right-column .chess-clock {
+  grid-row: 2;
+  justify-self: start;
+}
+
+/* Black's view: the column is left of the board, so the clock body hugs the
+   board edge and the LCD display remains the inner face nearest the board. */
+.game-layout.clock-on-left-view .right-column .chess-clock {
+  justify-self: end;
+  flex-direction: row-reverse;
+}
+
+/* === Chess Clock — DGT 3000 inspired === */
+/* Red wedge-shaped body viewed mostly head-on (no exposed side face), with a slight
+   forward tilt for 3D feel. Sized to about 1/3 of the board height so it sits below
+   the messages on the right of the board. */
+.chess-clock {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: row;        /* displays | rocker, side by side */
+  align-items: stretch;
+  position: relative;         /* so the .paused PAUSE overlay can absolute-position over the body */
+  /* Narrow body — wide enough for the LCD + rocker, with a small breathing
+     margin past the rocker on its outer edge before the column ends. */
+  width: 180px;
+  height: 170px;              /* ~1/3 of the 512 px board */
+  padding: 12px 10px;
+  /* Subtle vertical gradient — top is highlight, bottom recedes. The 3D feel comes
+     from this and the inset shadows, not from a rotateY that would expose the side. */
+  background: linear-gradient(180deg, #e84238 0%, #c43229 30%, #a82820 70%, #76170f 100%);
+  border: 1px solid #5a1410;
+  border-radius: 10px;
+  box-shadow:
+    inset 0 3px 5px rgba(255,255,255,0.25),
+    inset 0 -4px 8px rgba(0,0,0,0.40),
+    inset 4px 0 6px rgba(255,255,255,0.10),
+    inset -4px 0 6px rgba(0,0,0,0.20),
+    0 8px 16px rgba(0,0,0,0.40);
+  /* Slight forward tilt of the top edge — like a clock sitting on a table viewed
+     from a player's seat. No rotateY, so the side face is never exposed. */
+  transform: perspective(1200px) rotateX(8deg);
+  transform-origin: center bottom;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+/* === Display column (LCD area on the inner face of the wedge) === */
+.clock-displays {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
+  flex: 0 0 auto;
 }
 
 .clock-divider {
-  height: 2px;
-  background: #999;
-  margin: 2px 0;
+  height: 1px;
+  background: rgba(0,0,0,0.40);
+  margin: 6px 0;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.10);
 }
 
-/* Clock time display — horizontal, to the left of the lever */
+/* LCD-style time display. Time text is shown horizontally — "30:00" reads
+   left-to-right just like any normal clock face. */
 .clock-display {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 90px;
+  padding: 8px 6px;
+  min-width: 64px;
+  background: linear-gradient(180deg, #c8d2b8 0%, #b6c0a2 100%);
+  border: 1px solid #6e7558;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 2px 4px rgba(0,0,0,0.30),
+    inset 0 -1px 0 rgba(255,255,255,0.15);
 }
 
 .clock-time {
+  display: inline-block;
   font-family: "Courier New", monospace;
-  font-size: 24px;
+  font-size: 16px;
   font-weight: bold;
-  color: #555;
+  color: #2a2e22;
+  /* Time is shown horizontally on both LCDs in both views. */
+  white-space: nowrap;
+}
+
+/* Paused state — game in progress but no clock running (arbiter intervention,
+   restoration handshake, etc.). The big PAUSE label is drawn as an absolute
+   overlay over the entire clock body; the time text itself stays put. */
+
+.chess-clock.paused::after {
+  content: 'PAUSE';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: "Arial Black", "Arial", sans-serif;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.85),
+    0 2px 4px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 5;
 }
 
 .clock-display.active .clock-time {
-  color: #333;
+  color: #1a1d12;
 }
 
 .clock-display.low-time .clock-time {
-  color: #c0392b;
+  color: #b3261e;
   animation: pulse-red 1s infinite;
 }
 
@@ -117,106 +225,136 @@ input[type="text"] {
 }
 
 .clock-side-label {
-  font-size: 10px;
-  color: #888;
-  margin-top: 2px;
+  /* The position of each half (top vs bottom) already identifies whose clock it is,
+     so the label is hidden in this compact layout. */
+  display: none;
 }
 
-/* Clock lever — taller than wide, 3D push button. 50% bigger than original. */
+/* === Rocker bar — two visibly-3D plunger halves on top of the housing === */
+/* The bar has real thickness — when a half is raised, you can see its side wall.
+   When pressed, it sinks flush with the housing. The contrast between the two
+   halves' positions makes the see-saw movement obvious. */
+.clock-rocker {
+  flex: 0 0 auto;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* Reserve room above and below so the raised half pokes out without clipping. */
+  margin: 18px 0;
+}
+
 .clock-lever-btn {
-  width: 84px;
-  height: 180px;
-  border-radius: 10px;
+  flex: 1;
+  margin: 0;
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  transition: all 0.12s ease;
   user-select: none;
-}
-
-/* 3D push button surface — inner raised/sunken surface */
-.lever-surface {
-  width: 68px;
-  height: 164px;
-  border-radius: 8px;
-  transition: all 0.12s ease;
-}
-
-/* Neutral (before game starts): grey, unpressed, disabled */
-.clock-lever-btn.neutral {
-  background: linear-gradient(180deg, #b0b0b0 0%, #909090 100%);
-  border: 2px solid #808080;
+  /* Top face of the plunger (default — equivalent to the resting state). */
+  background: linear-gradient(180deg, #faf7ee 0%, #e8e0c8 70%, #c8c0a8 100%);
+  border: 1px solid #908874;
+  /* Multi-layer shadow stack creates a visible "side wall" beneath the plunger,
+     selling the 3D thickness. Each step is a slightly darker tint of the body. */
   box-shadow:
-    0 5px 0 #707070,
-    0 7px 10px rgba(0,0,0,0.2),
-    inset 0 1px 0 rgba(255,255,255,0.2);
+    inset 0 2px 0 rgba(255,255,255,0.80),
+    inset 1px 0 0 rgba(255,255,255,0.40),
+    inset -1px 0 0 rgba(0,0,0,0.15),
+    inset 0 -2px 0 rgba(0,0,0,0.08),
+    /* The "stack" — vertical wall of the plunger going down into the housing. */
+    0 3px 0 -1px #b8b09c,
+    0 6px 0 -1px #a09880,
+    0 9px 12px rgba(0,0,0,0.35);
+  transition: transform 0.22s ease-out, background 0.18s ease-out, box-shadow 0.18s ease-out;
+}
+
+/* Halves fuse: kill the inner border facing the partner half so they read as one bar. */
+.clock-rocker .clock-lever-btn:first-child {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-width: 0;
+}
+.clock-rocker .clock-lever-btn:last-child {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top-width: 0;
+}
+
+/* Inner surface (used for low-time tint) */
+.lever-surface {
+  width: calc(100% - 14px);
+  height: calc(100% - 14px);
+  border-radius: 4px;
+  transition: background 0.18s ease-out;
+}
+.clock-lever-btn .lever-surface {
+  background: transparent;
+}
+
+/* Neutral (before game starts) — greyed out, no tilt */
+.clock-lever-btn.neutral {
+  background: linear-gradient(180deg, #d6d2c6 0%, #b6b1a2 100%);
+  border-color: #908b7c;
   cursor: not-allowed;
 }
 .clock-lever-btn.neutral .lever-surface {
-  background: linear-gradient(180deg, #c0c0c0 0%, #a0a0a0 100%);
-  box-shadow:
-    inset 0 2px 3px rgba(255,255,255,0.3),
-    inset 0 -2px 3px rgba(0,0,0,0.15);
+  background: linear-gradient(180deg, #e2dfd2 0%, #c0bca9 100%);
 }
 
-/* Unpressed and enabled (player can press this): raised, prominent 3D */
+/* See-saw movement: the half that has the move (.unpressed) is raised — sits
+   prominently above the housing with a TALL visible side wall. The half that
+   already moved (.pressed) is sunken — sits FLUSH with the housing top, no
+   visible side wall. The contrast between "tall plunger" and "flush plunger"
+   is what conveys the see-saw / rocker motion. */
+
 .clock-lever-btn.unpressed {
-  background: linear-gradient(180deg, #e0e0e0 0%, #b8b8b8 100%);
-  border: 2px solid #a0a0a0;
+  /* Raised plunger — bright white top, with a tall stacked-shadow side wall
+     to convey real 3D depth. */
+  transform: translateY(-18px);
+  background: linear-gradient(180deg, #ffffff 0%, #efe7d2 70%, #d4ccb4 100%);
+  border-color: #908874;
   box-shadow:
-    0 8px 0 #808080,
-    0 10px 16px rgba(0,0,0,0.25),
-    inset 0 1px 0 rgba(255,255,255,0.4);
-  transform: translateY(-3px);
+    inset 0 3px 0 rgba(255,255,255,1),
+    inset 1px 0 0 rgba(255,255,255,0.5),
+    inset -1px 0 0 rgba(0,0,0,0.18),
+    inset 0 -2px 0 rgba(0,0,0,0.10),
+    /* Tall side wall — eight steps suggesting ~20 px of plunger thickness. */
+    0  3px 0 -1px #c8c0a8,
+    0  6px 0 -1px #b8b09c,
+    0  9px 0 -1px #a8a08a,
+    0 12px 0 -1px #98907e,
+    0 15px 0 -1px #888070,
+    0 18px 0 -1px #786f60,
+    0 22px 18px rgba(0,0,0,0.50);
   cursor: pointer;
-}
-.clock-lever-btn.unpressed .lever-surface {
-  background: linear-gradient(180deg, #f0f0f0 0%, #d0d0d0 100%);
-  box-shadow:
-    inset 0 3px 4px rgba(255,255,255,0.5),
-    inset 0 -3px 4px rgba(0,0,0,0.1),
-    0 1px 2px rgba(0,0,0,0.1);
-}
-.clock-lever-btn.unpressed:hover {
-  box-shadow:
-    0 9px 0 #808080,
-    0 12px 18px rgba(0,0,0,0.3),
-    inset 0 1px 0 rgba(255,255,255,0.4);
-  transform: translateY(-4px);
-}
-.clock-lever-btn.unpressed:active {
-  box-shadow:
-    0 2px 0 #808080,
-    0 3px 6px rgba(0,0,0,0.15);
-  transform: translateY(2px);
+  z-index: 2;
 }
 
-/* Pressed down (this side already pressed): sunken, deep 3D inset */
 .clock-lever-btn.pressed {
-  background: linear-gradient(180deg, #808080 0%, #909090 100%);
-  border: 2px solid #606060;
+  /* Sunken plunger — flush with the housing, slightly darker plastic, no side wall.
+     The lack of side-wall shadow is the visual cue that this half is "down". */
+  transform: translateY(4px);
+  background: linear-gradient(180deg, #b8b09c 0%, #a09880 100%);
+  border-color: #807868;
   box-shadow:
-    inset 0 4px 8px rgba(0,0,0,0.35),
-    inset 0 -1px 2px rgba(255,255,255,0.1),
-    0 1px 0 #505050;
-  transform: translateY(3px);
-  cursor: not-allowed;
-}
-.clock-lever-btn.pressed .lever-surface {
-  background: linear-gradient(180deg, #707070 0%, #8a8a8a 100%);
-  box-shadow:
-    inset 0 3px 6px rgba(0,0,0,0.3),
-    inset 0 -1px 2px rgba(255,255,255,0.05);
+    inset 0 4px 8px rgba(0,0,0,0.45),
+    inset 0 -1px 0 rgba(255,255,255,0.10),
+    0 1px 2px rgba(0,0,0,0.20);
+  /* Same hand cursor as the raised half — clicking the opponent's lever does nothing
+     (handled in JS), but the cursor must not reveal which lever is which. */
+  cursor: pointer;
+  z-index: 1;
 }
 
-/* Low time: red tint */
+/* Low-time tint, applied to the inner surface only */
 .clock-lever-btn.low-time.pressed .lever-surface {
-  background: linear-gradient(180deg, #903030 0%, #b04040 100%);
+  background: linear-gradient(180deg, #82261e 0%, #9d3028 100%);
 }
 .clock-lever-btn.low-time.unpressed .lever-surface {
-  background: linear-gradient(180deg, #e88888 0%, #cc6666 100%);
+  background: linear-gradient(180deg, #f5b3ad 0%, #d77a72 100%);
 }
 
 /* === Info Panel === */
@@ -389,4 +527,74 @@ input[type="text"] {
   width: 100%; height: 120px; background: #2b2b2b; color: #e0e0e0;
   border: 1px solid #555; border-radius: 3px; padding: 6px; font-family: monospace;
   font-size: 11px; margin: 4px 0; resize: vertical;
+}
+
+/* === Developer console (technical error detail) ===
+   Fixed to the bottom of the viewport, kept clearly distinct from the user-visible
+   arbiter message area. Appears only when the server emits a devDetail. */
+.dev-console {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 30vh;
+  background: #181a16;
+  color: #d2d6c8;
+  border-top: 1px solid #444;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 11px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.4);
+}
+.dev-console-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  background: #2a2c25;
+  border-bottom: 1px solid #444;
+}
+.dev-console-title {
+  flex: 1;
+  font-weight: bold;
+  color: #b0b3a3;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.dev-console-btn {
+  background: #3a3d33;
+  color: #d2d6c8;
+  border: 1px solid #555;
+  border-radius: 2px;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.dev-console-btn:hover {
+  background: #4a4e42;
+}
+.dev-console-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dev-console-entry {
+  padding: 2px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.dev-console-entry .ts {
+  color: #7a7d6e;
+  margin-right: 6px;
+}
+.dev-console-entry .detail {
+  color: #f0a89e;
+}
+.dev-console.collapsed .dev-console-body {
+  display: none;
 }

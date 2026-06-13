@@ -26,32 +26,6 @@
           <div class="side-area-label" id="rightSideLabel"></div>
           <div class="side-area-pieces" id="rightSidePieces"></div>
         </div>
-
-        <!-- Chess clock (to the right of the board) -->
-        <div class="chess-clock">
-          <!-- Top half: opponent clock -->
-          <div class="clock-half">
-            <div class="clock-display" id="topClockDisplay">
-              <span class="clock-time" id="topClockTime">30:00</span>
-              <span class="clock-side-label" id="topClockLabel"></span>
-            </div>
-            <div class="clock-lever-btn" id="topClockBtn">
-              <div class="lever-surface"></div>
-            </div>
-          </div>
-          <!-- Divider -->
-          <div class="clock-divider"></div>
-          <!-- Bottom half: own clock -->
-          <div class="clock-half">
-            <div class="clock-display" id="bottomClockDisplay">
-              <span class="clock-time" id="bottomClockTime">30:00</span>
-              <span class="clock-side-label" id="bottomClockLabel"></span>
-            </div>
-            <div class="clock-lever-btn" id="bottomClockBtn">
-              <div class="lever-surface"></div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- Action buttons below the board -->
@@ -62,14 +36,18 @@
       </div>
 
       <div class="claim-buttons">
-        <button id="claimThreefoldBtn" class="action-btn small-btn" disabled>Claim Threefold</button>
-        <button id="claimFiftyMoveBtn" class="action-btn small-btn" disabled>Claim 50-Move</button>
+        <button id="claimThreefoldOnBoardBtn" class="action-btn small-btn" disabled>Claim Threefold Position</button>
+        <button id="claimThreefoldWithMoveBtn" class="action-btn small-btn" disabled>Claim Threefold Move</button>
+        <button id="claimFiftyMoveOnBoardBtn" class="action-btn small-btn" disabled>Claim 50-Move Position</button>
+        <button id="claimFiftyMoveWithMoveBtn" class="action-btn small-btn" disabled>Claim 50-Move Move</button>
         <button id="exportPgnBtn" class="action-btn small-btn">Display PGN</button>
         <button id="flipBoardBtn" class="action-btn small-btn">Flip Board</button>
       </div>
     </div>
 
-    <!-- Right: game info panel -->
+    <!-- Right column: messages on top, chess clock below (about 1/3 of board height). -->
+    <div class="right-column">
+    <!-- Game info panel (messages, dialogs) -->
     <div class="info-panel">
       <!-- Arbiter message -->
       <div class="arbiter-panel" id="arbiterPanel">
@@ -84,9 +62,9 @@
         <button id="newGameBtn" class="action-btn">New Game</button>
       </div>
 
-      <!-- Draw offer received -->
+      <!-- Draw offer received — the "Your opponent offers a draw." text already appears in
+           the arbiter message panel above, so the inline panel only carries the buttons. -->
       <div id="drawOfferPanel" class="inline-panel" style="display:none;">
-        <span>Your opponent offers a draw.</span>
         <button id="acceptDrawBtn" class="action-btn">Accept</button>
         <button id="rejectDrawBtn" class="action-btn">Reject</button>
       </div>
@@ -100,11 +78,9 @@
 
       <!-- Inline SAN input for draw claims -->
       <div id="sanInputPanel" class="inline-panel" style="display:none;">
-        <button id="claimOnBoardBtn" class="action-btn">Claim on board</button>
-        <span>or enter move:</span>
+        <span id="sanClaimLabel">Enter move:</span>
         <input type="text" id="sanInput" class="san-input" placeholder="e.g. Nf3">
-        <button id="claimWithMoveBtn" class="action-btn">Claim with move</button>
-        <button id="cancelClaimBtn" class="action-btn">Cancel</button>
+        <button id="submitClaimMoveBtn" class="action-btn">Submit Move</button>
       </div>
 
       <!-- Inline promotion piece selection -->
@@ -120,6 +96,42 @@
         <button id="closePgnBtn" class="action-btn">Close</button>
       </div>
     </div>
+
+    <!-- Chess clock — DGT 3000 inspired, sized to about 1/3 of the board height
+         and centered vertically next to the board, with messages above it. -->
+    <div class="chess-clock" id="chessClock">
+      <div class="clock-displays">
+        <div class="clock-display" id="topClockDisplay">
+          <span class="clock-time" id="topClockTime">30:00</span>
+          <span class="clock-side-label" id="topClockLabel"></span>
+        </div>
+        <div class="clock-divider"></div>
+        <div class="clock-display" id="bottomClockDisplay">
+          <span class="clock-time" id="bottomClockTime">30:00</span>
+          <span class="clock-side-label" id="bottomClockLabel"></span>
+        </div>
+      </div>
+      <div class="clock-rocker">
+        <div class="clock-lever-btn" id="topClockBtn">
+          <div class="lever-surface"></div>
+        </div>
+        <div class="clock-lever-btn" id="bottomClockBtn">
+          <div class="lever-surface"></div>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <!-- Developer console for technical error detail. Hidden by default; shown on
+       the first arriving devDetail. Stays out of the user-visible arbiter area. -->
+  <div id="devConsole" class="dev-console" style="display:none;">
+    <div class="dev-console-header">
+      <span class="dev-console-title">Developer log</span>
+      <button id="devConsoleClearBtn" class="dev-console-btn" type="button">clear</button>
+      <button id="devConsoleToggleBtn" class="dev-console-btn" type="button">hide</button>
+    </div>
+    <div id="devConsoleBody" class="dev-console-body"></div>
   </div>
 
   <script src="js/board.js"></script>

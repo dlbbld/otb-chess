@@ -3,10 +3,10 @@ package com.dlb.chess.dumbboard.arbiter;
 import java.util.Optional;
 import java.util.Set;
 
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Side;
-import com.dlb.chess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
 import com.dlb.chess.dumbboard.event.BoardEvent;
 import com.dlb.chess.dumbboard.event.BoardEventType;
 
@@ -31,12 +31,11 @@ public class MidPlayValidator {
    * @return an arbiter response if intervention is needed, empty otherwise
    */
   public static Optional<ArbiterResponse> validate(BoardEvent event, Side sideToMove,
-      StaticPosition positionBeforeTurn, Set<Square> removedSquares) {
+      BitboardPosition positionBeforeTurn, Set<Square> removedSquares) {
 
-    // Check for moving opponent pieces
-    final Optional<ArbiterResponse> opponentCheck = validateNotMovingOpponentPiece(event, sideToMove);
-    if (opponentCheck.isPresent()) {
-      return opponentCheck;
+    final Optional<ArbiterResponse> positionChangeCheck = validateOpponentPiecePositionChange(event, sideToMove);
+    if (positionChangeCheck.isPresent()) {
+      return positionChangeCheck;
     }
 
     // Check for invalid piece restoration
@@ -44,17 +43,39 @@ public class MidPlayValidator {
   }
 
   /**
-   * Checks if the player is trying to move an opponent's piece.
-   * Only applies to CLICK, DRAG_MOVE, DRAG_CAPTURE, and REMOVE events.
+   * Checks if the player is trying to move an opponent's piece <em>on the board</em>
+   * (which is never allowed, even as the start of a capture sequence). The arbiter
+   * intervenes immediately.
+   *
+   * <p>What is allowed without intervention:
+   * <ul>
+   *   <li>{@link BoardEventType#CLICK} on an opponent piece — touch-move only, no
+   *       position change.</li>
+   *   <li>{@link BoardEventType#REMOVE} of an opponent piece — corresponds to the
+   *       physical capture sequence: lift the opponent piece off the board, then move
+   *       your own piece onto that square. The position-comparison at clock press
+   *       evaluates whether the resulting position matches a legal capture; if not,
+   *       the standard illegal-move flow handles it.</li>
+   *   <li>{@link BoardEventType#RESTORE_TO_EMPTY} / {@link BoardEventType#RESTORE_TO_OCCUPIED}
+   *       — handled by {@link #validateRestoration}; allows putting a piece back from
+   *       the side area.</li>
+   * </ul>
+   *
+   * <p>What is blocked: dragging an opponent piece from one square to another
+   * ({@link BoardEventType#DRAG_MOVE}, {@link BoardEventType#DRAG_CAPTURE}). That is
+   * never part of a legal sequence and the arbiter intervenes with a generic
+   * "you cannot move opponent pieces" message.
    */
-  private static Optional<ArbiterResponse> validateNotMovingOpponentPiece(BoardEvent event, Side sideToMove) {
+  private static Optional<ArbiterResponse> validateOpponentPiecePositionChange(BoardEvent event, Side sideToMove) {
     final Piece piece = event.piece();
     if (piece == Piece.NONE) {
       return Optional.empty();
     }
 
-    // Only check events that involve picking up a piece from the board
-    if (event.type() == BoardEventType.RESTORE_TO_EMPTY || event.type() == BoardEventType.RESTORE_TO_OCCUPIED) {
+    if (event.type() != BoardEventType.DRAG_MOVE && event.type() != BoardEventType.DRAG_CAPTURE) {
+      // CLICK, REMOVE, and the RESTORE_* cases either carry no commitment or are
+      // covered by validateRestoration. Allowing REMOVE of an opponent piece
+      // implements the physical capture-by-removal flow.
       return Optional.empty();
     }
 
@@ -76,7 +97,7 @@ public class MidPlayValidator {
    * </ol>
    */
   private static Optional<ArbiterResponse> validateRestoration(BoardEvent event, Side sideToMove,
-      StaticPosition positionBeforeTurn, Set<Square> removedSquares) {
+      BitboardPosition positionBeforeTurn, Set<Square> removedSquares) {
 
     if (event.type() != BoardEventType.RESTORE_TO_EMPTY && event.type() != BoardEventType.RESTORE_TO_OCCUPIED) {
       return Optional.empty();
@@ -102,14 +123,15 @@ public class MidPlayValidator {
         return Optional.empty();
       }
       return Optional.of(ArbiterResponse.revertRestoration(
-          "You cannot alter the position. Please revert."));
+          "Position change: You changed the position. That is not allowed. Please restore the position."));
     }
 
     // It was removed during this turn — check if it's being restored to its correct square
     final Piece originalPiece = positionBeforeTurn.get(targetSquare);
     if (originalPiece != piece) {
       return Optional.of(ArbiterResponse.revertRestoration(
-          "You cannot alter the position. There was never a piece on this square."));
+          "Position change: You changed the position. There was never that piece on this square."
+              + " Please restore the position."));
     }
 
     return Optional.empty();

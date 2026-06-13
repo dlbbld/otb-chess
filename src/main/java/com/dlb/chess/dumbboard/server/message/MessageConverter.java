@@ -4,10 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import com.dlb.chess.board.StaticPosition;
-import com.dlb.chess.board.enums.Piece;
-import com.dlb.chess.board.enums.Square;
-import com.dlb.chess.board.model.UpdateSquare;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
+import com.dlb.chess.dumbboard.core.BitboardPositions;
 import com.dlb.chess.dumbboard.event.BoardEvent;
 import com.dlb.chess.dumbboard.event.BoardEventType;
 
@@ -17,14 +18,14 @@ import com.dlb.chess.dumbboard.event.BoardEventType;
 public class MessageConverter {
 
   /**
-   * Converts a client board state map to a StaticPosition.
+   * Converts a client board state map to a BitboardPosition.
    * The map is keyed by square name (e.g. "e2") with piece name values (e.g. "WHITE_PAWN" or "NONE").
    *
    * <p>Only non-NONE pieces are applied as updates to the empty position, because
-   * {@code StaticPosition.createChangedPosition} does not allow setting a square
+   * {@code BitboardPosition.createChangedPosition} does not allow setting a square
    * to the same piece it already contains (including NONE to NONE).
    */
-  public static StaticPosition toStaticPosition(Map<String, String> boardState) {
+  public static BitboardPosition toStaticPosition(Map<String, String> boardState) {
     final List<UpdateSquare> updates = new ArrayList<>();
 
     for (final Map.Entry<String, String> entry : boardState.entrySet()) {
@@ -36,17 +37,17 @@ public class MessageConverter {
     }
 
     if (updates.isEmpty()) {
-      return StaticPosition.EMPTY_POSITION;
+      return BitboardPosition.EMPTY_POSITION;
     }
-    return StaticPosition.EMPTY_POSITION.createChangedPosition(updates);
+    return BitboardPositions.withUpdates(BitboardPosition.EMPTY_POSITION, updates);
   }
 
   /**
-   * Converts a StaticPosition to a map for the client.
+   * Converts a BitboardPosition to a map for the client.
    */
-  public static Map<String, String> fromStaticPosition(StaticPosition position) {
+  public static Map<String, String> fromStaticPosition(BitboardPosition position) {
     final Map<String, String> result = new java.util.LinkedHashMap<>();
-    for (final Square square : Square.BOARD_SQUARE_LIST) {
+    for (final Square square : Square.REAL) {
       result.put(square.getName(), position.get(square).name());
     }
     return result;
