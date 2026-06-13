@@ -80,6 +80,19 @@ export async function pressOpponentClock(page: Page): Promise<void> {
   await page.locator('#topClockBtn').click();
 }
 
+/** Presses this player's own clock lever, whichever side it is on (robust to a flipped board). */
+export async function pressOwnClock(page: Page): Promise<void> {
+  const bottomOwn = await page
+    .locator('#bottomClockDisplay')
+    .evaluate((el) => el.classList.contains('own-clock'));
+  await page.locator(bottomOwn ? '#bottomClockBtn' : '#topClockBtn').click();
+}
+
+/** Flips this player's board view. */
+export async function flipBoard(page: Page): Promise<void> {
+  await page.locator('#flipBoardBtn').click();
+}
+
 /**
  * Presses this player's own clock lever. The board flips per player so a player's own pieces
  * are always at the bottom, which makes the bottom lever always this player's clock.

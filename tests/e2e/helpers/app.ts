@@ -129,6 +129,19 @@ export async function claimThreefoldOnBoard(page: Page): Promise<void> {
   await page.locator('#claimThreefoldOnBoardBtn').click();
 }
 
+/** Claims threefold repetition with a move: opens the SAN panel, enters the move, and submits. */
+export async function claimThreefoldWithMove(page: Page, san: string): Promise<void> {
+  await page.locator('#claimThreefoldWithMoveBtn').click();
+  await page.locator('#sanInput').fill(san);
+  await page.locator('#submitClaimMoveBtn').click();
+}
+
+/** Opens the "Request Piece" chooser and selects the given type (e.g. 'KNIGHT'), adding it to the side area. */
+export async function requestPiece(page: Page, pieceType: string): Promise<void> {
+  await page.locator('#requestPieceBtn').click();
+  await page.locator(`#promotionPieces .promo-piece[title="${pieceType}"]`).click();
+}
+
 /** Claims the 50-move rule with a move: opens the SAN panel, enters the move, and submits. */
 export async function claimFiftyMoveWithMove(page: Page, san: string): Promise<void> {
   await page.locator('#claimFiftyMoveWithMoveBtn').click();

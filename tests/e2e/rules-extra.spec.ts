@@ -1,10 +1,19 @@
 import { test, expect } from '@playwright/test';
-import { startTwoPlayerGame, TwoPlayerGame, expectGameResult } from './helpers/app';
+import {
+  startTwoPlayerGame,
+  TwoPlayerGame,
+  expectGameResult,
+  requestPiece,
+  clickRestore,
+} from './helpers/app';
 import {
   dragPiece,
   dragFromSideArea,
+  removePiece,
   pressClock,
   pressOpponentClock,
+  pressOwnClock,
+  flipBoard,
   expectPiece,
   expectEmpty,
 } from './helpers/board';
@@ -87,4 +96,57 @@ test('pressing the opponent clock does not commit the move', async ({ browser })
 
   await pressClock(white); // own lever -> commits, now it is Black's turn
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
+test('requesting a knight and underpromoting to it is accepted', async ({ browser }) => {
+  // Both white knights are on the board, so a knight is not in the side area until requested.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/P7/8/8/8/8/8/1N2K1N1 w - - 0 1' });
+  const { white, black } = game;
+
+  await requestPiece(white, 'KNIGHT'); // adds a knight to the side area
+  await dragPiece(white, 'a7', 'a8'); // pawn to the last rank
+  await dragFromSideArea(white, 'WHITE_KNIGHT', 'a8'); // underpromote with the requested knight
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expectPiece(white, 'a8', 'WHITE_KNIGHT');
+  await expectPiece(black, 'a8', 'WHITE_KNIGHT');
+});
+
+test('en passant that would expose the own king is rejected', async ({ browser }) => {
+  // White Pe5 and King g5; Black Pf5 (e.p. target f6) and Ra5. exf6 e.p. clears the 5th rank and
+  // leaves the white king in check from the rook, so it is illegal.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/r3PpK1/8/8/8/8 w - f6 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e5', 'f6'); // attempt exf6 e.p.
+  await removePiece(white, 'f5'); // lift the en-passant-captured pawn
+  await pressClock(white);
+
+  // No legal move produces this position -> the arbiter requires a restore.
+  await clickRestore(white); // the "Do this for me" button only exists if the move was rejected
+  await expectPiece(white, 'e5', 'WHITE_PAWN'); // position restored
+});
+
+test('moving an opponent piece is rejected immediately', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white } = game;
+
+  await dragPiece(white, 'a7', 'a6'); // drag a BLACK pawn -> mid-play intervention (no clock needed)
+
+  await expect(white.locator('#arbiterMessage')).toHaveClass(/error/);
+  await expect(white.locator('#arbiterMessage')).toContainText(/opponent/i);
+});
+
+test('flipping the board, then making a legal move, still works', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await flipBoard(white); // white flips their own view
+  await dragPiece(white, 'e2', 'e4'); // squares still resolve by name after the flip
+  await pressOwnClock(white); // own lever is on the other side now
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expectPiece(black, 'e4', 'WHITE_PAWN');
 });
