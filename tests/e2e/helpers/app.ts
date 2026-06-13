@@ -37,33 +37,57 @@ export async function expectGameStarted(page: Page): Promise<void> {
   await expect(page.locator('#arbiterMessage')).toContainText('Game started', { timeout: 15_000 });
 }
 
+/**
+ * Returns the player's own colour for `page`, read from the clock. The board flips per player so
+ * the bottom lever is always the player's own side, and #bottomClockLabel shows that colour.
+ */
+export async function colorOf(page: Page): Promise<Side> {
+  const label = page.locator('#bottomClockLabel');
+  await expect(label).toHaveText(/^(White|Black)$/, { timeout: 15_000 });
+  const text = (await label.textContent())?.trim().toLowerCase();
+  if (text === 'white' || text === 'black') return text;
+  throw new Error(`Could not determine player colour (bottomClockLabel="${text}")`);
+}
+
 export interface TwoPlayerGame {
-  whiteContext: BrowserContext;
-  blackContext: BrowserContext;
+  /** Both browser contexts, for teardown. */
+  contexts: BrowserContext[];
+  /** The page that created the game. */
+  creator: Page;
+  /** The page that joined the game. */
+  joiner: Page;
+  /** The page playing White (resolved from the assigned side, honouring custom-FEN overrides). */
   white: Page;
+  /** The page playing Black. */
   black: Page;
   gameId: string;
 }
 
 /**
- * Sets up a two-player game in two isolated browser contexts (= two real sessions):
- * white creates, black joins, and both wait until they report "Game started".
- * Remember to close both contexts in test teardown.
+ * Sets up a two-player game in two isolated browser contexts (= two real sessions): the creator
+ * creates, the joiner joins, and both wait until they report "Game started".
+ *
+ * The creator's requested side can be overridden by a custom FEN (the FEN's side to move plays
+ * first), so `white`/`black` are resolved from each page's actual assigned colour rather than
+ * assuming creator = White. Close `contexts` in test teardown.
  */
 export async function startTwoPlayerGame(
   browser: Browser,
   opts: CreateOptions = {},
 ): Promise<TwoPlayerGame> {
-  const whiteContext = await browser.newContext();
-  const blackContext = await browser.newContext();
-  const white = await whiteContext.newPage();
-  const black = await blackContext.newPage();
+  const creatorContext = await browser.newContext();
+  const joinerContext = await browser.newContext();
+  const creator = await creatorContext.newPage();
+  const joiner = await joinerContext.newPage();
 
-  const gameId = await createGame(white, opts);
-  await joinGame(black, gameId);
+  const gameId = await createGame(creator, opts);
+  await joinGame(joiner, gameId);
 
-  await expectGameStarted(white);
-  await expectGameStarted(black);
+  await expectGameStarted(creator);
+  await expectGameStarted(joiner);
 
-  return { whiteContext, blackContext, white, black, gameId };
+  const creatorColor = await colorOf(creator);
+  const [white, black] = creatorColor === 'white' ? [creator, joiner] : [joiner, creator];
+
+  return { contexts: [creatorContext, joinerContext], creator, joiner, white, black, gameId };
 }

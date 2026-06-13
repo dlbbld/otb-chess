@@ -5,8 +5,9 @@ import { dragPiece, pressClock, expectPiece, expectEmpty } from './helpers/board
 let game: TwoPlayerGame;
 
 test.afterEach(async () => {
-  await game?.whiteContext.close();
-  await game?.blackContext.close();
+  for (const context of game?.contexts ?? []) {
+    await context.close();
+  }
 });
 
 test('two players: create, join, white plays e2-e4, black sees it', async ({ browser }) => {

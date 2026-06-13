@@ -3,6 +3,7 @@ package com.dlb.chess.dumbboard.server;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 
 import com.sun.net.httpserver.HttpServer;
 
@@ -21,11 +22,19 @@ public class DumbChessboardServer {
   private static final int WS_PORT = 8081;
   private static final Path STATIC_DIR = Path.of("static");
 
-  public static void main(String[] args) throws IOException {
-    // WebSocket server is created first so the HTTP endpoints can query it.
+  public static void main(String[] args) throws IOException, InterruptedException {
+    // Start the WebSocket server first and wait until it is actually listening. The HTTP server
+    // (below) is exposed only afterwards, so that once the page is reachable over HTTP the browser
+    // can always open its WebSocket. This removes a startup race where a client could load the page
+    // before :8081 was bound (the client has no WebSocket-reconnect path).
     final var wsServer = new GameWebSocketServer(WS_PORT);
+    wsServer.start();
+    if (!wsServer.awaitStarted(10, TimeUnit.SECONDS)) {
+      throw new IOException("WebSocket server did not start within 10 seconds");
+    }
+    System.out.println("WebSocket server running at ws://localhost:" + WS_PORT);
 
-    // Start HTTP server for static files
+    // Start HTTP server for static files. The /api/lastGameId endpoint queries the WebSocket server.
     final var httpServer = HttpServer.create(new InetSocketAddress(HTTP_PORT), 0);
     final var staticHandler = new StaticFileHandler(STATIC_DIR.toAbsolutePath());
     // TESTING-ONLY: /api/lastGameId returns the most recently created joinable game ID so the
@@ -44,9 +53,6 @@ public class DumbChessboardServer {
     httpServer.setExecutor(null);
     httpServer.start();
     System.out.println("HTTP server running at http://localhost:" + HTTP_PORT);
-
-    wsServer.start();
-    System.out.println("WebSocket server running at ws://localhost:" + WS_PORT);
 
     System.out.println();
     System.out.println("Dumb Chessboard is ready!");

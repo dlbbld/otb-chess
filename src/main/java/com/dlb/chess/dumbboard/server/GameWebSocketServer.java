@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -110,9 +111,24 @@ public class GameWebSocketServer extends WebSocketServer {
     ex.printStackTrace();
   }
 
+  // Counted down by onStart() once the server socket is bound and listening.
+  private final CountDownLatch startedLatch = new CountDownLatch(1);
+
   @Override
   public void onStart() {
+    startedLatch.countDown();
     System.out.println("WebSocket server started on port " + getPort());
+  }
+
+  /**
+   * Blocks until {@link #onStart()} has fired (the server socket is bound and listening) or the
+   * timeout elapses. Lets the launcher expose the HTTP server only after the WebSocket endpoint is
+   * ready, so a client that loads the page can always open its WebSocket.
+   *
+   * @return {@code true} if the server started within the timeout, {@code false} otherwise
+   */
+  public boolean awaitStarted(long timeout, TimeUnit unit) throws InterruptedException {
+    return startedLatch.await(timeout, unit);
   }
 
   // ===== Message handlers =====
