@@ -401,6 +401,30 @@ class TestTouchMoveEvaluator {
   }
 
   @Test
+  void testRookClickThenCastlingMotionIsRookObligationNotCastling() {
+    // FIDE 4.4.2: the player clicks the h1 rook first, then performs the castling motion
+    // (king e1->g1, rook h1->f1). Touching the rook first forbids castling; the rook has legal
+    // moves, so the obligation is OWN_PIECE on h1 and the castling move must NOT satisfy it.
+    final Board board = whiteKingsideClearBoard();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 2));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.H1, obligation.get().square());
+
+    final var castling = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification()
+            .castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE)
+        .findFirst().orElseThrow();
+    assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation.get(), castling));
+  }
+
+  @Test
   void testCastlingMoveSatisfiesCastlingObligation() {
     final Board board = whiteKingsideClearBoard();
     final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1,
