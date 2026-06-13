@@ -115,3 +115,20 @@ export async function expectGameResult(page: Page, score: string): Promise<void>
   await expect(page.locator('#gameResultPanel')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('#gameResultScore')).toHaveText(score);
 }
+
+/** Clicks the "Claim 50-move (position)" button. */
+export async function claimFiftyMoveOnBoard(page: Page): Promise<void> {
+  await page.locator('#claimFiftyMoveOnBoardBtn').click();
+}
+
+/** Clicks the "Claim threefold (position)" button. */
+export async function claimThreefoldOnBoard(page: Page): Promise<void> {
+  await page.locator('#claimThreefoldOnBoardBtn').click();
+}
+
+/** Claims the 50-move rule with a move: opens the SAN panel, enters the move, and submits. */
+export async function claimFiftyMoveWithMove(page: Page, san: string): Promise<void> {
+  await page.locator('#claimFiftyMoveWithMoveBtn').click();
+  await page.locator('#sanInput').fill(san);
+  await page.locator('#submitClaimMoveBtn').click();
+}
