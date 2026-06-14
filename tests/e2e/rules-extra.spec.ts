@@ -5,6 +5,7 @@ import {
   expectGameResult,
   requestPiece,
   clickRestore,
+  SCORE_DRAW,
 } from './helpers/app';
 import {
   dragPiece,
@@ -79,6 +80,36 @@ test('flag fall ends the game for the player who ran out of time', async ({ brow
 
   await expectGameResult(white, '0-1');
   await expectGameResult(black, '0-1');
+});
+
+test('flag fall is a draw when the opponent has only a lone king (insufficient material)', async ({
+  browser,
+}) => {
+  // White is to move and lets the clock run out; Black has a lone king and cannot mate -> draw.
+  game = await startTwoPlayerGame(browser, {
+    fen: '8/8/4k3/3R4/2K5/8/8/8 w - - 0 50',
+    timeMs: 2000,
+    incMs: 0,
+  });
+  const { white, black } = game;
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  await expect(white.locator('#gameResultReason')).toContainText('insufficient material to mate');
+});
+
+test('flag fall is a draw in a blocked position with material (no potential mate)', async ({ browser }) => {
+  // White flags in a fully blocked pawn wall: Black has pawns but can never break through -> draw.
+  game = await startTwoPlayerGame(browser, {
+    fen: '8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62',
+    timeMs: 2000,
+    incMs: 0,
+  });
+  const { white, black } = game;
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  await expect(white.locator('#gameResultReason')).toContainText('no potential mate');
 });
 
 test('pressing the opponent clock does not commit the move', async ({ browser }) => {
