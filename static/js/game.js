@@ -365,7 +365,8 @@ class Game {
 
     this.ws.on('drawRejected', (data) => {
       document.getElementById('drawOfferPanel').style.display = 'none';
-      this.showArbiterMessage('Draw offer rejected.');
+      // Personalised by the server ("You rejected..." / "Your opponent rejected...").
+      this.showArbiterMessage(data.message);
     });
 
     this.ws.on('drawClaimResult', (data) => {
@@ -442,6 +443,12 @@ class Game {
           : `Your opponent ${verb}, but because you have ${reason}, the game is a draw.`;
         this.showArbiterMessage(msg);
         document.getElementById('gameResultReason').textContent = msg;
+      } else if (data.resultType === 'DRAW_AGREEMENT' && data.winner === 'none') {
+        // Who accepted goes on top (arbiter message); the result panel keeps the canonical
+        // "The game is drawn by agreement." after the ½-½ score.
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You accepted the draw offer.'
+          : 'Your opponent accepted the draw offer.');
       }
     });
 

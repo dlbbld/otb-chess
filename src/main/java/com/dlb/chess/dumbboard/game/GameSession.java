@@ -45,11 +45,11 @@ public class GameSession {
   private GameState state;
   private GameResult result;
 
-  // For the personalised resignation / flag-fall DRAW message (FIDE "opponent cannot win"
-  // exception): who resigned or flagged, and whether the opponent's draw is by insufficient
-  // material (vs. unwinnable despite having material). The client uses these to phrase the
-  // message in the second person for each player.
-  private Side drawExceptionActor = Side.NONE;
+  // For the personalised end-of-game messages: the side that performed the terminating action
+  // (resigned, flagged, or accepted a draw); the client phrases the message in the second person
+  // for each player. drawExceptionByInsufficientMaterial additionally distinguishes the two
+  // resignation / flag-fall draw reasons (material shortage vs. unwinnable despite material).
+  private Side terminationActor = Side.NONE;
   private boolean drawExceptionByInsufficientMaterial;
 
   // Per-turn state
@@ -449,6 +449,7 @@ public class GameSession {
     }
 
     this.lastAcceptDrawRejection = null;
+    terminationActor = side; // the player who accepted the offer (for the personalised message)
     final GameResult drawResult = new GameResult(GameResultType.DRAW_AGREEMENT, Side.NONE,
         "The game is drawn by agreement.");
     endGame(drawResult);
@@ -558,7 +559,7 @@ public class GameSession {
     final Side opponent = side.getOppositeSide();
 
     if (Adjudicator.adjudicateResignationQuick(board, side) == AdjudicationResult.DRAW) {
-      drawExceptionActor = side;
+      terminationActor = side;
       drawExceptionByInsufficientMaterial = board.isInsufficientMaterial(opponent);
       final GameResult drawResult = new GameResult(GameResultType.RESIGNATION, Side.NONE,
           sideName(side) + " resigned, but because " + drawReason(opponent) + ", the game is a draw.");
@@ -596,7 +597,7 @@ public class GameSession {
 
         final GameResult flagResult;
         if (Adjudicator.adjudicateFlagfallQuick(board, side) == AdjudicationResult.DRAW) {
-          drawExceptionActor = side;
+          terminationActor = side;
           drawExceptionByInsufficientMaterial = board.isInsufficientMaterial(opponent);
           flagResult = new GameResult(GameResultType.FLAG_FALL, Side.NONE,
               sideName(side) + " flagged, but because " + drawReason(opponent) + ", the game is a draw.");
@@ -828,9 +829,9 @@ public class GameSession {
     return result;
   }
 
-  /** The side that resigned or flagged in a draw-by-exception ending (for the personalised message). */
-  public synchronized Side getDrawExceptionActor() {
-    return drawExceptionActor;
+  /** The side that resigned, flagged, or accepted a draw (for the personalised end-of-game message). */
+  public synchronized Side getTerminationActor() {
+    return terminationActor;
   }
 
   /** Whether the draw-by-exception is by insufficient material (vs. unwinnable despite material). */

@@ -205,6 +205,25 @@ test('a draw offer accepted by the opponent ends the game as a draw', async ({ b
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
+  // The result panel keeps the canonical reason; the arbiter message (on top) names who accepted.
+  await expect(white.locator('#gameResultReason')).toContainText('drawn by agreement');
+  await expect(black.locator('#gameResultReason')).toContainText('drawn by agreement');
+  await expect(black.locator('#arbiterMessage')).toContainText('You accepted the draw offer');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your opponent accepted the draw offer');
+});
+
+test('a rejected draw offer names who rejected, for both players', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await offerDraw(white);
+  await black.locator('#rejectDrawBtn').click();
+
+  await expect(black.locator('#arbiterMessage')).toContainText('You rejected the draw offer');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your opponent rejected the draw offer');
+  // The game continues — no result panel.
+  await expect(white.locator('#gameResultPanel')).toBeHidden();
 });
 
 test('en passant capture is accepted', async ({ browser }) => {

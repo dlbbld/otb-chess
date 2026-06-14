@@ -607,6 +607,13 @@ The offerer currently receives no separate notification of invalidation -- their
 
 If the player offers a draw together with a clock-press but their move is invalid (illegal, touch-move, released-piece), the draw offer is **silently dropped**. It does not count as a repeated offer.
 
+#### Accepting or rejecting
+
+Both outcomes are **personalised per player** so it is always clear who did what:
+
+- **Accepted** -> the result panel keeps `½-½` and _"The game is drawn by agreement."_ (the canonical result). On top, the arbiter message names the actor: _"You accepted the draw offer."_ to the accepter, _"Your opponent accepted the draw offer."_ to the offerer.
+- **Rejected** (the game continues) -> _"You rejected the draw offer."_ to the rejecter, _"Your opponent rejected the draw offer."_ to the offerer.
+
 ---
 
 ## Mid-Play Interventions

@@ -563,10 +563,16 @@ public class GameWebSocketServer extends WebSocketServer {
     final Side side = room.getSide(conn);
     room.getSession().rejectDraw(side);
 
-    final JsonObject msg = new JsonObject();
-    msg.addProperty("type", "drawRejected");
-    msg.addProperty("message", "Draw offer rejected.");
-    room.sendToBoth(GSON.toJson(msg));
+    // Personalised per player so it is unambiguous who rejected.
+    final JsonObject toRejecter = new JsonObject();
+    toRejecter.addProperty("type", "drawRejected");
+    toRejecter.addProperty("message", "You rejected the draw offer.");
+    room.sendToSide(side, GSON.toJson(toRejecter));
+
+    final JsonObject toOfferer = new JsonObject();
+    toOfferer.addProperty("type", "drawRejected");
+    toOfferer.addProperty("message", "Your opponent rejected the draw offer.");
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(toOfferer));
   }
 
   private void handleClaimDraw(WebSocket conn, JsonObject json) {
@@ -916,11 +922,17 @@ public class GameWebSocketServer extends WebSocketServer {
     // for the personalised checkmate / stalemate arbiter message; other endings ignore it.
     msg.addProperty("mover", room.getSession().getHavingMove().getOppositeSide().name().toLowerCase());
     msg.addProperty("description", result.description());
-    // For a resignation / flag-fall DRAW (the FIDE "opponent cannot win" exception), tag who
-    // resigned/flagged and why, so the client can phrase the message in the second person.
+    // For draws by an explicit player action (resignation, flag-fall under the FIDE "opponent
+    // cannot win" exception, or accepting a draw offer), tag who acted so the client can phrase
+    // the message in the second person. Resignation / flag-fall additionally carry the draw reason.
+    if (result.winner() == Side.NONE
+        && (result.type() == GameResultType.RESIGNATION
+            || result.type() == GameResultType.FLAG_FALL
+            || result.type() == GameResultType.DRAW_AGREEMENT)) {
+      msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());
+    }
     if (result.winner() == Side.NONE
         && (result.type() == GameResultType.RESIGNATION || result.type() == GameResultType.FLAG_FALL)) {
-      msg.addProperty("actor", room.getSession().getDrawExceptionActor().name().toLowerCase());
       msg.addProperty("drawReason",
           room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
     }
