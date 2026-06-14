@@ -42,7 +42,7 @@ The player configures the game on a single screen before clicking **Create**:
 3. **Maximum illegal moves before game loss** -- dropdown with values **1, 2, 3, ..., 10, Unlimited**. Default **2** (FIDE rule).
    - "Unlimited" disables the game-loss escalation; illegal moves still incur the per-move penalty time.
 4. **Restoration mode** -- radio choice for what happens after a position has to be restored following an arbiter intervention:
-   - **Auto-resume after restoration (default).** When the position is restored to the start of the turn (either via the player's manual restoration or the "Do this for me" button), the clock resumes immediately on the side that has the move.
+   - **Auto-resume after restoration (default).** When the position is restored to the start of the turn (either via the player's manual restoration or the "Revert" button), the clock resumes immediately on the side that has the move.
    - **Manual continue (ready-handshake).** After restoration, both players must click **Ready to continue** before the clock restarts. Used when the players want to confirm they have agreed on the position.
 
 5. **Starting position FEN** (optional). A text field on the start screen accepts an
@@ -401,7 +401,7 @@ To match the experience of a real board, certain game-ending moves end the game 
 2. The arbiter instructs the player to restore the position to the **required reference position** for the violation. The reference position is one of two cases:
    - **Start of turn** -- for illegal moves, touch-move violations, opponent-piece movement, position-change-after-restoration. The board returns to the position before the player's first event of this turn.
    - **Release position** -- for released-piece violations. The board returns to the position immediately after the player legally released a piece on a square; the player must then complete a legal move from the committed move set (typically just placing the rook for a castling commitment).
-3. A **"Do this for me"** button is available -- restores the position automatically.
+3. A **"Revert"** button is available -- restores the position automatically.
 4. After restoration:
    - **Auto-resume mode (default):** the clock resumes immediately; the player just plays.
    - **Manual mode:** both players see _"Are you ready to continue?"_ with a **Ready to continue** button. Both must click before the clock restarts.
@@ -487,7 +487,7 @@ Each button commits immediately when pressed. There is no confirmation dialog an
 
 The player enters a move in **SAN notation** in an inline panel. The server processes the claim in this fixed order:
 
-1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `StrictSanParser.parseText(...)`. The move is **not performed** for validation -- `parseText` checks the move's legality without mutating the board. If the SAN fails:
+1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `LenientSanParser.parseText(...)` -- the lenient pipeline, which accepts canonical SAN plus the library's defined tolerances (e.g. case slips, missing or spurious check/mate marks) as long as the input uniquely identifies one legal move. The move is **not performed** for validation -- the parser leaves the board unchanged. If the SAN cannot be resolved to a legal move:
    - Result: `invalidMove`. Message: _"Invalid move: «Ashlar Chess reason». Please enter a legal move for the claim."_
    - The SAN-input panel stays open and is re-prompted with the input cleared and refocused.
    - The chosen claim channel remains committed; the player cannot switch to a different claim or cancel. The invalid SAN submission is treated as typo-correction and does **not** consume the server-side once-per-turn allowance or trigger the incorrect-claim penalty.
@@ -503,11 +503,13 @@ The player's SAN is echoed verbatim in the message so both players see exactly w
 
 | Outcome | Claimer message | Opponent message | Game-end description |
 |---|---|---|---|
-| **Accepted** | _"Your claim was accepted."_ | _"Your opponent requested a draw for threefold repetition after the move «SAN»."_ (or 50-move variant) | _"The game is drawn by threefold repetition."_ (in the result panel -- short, no duplication of the long claim text) |
+| **Accepted** | _"Your claim was accepted after your move «SAN»."_ | _"Your opponent requested a draw for threefold repetition after the move «SAN»."_ (or 50-move variant) | _"The game is drawn by threefold repetition."_ (in the result panel -- short, no duplication of the long claim text) |
 | **Rejected -- legal SAN but rule not satisfied** | _"Claim rejected, because there is no threefold repetition after the mentioned move «SAN». Please play."_ + `mustExecuteMove` | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none -- game continues; the player must still play the specified move) |
 | **Rejected -- short-circuit** (no move could satisfy) | _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none) |
 
 The arbiter **never silently accepts an illegal SAN** -- the player learns from Ashlar Chess's exact reason.
+
+When a with-move claim is rejected, the player must still make the specified move (FIDE 9.5); the clock restarts on them. If they then press the clock with the board in any other state, the arbiter responds _"The specified move, «SAN», was not executed. Please revert the position and play the specified move."_ together with a **Revert** button that restores the board to the start of the turn. The move is still owed after reverting -- the player reverts, plays the specified move, and presses the clock.
 
 #### Once-per-turn limit (FIDE 9.2 / 9.3)
 
@@ -606,7 +608,7 @@ These are checked during play (not only at clock press):
 | **Opponent-piece drag (square -> square)** | Player drags an opponent piece from one square to another (DRAG_MOVE / DRAG_CAPTURE) | Arbiter intervenes immediately with a "you may only move your own pieces" message + restoration. |
 | **Opponent-piece removal** | Player drags an opponent piece off the board | **No intervention.** The board observes silently; this is the first step of a capture-by-removal sequence. The square is added to `removedSquaresThisTurn` so it can be restored from the side area later if the player changes their mind. |
 | **Released-piece commitment violation** | Player has committed a release and a subsequent manipulation moves them off all positions consistent with the committed move set | Restore to release position. |
-| **Position change after restoration** | After a "Do this for me" or manual restoration, the player makes a board change that drifts away from the agreed restored position before resuming | Arbiter intervenes; restoration is repeated. |
+| **Position change after restoration** | After a "Revert" or manual restoration, the player makes a board change that drifts away from the agreed restored position before resuming | Arbiter intervenes; restoration is repeated. |
 
 ---
 
@@ -615,7 +617,7 @@ These are checked during play (not only at clock press):
 1. Player commits a violation (illegal, touch-move, released-piece).
 2. The arbiter shows a red error message explaining what happened.
 3. The arbiter instructs the player to restore the position.
-4. **"Do this for me"** button -- clicking sends the original (or release-) position to the client which restores it automatically. The opponent is told the restoration happened.
+4. **"Revert"** button -- clicking sends the original (or release-) position to the client which restores it automatically. The opponent is told the restoration happened.
 5. Once the physical board matches the target restoration position:
    - **Auto-resume mode:** clock resumes immediately. The arbiter shows _"Position restored. Continue."_
    - **Manual mode:** _"Position restored. Are you ready to continue?"_ with a **Ready to continue** button. Both players must click before the clock restarts. The clock stays paused (PAUSE overlay) until both have confirmed.
@@ -746,7 +748,7 @@ Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, p
 | `IllegalMoveTracker` | Tracks illegal-move count per side; configurable limit (1-10 or unlimited, default 2). |
 | `MidPlayValidator` | Validates opponent-piece movement and piece-restoration during play. Allows opponent-piece **removal** (capture-by-removal); blocks opponent-piece drag-on-board. |
 | `DrawOfferManager` | Draw-offer lifecycle: correct-time, wrong-time A/B, repeat counter, wrong-time counter, escalating penalties (info -> warning -> game lost). |
-| `DrawClaimManager` | Threefold and 50-move claims. Validates SAN first (Ashlar Chess `StrictSanParser`), then short-circuits via `canClaim...WithOwnMove()`, then performs/checks. Returns per-player + opponent + game-end messages. |
+| `DrawClaimManager` | Threefold and 50-move claims. Validates SAN first (Ashlar Chess `LenientSanParser`), then short-circuits via `canClaim...WithOwnMove()`, then performs/checks. Returns per-player + opponent + game-end messages. |
 | `GameSession` | Central orchestrator: board, clock, arbiter, draw, resign, ready-to-continue, restoration state machine, must-execute-move, **per-turn claim ledger** (FIDE 9.2/9.3 once-per-turn limit), rejected-claim -> draw-offer conversion. |
 | `ClockManager` | Time control with increment, nanoTime precision. |
 | `GameRoom` | Two WebSocket connections + the session; routes messages by side. |

@@ -401,6 +401,12 @@ public class GameWebSocketServer extends WebSocketServer {
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+    } else if (response.type() == ArbiterResponseType.INCOMPLETE_MOVE
+        && side == room.getSession().getHavingMove()
+        && room.getSession().getMustExecuteMove() != null) {
+      // A rejected claim's specified move was not carried out: offer a Revert to the start of the
+      // turn. The move is still owed afterwards, so the player reverts and then plays it.
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "info");
     }
 
     checkGameEnded(room);

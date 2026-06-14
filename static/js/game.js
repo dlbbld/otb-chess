@@ -261,7 +261,7 @@ class Game {
     this.ws.on('restoreRequired', (data) => {
       this.showArbiterMessage(data.message, data.style || 'info');
       this.clearArbiterButtons();
-      this.showArbiterButton('Do this for me', () => {
+      this.showArbiterButton('Revert', () => {
         this.ws.send({ type: 'restorePosition' });
       });
     });

@@ -155,7 +155,7 @@ test('en passant that would expose the own king is rejected', async ({ browser }
   await pressClock(white);
 
   // No legal move produces this position -> the arbiter requires a restore.
-  await clickRestore(white); // the "Do this for me" button only exists if the move was rejected
+  await clickRestore(white); // the "Revert" button only exists if the move was rejected
   await expectPiece(white, 'e5', 'WHITE_PAWN'); // position restored
 });
 

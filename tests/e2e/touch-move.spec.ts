@@ -91,7 +91,7 @@ test('after an illegal move and restore, the touched piece stays bound (differen
   await dragPiece(white, 'g1', 'g3'); // illegal knight move -> touches the knight
   await pressClock(white);
 
-  await clickRestore(white); // "Do this for me"
+  await clickRestore(white); // "Revert"
   await expectPiece(white, 'g1', 'WHITE_KNIGHT'); // position is restored
   await clickReadyToContinue(white);
   await clickReadyToContinue(black);

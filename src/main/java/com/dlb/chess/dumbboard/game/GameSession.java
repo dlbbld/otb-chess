@@ -50,8 +50,10 @@ public class GameSession {
   private BitboardPosition positionBeforeTurn;
   private final Set<Square> removedSquaresThisTurn;
 
-  // State for "must execute specified move" after rejected draw claim
+  // State for "must execute specified move" after rejected draw claim. The SAN is kept alongside
+  // the move so the "not executed" message can name the move the player still owes.
   private MoveSpecification mustExecuteMove;
+  private String mustExecuteMoveSan;
 
   // FIDE 9.2 / 9.3: a player may make at most one draw claim per move. Set when a claim
   // attempt is processed (accepted or rejected, but not when the SAN was invalid — the
@@ -332,6 +334,7 @@ public class GameSession {
           .orElseThrow(() -> new IllegalStateException("Specified move is not in the legal move set"));
       board.move(executedMove);
       mustExecuteMove = null;
+      mustExecuteMoveSan = null;
       clock.switchClock();
 
       final Optional<GameResult> ending = checkAutomaticEndings();
@@ -346,7 +349,8 @@ public class GameSession {
     // Incorrect — instruct to revert
     clock.stopClock();
     return ArbiterResponse.incompleteMove(
-        "The specified move was not executed. Please revert the position and play the specified move.");
+        "The specified move, " + mustExecuteMoveSan
+            + ", was not executed. Please revert the position and play the specified move.");
   }
 
   // ===== Draw offers =====
@@ -513,6 +517,7 @@ public class GameSession {
       clock.addPenaltyTime(side.getOppositeSide(), INCORRECT_CLAIM_PENALTY_MS);
       if (claimResult.moveToPerform().isPresent()) {
         mustExecuteMove = claimResult.moveToPerform().get();
+        mustExecuteMoveSan = san;
         clock.startClock(side);
       }
     }
@@ -650,6 +655,7 @@ public class GameSession {
     this.restorationTargetPosition = positionBeforeTurn;
     this.removedSquaresThisTurn.clear();
     this.mustExecuteMove = null;
+    this.mustExecuteMoveSan = null;
     this.claimMadeThisTurn = false;
   }
 

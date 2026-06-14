@@ -9,7 +9,7 @@ import {
   claimFiftyMoveWithMove,
   claimThreefoldWithMove,
 } from './helpers/app';
-import { dragPiece, pressClock } from './helpers/board';
+import { dragPiece, pressClock, expectPiece } from './helpers/board';
 
 let game: TwoPlayerGame;
 
@@ -46,6 +46,45 @@ test('50-move claim with the move that reaches it draws and informs the opponent
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
   await expect(black.locator('#gameResultReason')).toContainText('50-move');
+  // The claimant's own message now names the move that was claimed.
+  await expect(white.locator('#arbiterMessage')).toContainText('Rd1');
+});
+
+test('a with-move claim accepts a lenient SAN (spurious check mark)', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: FIFTY_ONE_AWAY });
+  const { white, black } = game;
+
+  // "Rd1+" is strict-invalid (Rd1 is not check) but lenient forgives the spurious marker.
+  await claimFiftyMoveWithMove(white, 'Rd1+');
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  await expect(white.locator('#arbiterMessage')).toContainText('Rd1+');
+});
+
+test('an unsuccessful with-move claim names the owed move and offers a Revert', async ({ browser }) => {
+  // Clock at 99 with a pawn available: a quiet rook move would reach 50 moves, so the claim is
+  // feasible. White claims with the pawn move e4 (which resets the counter) -> rejected, and White
+  // must still play e4. White instead plays a rook move, so the arbiter asks to revert.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/3R4/4P3/8/4K3 w - - 99 51' });
+  const { white } = game;
+
+  await claimFiftyMoveWithMove(white, 'e4'); // pawn move resets the 50-move counter -> rejected
+  await expect(white.locator('#arbiterMessage')).toContainText('rejected');
+
+  // White plays the wrong move (a rook move instead of e4) and presses the clock.
+  await dragPiece(white, 'd4', 'd1');
+  await pressClock(white);
+
+  // The arbiter names the owed move and offers a Revert button.
+  await expect(white.locator('#arbiterMessage')).toContainText('e4');
+  await expect(white.locator('#arbiterMessage')).toContainText('was not executed');
+  await expect(white.getByRole('button', { name: 'Revert' })).toBeVisible();
+
+  // Reverting restores the board to the start of the turn.
+  await white.getByRole('button', { name: 'Revert' }).click();
+  await expectPiece(white, 'd4', 'WHITE_ROOK');
+  await expectPiece(white, 'e3', 'WHITE_PAWN');
 });
 
 test('50-move claim with an invalid SAN reports a validation message', async ({ browser }) => {
