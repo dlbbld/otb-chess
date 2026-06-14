@@ -167,3 +167,32 @@ test('changing a completed promotion is a released-piece violation, not an illeg
   await expect(white.locator('#arbiterMessage')).toContainText(/released-piece/i);
   await expect(white.locator('#arbiterMessage')).toContainText(/queen/i);
 });
+
+test('castling by two king moves (king released on g1, then moved on) is a released-piece violation', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1'); // king released on g1 -> commits to castling
+  await dragPiece(white, 'g1', 'f1'); // then moved on to f1
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(/released-piece/i);
+  await expect(white.locator('#arbiterMessage')).toContainText(/castling/i);
+});
+
+test('moving two pieces (a knight shuffle around a pin) is an illegal move', async ({ browser }) => {
+  // Black Nc6 is pinned (blocks Qb5 -> Ke8). Moving Nc6->d4 and then Ne5->c6 to re-block is two
+  // moves; no single legal move produces it.
+  game = await startTwoPlayerGame(browser, {
+    fen: '2bqkb1r/pQp1ppp1/2np4/1Q2n3/8/7p/PP1PPPPP/RNB1KBNR b KQk - 9 12',
+  });
+  const { black } = game; // FEN is black-to-move, so the creator plays black
+
+  await dragPiece(black, 'c6', 'd4');
+  await dragPiece(black, 'e5', 'c6');
+  await pressClock(black);
+
+  await expect(black.locator('#arbiterMessage')).toContainText(/illegal move/i);
+});
