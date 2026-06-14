@@ -139,6 +139,10 @@ class Game {
       this.setupExtraQueens();
       this.showArbiterMessage('Game created. Waiting for opponent...');
       this.clearArbiterButtons();
+      // While no opponent has joined, the creator can abort the challenge (like Lichess),
+      // not resign. The two swap once the game starts.
+      document.getElementById('abortBtn').style.display = '';
+      document.getElementById('resignBtn').style.display = 'none';
       const codeContainer = document.createElement('div');
       codeContainer.className = 'game-code-display';
       const codeLabel = document.createElement('span');
@@ -175,6 +179,9 @@ class Game {
 
     this.ws.on('gameStarted', (data) => {
       this.gameActive = true;
+      // The opponent has joined: abort is no longer available, resign takes its place.
+      document.getElementById('abortBtn').style.display = 'none';
+      document.getElementById('resignBtn').style.display = '';
       // Use the server-supplied side to move (necessary for custom-FEN games where
       // Black may be to move first); fall back to White for the normal case.
       const havingMove = data.havingMove || 'white';
@@ -402,6 +409,24 @@ class Game {
       document.getElementById('gameResultScore').textContent = scoreText;
       document.getElementById('gameResultReason').textContent = data.description;
       document.getElementById('gameResultPanel').style.display = 'block';
+
+      // Personalise the arbiter message for checkmate / stalemate instead of leaving the
+      // generic "Move accepted" / "Your turn" from the move that just ended the game. The
+      // mover (data.mover) is the side that delivered it; the other player is the recipient.
+      if (data.resultType === 'CHECKMATE') {
+        this.showArbiterMessage(data.mover === this.side
+          ? 'Your last move delivered checkmate.'
+          : 'You have been checkmated.');
+      } else if (data.resultType === 'STALEMATE') {
+        this.showArbiterMessage(data.mover === this.side
+          ? 'Your last move resulted in stalemate.'
+          : "Your opponent's last move resulted in stalemate.");
+      }
+    });
+
+    this.ws.on('gameAborted', () => {
+      // Challenge cancelled before it started — back to the lobby to create a new one.
+      window.location.href = '/';
     });
 
     this.ws.on('opponentDisconnected', (data) => {
@@ -474,6 +499,11 @@ class Game {
     document.getElementById('resignBtn').addEventListener('click', () => {
       if (!this.gameActive) return;
       this.ws.sendResign();
+    });
+
+    document.getElementById('abortBtn').addEventListener('click', () => {
+      // Only meaningful before the opponent joins; the button is hidden otherwise.
+      this.ws.sendAbort();
     });
 
     document.getElementById('acceptDrawBtn').addEventListener('click', () => {

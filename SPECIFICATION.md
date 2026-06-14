@@ -75,6 +75,14 @@ The player configures the game on a single screen before clicking **Create**:
 7. The second player opens the join page; the **game code field auto-fills** from the URL or from the creator's clipboard share, so the second player only confirms.
 8. Both browsers connect via WebSocket -- the game begins.
 
+### Aborting (before the opponent joins)
+
+While the creator is alone in the room -- the game has been created but nobody has joined -- the board shows an **Abort Game** button in place of **Resign** (which is meaningless with no opponent). Aborting discards the challenge and returns the creator to the start screen to create a new one. This mirrors Lichess, where an open challenge can be cancelled until someone accepts it.
+
+- The swap is colour-agnostic: a Black creator waiting for White gets the same Abort button.
+- Once the opponent joins and the game starts, Abort disappears and Resign takes its place; from then on the game can only end by play, resignation, draw, or flag fall.
+- Server-side, abort is rejected once the game has started (state is no longer `WAITING_FOR_PLAYERS`), so a raced/stale abort cannot cancel a live game.
+
 ---
 
 ## Layout (final)
@@ -425,6 +433,13 @@ To match the experience of a real board, certain game-ending moves end the game 
 3. **Insufficient material** -> "The game is drawn by insufficient material. Neither player can checkmate." (Ashlar Chess `isInsufficientMaterial()`, a fast structural test -- FIDE 9.4 / 5.2.2).
 4. **Fivefold repetition** -> "The game is drawn by fivefold repetition."
 5. **75-move rule** -> "The game is drawn by the 75-move rule."
+
+Beyond the result-panel description above, for **checkmate** and **stalemate** the arbiter message box is personalised to each player -- replacing the generic _"Move accepted. Opponent's turn."_ / _"Your turn."_ the ending move would otherwise leave:
+
+- **Checkmate** -> mover: _"Your last move delivered checkmate."_; opponent: _"You have been checkmated."_
+- **Stalemate** -> mover: _"Your last move resulted in stalemate."_; opponent: _"Your opponent's last move resulted in stalemate."_
+
+Symmetric for both colours. The server tags the `gameEnded` message with the `mover` side (who made the final move) and the client selects each player's line. Only checkmate and stalemate are personalised; the other automatic endings keep the generic message.
 
 Threefold repetition and the 50-move rule are deliberately **not** in this list -- under FIDE 9.2 / 9.3 they are *claimable* by a player, not automatic. They appear under *Draw Claims* below. Fivefold and 75-move are the automatic counterparts (FIDE 9.6).
 

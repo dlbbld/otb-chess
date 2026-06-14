@@ -94,6 +94,7 @@ public class GameWebSocketServer extends WebSocketServer {
         case "rejectDraw" -> handleRejectDraw(conn);
         case "claimDraw" -> handleClaimDraw(conn, json);
         case "resign" -> handleResign(conn);
+        case "abort" -> handleAbort(conn);
         case "requestPgn" -> handleRequestPgn(conn);
         case "restorePosition" -> handleRestorePosition(conn);
         case "readyToContinue" -> handleReadyToContinue(conn);
@@ -614,6 +615,33 @@ public class GameWebSocketServer extends WebSocketServer {
     sendGameEnded(room, result);
   }
 
+  /**
+   * Aborts a game that has not started yet (no opponent has joined). Like cancelling a Lichess
+   * challenge: the creator can throw the game away and start a new one while still alone in the
+   * room. Once the opponent has joined the game can only be ended by resignation / play, so an
+   * abort attempt then is rejected. Colour-agnostic, so it works for a Black creator too.
+   */
+  private void handleAbort(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null) {
+      return;
+    }
+    if (room.isFull() || room.getSession().getState() != GameState.WAITING_FOR_PLAYERS) {
+      sendError(conn, "The game cannot be aborted after it has started.");
+      return;
+    }
+
+    room.stopClockTicker();
+    gameRooms.remove(room.getGameId());
+    playerGameMap.remove(conn);
+
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "gameAborted");
+    msg.addProperty("message", "Game aborted.");
+    conn.send(GSON.toJson(msg));
+    System.out.println("Game aborted: " + room.getGameId());
+  }
+
   private void handleRequestPgn(WebSocket conn) {
     final GameRoom room = getRoom(conn);
     if (room == null) {
@@ -877,6 +905,9 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("type", "gameEnded");
     msg.addProperty("resultType", result.type().name());
     msg.addProperty("winner", result.winner().name().toLowerCase());
+    // The side that just moved (the opposite of who is now to move). The client uses this only
+    // for the personalised checkmate / stalemate arbiter message; other endings ignore it.
+    msg.addProperty("mover", room.getSession().getHavingMove().getOppositeSide().name().toLowerCase());
     msg.addProperty("description", result.description());
     room.sendToBoth(GSON.toJson(msg));
   }

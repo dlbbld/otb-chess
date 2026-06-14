@@ -101,6 +101,10 @@ class GameWebSocket {
     this.send({ type: 'resign' });
   }
 
+  sendAbort() {
+    this.send({ type: 'abort' });
+  }
+
   sendRequestPgn() {
     this.send({ type: 'requestPgn' });
   }

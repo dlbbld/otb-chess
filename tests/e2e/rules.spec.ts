@@ -28,6 +28,8 @@ test('checkmate ends the game 1-0', async ({ browser }) => {
 
   await expectGameResult(white, '1-0');
   await expectGameResult(black, '1-0');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your last move delivered checkmate');
+  await expect(black.locator('#arbiterMessage')).toContainText('You have been checkmated');
 });
 
 test('stalemate ends the game as a draw', async ({ browser }) => {
@@ -40,6 +42,36 @@ test('stalemate ends the game as a draw', async ({ browser }) => {
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your last move resulted in stalemate');
+  await expect(black.locator('#arbiterMessage')).toContainText("opponent's last move resulted in stalemate");
+});
+
+test('checkmate delivered by black is announced symmetrically', async ({ browser }) => {
+  // Black: Ra8, Kh8. White: Kg1 boxed in by its own pawns f2/g2/h2. Ra8-a1 is mate.
+  game = await startTwoPlayerGame(browser, { fen: 'r6k/8/8/8/8/8/5PPP/6K1 b - - 0 1' });
+  const { white, black } = game; // FEN is black-to-move, so the creator plays black
+
+  await dragPiece(black, 'a8', 'a1');
+  await pressClock(black);
+
+  await expectGameResult(black, '0-1');
+  await expectGameResult(white, '0-1');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your last move delivered checkmate');
+  await expect(white.locator('#arbiterMessage')).toContainText('You have been checkmated');
+});
+
+test('stalemate caused by black is announced symmetrically', async ({ browser }) => {
+  // Black: Qf8, Kg3. White: lone Kh1. Qf8-f2 leaves White with no legal move, not in check.
+  game = await startTwoPlayerGame(browser, { fen: '5q2/8/8/8/8/6k1/8/7K b - - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(black, 'f8', 'f2');
+  await pressClock(black);
+
+  await expectGameResult(black, SCORE_DRAW);
+  await expectGameResult(white, SCORE_DRAW);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your last move resulted in stalemate');
+  await expect(white.locator('#arbiterMessage')).toContainText("opponent's last move resulted in stalemate");
 });
 
 test('resignation ends the game for the opponent', async ({ browser }) => {
