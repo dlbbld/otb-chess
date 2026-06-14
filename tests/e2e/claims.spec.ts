@@ -164,4 +164,41 @@ test('the 75-move rule auto-draws the game and informs both players why', async 
   await expectGameResult(black, SCORE_DRAW);
   await expect(white.locator('#gameResultReason')).toContainText('75-move');
   await expect(black.locator('#gameResultReason')).toContainText('75-move');
+  // Personalised arbiter message, like checkmate/stalemate.
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Your last move led to 75 moves each without a capture or pawn move',
+  );
+  await expect(black.locator('#arbiterMessage')).toContainText(
+    "Your opponent's last move led to 75 moves each without a capture or pawn move",
+  );
+});
+
+test('fivefold repetition auto-draws and is announced like checkmate/stalemate', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // Shuffle the knights back to the start position until it has occurred five times. One cycle
+  // (Nf3 Nf6 Ng1 Ng8) returns to the start; the start counts as occurrence 1, so four cycles
+  // (16 plies) reach the fifth, which auto-ends the game on the final drag. The clock press on
+  // that final ply is a no-op (the game is already over).
+  const cycle = [
+    { p: white, from: 'g1', to: 'f3' },
+    { p: black, from: 'g8', to: 'f6' },
+    { p: white, from: 'f3', to: 'g1' },
+    { p: black, from: 'f6', to: 'g8' },
+  ];
+  for (let c = 0; c < 4; c++) {
+    for (const m of cycle) {
+      await dragPiece(m.p, m.from, m.to);
+      await pressClock(m.p);
+    }
+  }
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  // Black played the final ply, so the messages are personalised accordingly.
+  await expect(black.locator('#arbiterMessage')).toContainText('Your last move led to a fivefold repetition');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    "Your opponent's last move led to a fivefold repetition",
+  );
 });

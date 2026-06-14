@@ -32,3 +32,22 @@ test('a third player cannot join a full game', async ({ browser }) => {
     await c3.close();
   }
 });
+
+test('an invalid starting FEN is rejected on the start screen, not on the board', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#startingFen').fill('not-a-valid-fen');
+  await page.locator('#createGameBtn').click();
+
+  // The reason is shown in place and the player stays on the lobby — they are never sent to a board.
+  await expect(page.locator('#fenError')).toContainText('Invalid FEN');
+  await expect(page.locator('#startingFen')).toBeVisible(); // the FEN input only exists on the lobby
+});
+
+test('a valid starting FEN proceeds to the board', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#startingFen').fill('4k3/8/8/8/8/8/8/4K2R w K - 0 1');
+  await page.locator('#createGameBtn').click();
+
+  // Navigation happened and the game was created (the share code appears on the board page).
+  await expect(page.locator('.game-code-value')).toBeVisible({ timeout: 15_000 });
+});

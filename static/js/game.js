@@ -410,9 +410,9 @@ class Game {
       document.getElementById('gameResultReason').textContent = data.description;
       document.getElementById('gameResultPanel').style.display = 'block';
 
-      // Personalise the arbiter message for checkmate / stalemate instead of leaving the
-      // generic "Move accepted" / "Your turn" from the move that just ended the game. The
-      // mover (data.mover) is the side that delivered it; the other player is the recipient.
+      // Personalise the arbiter message for moves that immediately end the game instead of
+      // leaving the generic "Move accepted" / "Your turn" from that move. The mover (data.mover)
+      // is the side that played it; the other player is the recipient.
       if (data.resultType === 'CHECKMATE') {
         this.showArbiterMessage(data.mover === this.side
           ? 'Your last move delivered checkmate.'
@@ -421,6 +421,14 @@ class Game {
         this.showArbiterMessage(data.mover === this.side
           ? 'Your last move resulted in stalemate.'
           : "Your opponent's last move resulted in stalemate.");
+      } else if (data.resultType === 'SEVENTY_FIVE_MOVE') {
+        this.showArbiterMessage(data.mover === this.side
+          ? 'Your last move led to 75 moves each without a capture or pawn move.'
+          : "Your opponent's last move led to 75 moves each without a capture or pawn move.");
+      } else if (data.resultType === 'FIVEFOLD_REPETITION') {
+        this.showArbiterMessage(data.mover === this.side
+          ? 'Your last move led to a fivefold repetition.'
+          : "Your opponent's last move led to a fivefold repetition.");
       }
     });
 

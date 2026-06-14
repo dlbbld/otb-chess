@@ -64,6 +64,7 @@
         the player creating the game is given that side automatically.
       </p>
 
+      <div id="fenError" style="color:#c0392b;font-size:13px;margin:0 0 10px;"></div>
       <button id="createGameBtn" class="primary-btn">Create Game</button>
     </div>
 
@@ -102,13 +103,32 @@
       document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
     });
 
-    // Create game — just redirect to game.html with params, game.js handles the WebSocket
-    document.getElementById('createGameBtn').addEventListener('click', () => {
+    // Create game — validate any supplied FEN first, then redirect to game.html (game.js handles
+    // the WebSocket). An invalid FEN keeps the player on the start screen with the reason rather
+    // than sending them to a board they cannot leave.
+    document.getElementById('createGameBtn').addEventListener('click', async () => {
       const side = document.querySelector('input[name="side"]:checked').value;
       const maxIllegal = document.getElementById('maxIllegalMoves').value;
       const autoResumeAfterRestore =
         document.querySelector('input[name="autoResumeAfterRestore"]:checked').value;
       const fen = document.getElementById('startingFen').value.trim();
+      const fenError = document.getElementById('fenError');
+      fenError.textContent = '';
+
+      if (fen) {
+        try {
+          const resp = await fetch('/api/validateFen?fen=' + encodeURIComponent(fen), { cache: 'no-store' });
+          const result = await resp.json();
+          if (!result.valid) {
+            fenError.textContent = result.message || 'Invalid FEN.';
+            return; // stay on the start screen
+          }
+        } catch (e) {
+          fenError.textContent = 'Could not validate the FEN. Please try again.';
+          return;
+        }
+      }
+
       let url = '/game.html?creator=true&side=' + side
         + '&time=' + selectedTime + '&inc=' + selectedInc
         + '&maxIllegal=' + encodeURIComponent(maxIllegal)

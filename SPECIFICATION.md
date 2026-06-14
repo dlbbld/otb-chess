@@ -54,10 +54,12 @@ The player configures the game on a single screen before clicking **Create**:
      second player to join gets the other colour. The override is silent today; a
      visible UX cue (disabling the side selector or showing a small note when a
      FEN is entered) is tracked under "Spec-driven implementation follow-ups".
-   - **Invalid FEN:** the server rejects the create request and returns the
-     chess-library validation reason via the standard error channel
-     ("Invalid FEN: ..."). No game is created. The player can correct the FEN and
-     try again.
+   - **Invalid FEN:** the start screen validates the FEN via `/api/validateFen`
+     (Ashlar Chess) **before** navigating. An invalid FEN is rejected in place: the
+     validation reason ("Invalid FEN: ...") is shown on the start screen, no game is
+     created, and the player stays on the start screen to correct it -- they are never
+     sent to a board they cannot leave. The WebSocket create path validates again as
+     defence in depth.
 
    Validation is performed by the chess library (`new Board(fenString)` ->
    `FenParserAdvanced.parseFenAdvanced` -> `FenAdvancedValidationException`); the
@@ -434,12 +436,16 @@ To match the experience of a real board, certain game-ending moves end the game 
 4. **Fivefold repetition** -> "The game is drawn by fivefold repetition."
 5. **75-move rule** -> "The game is drawn by the 75-move rule."
 
-Beyond the result-panel description above, for **checkmate** and **stalemate** the arbiter message box is personalised to each player -- replacing the generic _"Move accepted. Opponent's turn."_ / _"Your turn."_ the ending move would otherwise leave:
+Beyond the result-panel description above, a move that immediately ends the game personalises the arbiter message box for each player -- replacing the generic _"Move accepted. Opponent's turn."_ / _"Your turn."_ the ending move would otherwise leave:
 
-- **Checkmate** -> mover: _"Your last move delivered checkmate."_; opponent: _"You have been checkmated."_
-- **Stalemate** -> mover: _"Your last move resulted in stalemate."_; opponent: _"Your opponent's last move resulted in stalemate."_
+| Ending | Mover (played it) | Opponent |
+|---|---|---|
+| Checkmate | _"Your last move delivered checkmate."_ | _"You have been checkmated."_ |
+| Stalemate | _"Your last move resulted in stalemate."_ | _"Your opponent's last move resulted in stalemate."_ |
+| 75-move rule | _"Your last move led to 75 moves each without a capture or pawn move."_ | _"Your opponent's last move led to 75 moves each without a capture or pawn move."_ |
+| Fivefold repetition | _"Your last move led to a fivefold repetition."_ | _"Your opponent's last move led to a fivefold repetition."_ |
 
-Symmetric for both colours. The server tags the `gameEnded` message with the `mover` side (who made the final move) and the client selects each player's line. Only checkmate and stalemate are personalised; the other automatic endings keep the generic message.
+Symmetric for both colours. The server tags the `gameEnded` message with the `mover` side (who made the final move) and the client selects each player's line. Insufficient-material draws and the non-move endings (resignation, flag fall, draw agreement, claims) keep their generic / own messages.
 
 Threefold repetition and the 50-move rule are deliberately **not** in this list -- under FIDE 9.2 / 9.3 they are *claimable* by a player, not automatic. They appear under *Draw Claims* below. Fivefold and 75-move are the automatic counterparts (FIDE 9.6).
 
