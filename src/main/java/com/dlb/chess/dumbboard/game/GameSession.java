@@ -22,7 +22,8 @@ import com.dlb.chess.dumbboard.game.model.GameResultType;
 import com.dlb.chess.dumbboard.game.model.GameState;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 import io.github.dlbbld.ashlarchess.pgn.PgnCreate;
-import io.github.dlbbld.ashlarchess.unwinnability.UnwinnabilityQuickVerdict;
+import io.github.dlbbld.ashlarchess.adjudication.AdjudicationResult;
+import io.github.dlbbld.ashlarchess.adjudication.Adjudicator;
 
 /**
  * Central orchestrator for a dumb chessboard game.
@@ -531,32 +532,28 @@ public class GameSession {
   /**
    * Player resigns.
    *
-   * <p>FIDE-aligned: a resignation is a draw if the opponent has no series of legal moves
-   * that could result in checkmate. We use the QUICK winnability check, not the FULL CUA:
-   * full CUA is a deep iterative-deepening helpmate search that can take hundreds of ms
-   * on midgame positions, while QUICK runs in microseconds and is precise enough for the
-   * cases that matter at resignation/flag-fall (lone king, K+B, K+N, etc.).
-   * POSSIBLY_WINNABLE is treated as winnable: if we can't prove the opponent is
-   * unwinnable, we award them the win.
+   * <p>FIDE 5.1.2: a resignation is a loss unless the opponent could not checkmate by any
+   * series of legal moves, in which case it is a draw. {@link Adjudicator} applies that
+   * exception; we use the QUICK variant (the live-play path - bounded latency, drawing only
+   * when it can prove the opponent unwinnable) rather than the FULL analyzer, whose deep
+   * helpmate search can cost hundreds of ms and is not warranted for a button press.
+   *
+   * <p>On a draw the player-facing message splits the two cases the adjudicator folds together:
+   * a material shortage versus a position unwinnable despite sufficient material (see
+   * {@link #drawReason(Side)}).
    */
   public synchronized GameResult resign(Side side) {
     final Side opponent = side.getOppositeSide();
 
-    final UnwinnabilityQuickVerdict winnability = board.isUnwinnableQuick(opponent);
-    if (winnability == UnwinnabilityQuickVerdict.UNWINNABLE) {
-      final String sideName = sideName(side);
-      final String opponentName = sideName(opponent);
+    if (Adjudicator.adjudicateResignationQuick(board, side) == AdjudicationResult.DRAW) {
       final GameResult drawResult = new GameResult(GameResultType.RESIGNATION, Side.NONE,
-          sideName + " resigned, but because " + opponentName
-              + " has no possible win, the game is a draw.");
+          sideName(side) + " resigned, but because " + drawReason(opponent) + ", the game is a draw.");
       endGame(drawResult);
       return drawResult;
     }
 
-    final String sideName = sideName(side);
-    final String opponentName = sideName(opponent);
     final GameResult lossResult = new GameResult(GameResultType.RESIGNATION, opponent,
-        sideName + " resigns. " + opponentName + " wins the game.");
+        sideName(side) + " resigns. " + sideName(opponent) + " wins the game.");
     endGame(lossResult);
     return lossResult;
   }
@@ -566,12 +563,11 @@ public class GameSession {
   /**
    * Checks for flag fall. Should be called periodically.
    *
-   * <p>When a side runs out of time, we use the QUICK winnability check on the OPPONENT
-   * (the side that did NOT time out) to decide whether they can possibly checkmate. If
-   * they cannot, the game is a draw (FIDE 6.9 / 5.2.2). The QUICK check is a fast
-   * static analysis suitable for use on every flag fall; the FULL CUA is intentionally
-   * avoided here because it is a deep search and the dumb-board has no other reason to
-   * pay that cost.
+   * <p>FIDE 6.9: a player who runs out of time loses unless the opponent could not checkmate
+   * by any series of legal moves, in which case it is a draw. {@link Adjudicator} applies that
+   * exception; we use the QUICK variant for the same live-play / latency reason as
+   * {@link #resign(Side)}. On a draw the message splits insufficient material from a position
+   * unwinnable despite sufficient material (see {@link #drawReason(Side)}).
    */
   public synchronized Optional<GameResult> checkFlagFall() {
     if (state != GameState.IN_PROGRESS) {
@@ -583,18 +579,14 @@ public class GameSession {
     for (final Side side : new Side[] { Side.WHITE, Side.BLACK }) {
       if (clock.isFlagFall(side)) {
         final Side opponent = side.getOppositeSide();
-        final UnwinnabilityQuickVerdict winnability = board.isUnwinnableQuick(opponent);
 
-        final String sideName = sideName(side);
-        final String opponentName = sideName(opponent);
         final GameResult flagResult;
-        if (winnability == UnwinnabilityQuickVerdict.UNWINNABLE) {
+        if (Adjudicator.adjudicateFlagfallQuick(board, side) == AdjudicationResult.DRAW) {
           flagResult = new GameResult(GameResultType.FLAG_FALL, Side.NONE,
-              sideName + "'s time has elapsed, but because " + opponentName
-                  + " has no possible win, the game is a draw.");
+              sideName(side) + " flagged, but because " + drawReason(opponent) + ", the game is a draw.");
         } else {
           flagResult = new GameResult(GameResultType.FLAG_FALL, opponent,
-              sideName + " loses on time. " + opponentName + " wins the game.");
+              sideName(side) + " loses on time. " + sideName(opponent) + " wins the game.");
         }
 
         endGame(flagResult);
@@ -669,6 +661,21 @@ public class GameSession {
 
   private static String sideName(Side side) {
     return side == Side.WHITE ? "White" : "Black";
+  }
+
+  /**
+   * Reason clause for a flag-fall / resignation that {@link Adjudicator} ruled a draw: the
+   * would-be winner cannot mate. The adjudicator folds two FIDE cases together; we split them
+   * for the player-facing message using the cheap structural material test - a material
+   * shortage (lone king, K+B, K+N, ...) versus a position that is unwinnable despite sufficient
+   * material (a blocked wall / fortress).
+   *
+   * @param opponent the would-be winner (the side that did not resign / flag)
+   */
+  private String drawReason(Side opponent) {
+    return board.isInsufficientMaterial(opponent)
+        ? sideName(opponent) + " has insufficient material to mate"
+        : sideName(opponent) + " has no potential mate";
   }
 
   /**

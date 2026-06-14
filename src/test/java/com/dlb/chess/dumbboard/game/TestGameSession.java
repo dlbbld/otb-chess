@@ -317,6 +317,76 @@ class TestGameSession {
   }
 
   @Test
+  void testResignationDrawWhenOpponentHasInsufficientMaterial() {
+    // White resigns, but Black has only a lone king and can never mate (FIDE 5.1.2 exception):
+    // the game is a draw, and the message names the material shortage.
+    final GameSession session = new GameSession(TEST_TIME,
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
+        true, new Board("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
+    session.startGame();
+
+    final GameResult result = session.resign(Side.WHITE);
+
+    assertEquals(GameResultType.RESIGNATION, result.type());
+    assertEquals(Side.NONE, result.winner());
+    assertTrue(result.isDraw());
+    assertEquals("White resigned, but because Black has insufficient material to mate, the game is a draw.",
+        result.description());
+  }
+
+  @Test
+  void testResignationDrawWhenOpponentHasNoMatePotentialDespiteMaterial() {
+    // White resigns in a fully blocked pawn wall: Black has pawns (sufficient material) but can
+    // never break through, so the position is unwinnable -> draw, reported as "no potential mate".
+    final GameSession session = new GameSession(TEST_TIME,
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
+        true, new Board("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
+    session.startGame();
+
+    final GameResult result = session.resign(Side.WHITE);
+
+    assertEquals(GameResultType.RESIGNATION, result.type());
+    assertEquals(Side.NONE, result.winner());
+    assertEquals("White resigned, but because Black has no potential mate, the game is a draw.",
+        result.description());
+  }
+
+  @Test
+  void testFlagFallDrawWhenOpponentHasInsufficientMaterial() {
+    // White's flag falls (zero time), but Black has a lone king: the FIDE 6.9 exception draws it,
+    // and the message names the material shortage. TimeControl(0,0) flags the side to move at once.
+    final GameSession session = new GameSession(new TimeControl(0, 0),
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
+        true, new Board("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
+    session.startGame();
+
+    final Optional<GameResult> result = session.checkFlagFall();
+
+    assertTrue(result.isPresent());
+    assertEquals(GameResultType.FLAG_FALL, result.get().type());
+    assertEquals(Side.NONE, result.get().winner());
+    assertEquals("White flagged, but because Black has insufficient material to mate, the game is a draw.",
+        result.get().description());
+  }
+
+  @Test
+  void testFlagFallDrawWhenOpponentHasNoMatePotentialDespiteMaterial() {
+    // White flags in a blocked pawn wall: Black has material but no way to mate -> draw.
+    final GameSession session = new GameSession(new TimeControl(0, 0),
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
+        true, new Board("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
+    session.startGame();
+
+    final Optional<GameResult> result = session.checkFlagFall();
+
+    assertTrue(result.isPresent());
+    assertEquals(GameResultType.FLAG_FALL, result.get().type());
+    assertEquals(Side.NONE, result.get().winner());
+    assertEquals("White flagged, but because Black has no potential mate, the game is a draw.",
+        result.get().description());
+  }
+
+  @Test
   void testDrawOfferAccepted() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();

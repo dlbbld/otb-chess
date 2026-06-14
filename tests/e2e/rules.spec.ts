@@ -76,6 +76,32 @@ test('the player not on move can resign immediately', async ({ browser }) => {
   await expectGameResult(black, '1-0');
 });
 
+test('resigning when the opponent has only a lone king is a draw (insufficient material)', async ({
+  browser,
+}) => {
+  // White (Rd5, Kc4) resigns, but Black has only a lone king and can never mate -> FIDE draw.
+  game = await startTwoPlayerGame(browser, { fen: '8/8/4k3/3R4/2K5/8/8/8 w - - 0 50' });
+  const { white, black } = game;
+
+  await resign(white);
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  await expect(white.locator('#gameResultReason')).toContainText('insufficient material to mate');
+});
+
+test('resigning in a blocked position with material is a draw (no potential mate)', async ({ browser }) => {
+  // A fully blocked pawn wall: Black has pawns (sufficient material) but can never break through.
+  game = await startTwoPlayerGame(browser, { fen: '8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62' });
+  const { white, black } = game;
+
+  await resign(white);
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  await expect(white.locator('#gameResultReason')).toContainText('no potential mate');
+});
+
 test('an illegal move is rejected (arbiter flags an error)', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white } = game;
