@@ -53,6 +53,29 @@ test('resignation ends the game for the opponent', async ({ browser }) => {
   await expectGameResult(black, '0-1');
 });
 
+test('a player can resign while it is the opponent turn', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white); // now it is black's turn
+  await resign(white); // white resigns although it is not white's turn
+
+  await expectGameResult(white, '0-1');
+  await expectGameResult(black, '0-1');
+});
+
+test('the player not on move can resign immediately', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // At the start it is white's turn; black (not on move) resigns -> white wins.
+  await resign(black);
+
+  await expectGameResult(white, '1-0');
+  await expectGameResult(black, '1-0');
+});
+
 test('an illegal move is rejected (arbiter flags an error)', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white } = game;

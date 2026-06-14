@@ -287,6 +287,36 @@ class TestGameSession {
   }
 
   @Test
+  void testResignationDuringOpponentTurn() {
+    // White moves, so it becomes black's turn; white then resigns. Resignation is unconditional:
+    // it ends the game regardless of whose turn it is.
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+    assertEquals(Side.BLACK, session.getHavingMove());
+
+    final GameResult result = session.resign(Side.WHITE);
+
+    assertEquals(GameResultType.RESIGNATION, result.type());
+    assertEquals(Side.BLACK, result.winner());
+    assertEquals(GameState.ENDED, session.getState());
+  }
+
+  @Test
+  void testResignationByPlayerNotOnMove() {
+    // At the start it is white's turn; the player not on move (black) resigns -> white wins.
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    assertEquals(Side.WHITE, session.getHavingMove());
+
+    final GameResult result = session.resign(Side.BLACK);
+
+    assertEquals(GameResultType.RESIGNATION, result.type());
+    assertEquals(Side.WHITE, result.winner());
+    assertEquals(GameState.ENDED, session.getState());
+  }
+
+  @Test
   void testDrawOfferAccepted() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
