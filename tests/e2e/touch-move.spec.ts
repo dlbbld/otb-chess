@@ -151,3 +151,16 @@ test('capturing with the touched piece satisfies the specific-capture obligation
   await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
 });
+
+// FIDE 4.4.2: touching the rook before the king forbids castling with it — the rook must move.
+test('clicking the rook before castling is a touch-move violation', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white } = game;
+
+  await clickSquare(white, 'h1'); // touch the rook first
+  await dragPiece(white, 'e1', 'g1'); // then the castling motion (king, then rook)
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(/touch-move/i);
+});

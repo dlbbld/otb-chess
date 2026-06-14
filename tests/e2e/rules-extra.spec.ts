@@ -150,3 +150,49 @@ test('flipping the board, then making a legal move, still works', async ({ brows
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'e4', 'WHITE_PAWN');
 });
+
+test('changing a completed promotion is a released-piece violation, not an illegal move', async ({ browser }) => {
+  // bxa8: pawn captures the rook and promotes. Once the queen is placed on a8 the move is complete;
+  // swapping it back for the pawn is a released-piece violation naming the queen.
+  game = await startTwoPlayerGame(browser, { fen: 'r3k3/1P6/8/8/8/8/8/4K3 w - - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'b7', 'a8'); // pawn captures the rook (lands as a pawn on a8)
+  await removePiece(white, 'a8'); // lift the pawn off
+  await dragFromSideArea(white, 'WHITE_QUEEN', 'a8'); // place the queen -> promotion complete
+  await removePiece(white, 'a8'); // lift the queen off
+  await dragFromSideArea(white, 'WHITE_PAWN', 'a8'); // put the pawn back
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(/released-piece/i);
+  await expect(white.locator('#arbiterMessage')).toContainText(/queen/i);
+});
+
+test('castling by two king moves (king released on g1, then moved on) is a released-piece violation', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1'); // king released on g1 -> commits to castling
+  await dragPiece(white, 'g1', 'f1'); // then moved on to f1
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(/released-piece/i);
+  await expect(white.locator('#arbiterMessage')).toContainText(/castling/i);
+});
+
+test('moving two pieces (a knight shuffle around a pin) is an illegal move', async ({ browser }) => {
+  // Black Nc6 is pinned (blocks Qb5 -> Ke8). Moving Nc6->d4 and then Ne5->c6 to re-block is two
+  // moves; no single legal move produces it.
+  game = await startTwoPlayerGame(browser, {
+    fen: '2bqkb1r/pQp1ppp1/2np4/1Q2n3/8/7p/PP1PPPPP/RNB1KBNR b KQk - 9 12',
+  });
+  const { black } = game; // FEN is black-to-move, so the creator plays black
+
+  await dragPiece(black, 'c6', 'd4');
+  await dragPiece(black, 'e5', 'c6');
+  await pressClock(black);
+
+  await expect(black.locator('#arbiterMessage')).toContainText(/illegal move/i);
+});

@@ -132,6 +132,81 @@ class TestArbiterEngine {
     assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
 
+  private static final String PROMOTION_CAPTURE_FEN = "r3k3/1P6/8/8/8/8/8/4K3 w - - 0 1"; // bxa8 promotes
+
+  @Test
+  void testPromotionCompletedByPlacingQueenIsAccepted() {
+    // bxa8: the pawn lands on a8 (incomplete), is lifted, and a queen is placed on a8 — promotion
+    // complete. The pawn-on-a8 step must not be treated as a released-piece commitment.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_PAWN, 1));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_QUEEN, 2));
+
+    final BitboardPosition queenOnA8 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B7, Piece.NONE)
+        .createChangedPosition(Square.A8, Piece.WHITE_QUEEN).build();
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED,
+        engine.evaluateClockPress(board, queenOnA8, sequence).type());
+  }
+
+  @Test
+  void testPromotionReleasedPieceLocksOnPromotedPieceNotPawn() {
+    // After the queen is released on a8 (bxa8=Q completed), swapping it back for the pawn is a
+    // released-piece violation naming the QUEEN (not the pawn) — and not an illegal move.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_PAWN, 1));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_QUEEN, 2)); // completes bxa8=Q
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_QUEEN, 3));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_PAWN, 4)); // pawn back on a8
+
+    final BitboardPosition pawnOnA8 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B7, Piece.NONE)
+        .createChangedPosition(Square.A8, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, pawnOnA8, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(Piece.WHITE_QUEEN, response.releasedPieceContext().get().piece());
+    assertEquals(Square.A8, response.releasedPieceContext().get().square());
+    assertEquals(BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B7, Piece.NONE)
+        .createChangedPosition(Square.A8, Piece.WHITE_QUEEN).build(), response.restorePosition().get());
+  }
+
+  @Test
+  void testPromotionReleasedPieceCannotBeChangedToAnotherPiece() {
+    // After bxa8=Q is completed, switching the queen for a knight is NOT a new promotion (bxa8=N)
+    // and NOT an illegal move — it is a released-piece violation: the queen is committed.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_PAWN, 1));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_QUEEN, 2)); // completes bxa8=Q
+    sequence.addEvent(BoardEvent.remove(Square.A8, Piece.WHITE_QUEEN, 3));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A8, Piece.WHITE_KNIGHT, 4)); // try to switch to a knight
+
+    final BitboardPosition knightOnA8 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B7, Piece.NONE)
+        .createChangedPosition(Square.A8, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, knightOnA8, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(Piece.WHITE_QUEEN, response.releasedPieceContext().get().piece());
+    assertEquals(Square.A8, response.releasedPieceContext().get().square());
+  }
+
   /** FIDE 4.7: the FIRST legal release in the turn is the one that binds — even if a later
       drop is also a legal move. */
   @Test
@@ -194,6 +269,50 @@ class TestArbiterEngine {
     assertTrue(response.message().contains("king on g1"));
     assertTrue(response.message().contains("kingside castling"));
     assertTrue(response.message().contains("from h1 to f1"));
+  }
+
+  @Test
+  void testReleasedPieceViolationCastlingKingReleasedThenMovedToF1() {
+    // User scenario: O-O is legal; the king is released on g1 (which commits to castling), then
+    // moved on to f1. Pressing the clock must be a released-piece violation (the king is committed
+    // to completing the castle), not an accepted move.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.F1, Piece.WHITE_KING, 1));
+
+    final BitboardPosition afterKingOnF1 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE)
+        .createChangedPosition(Square.F1, Piece.WHITE_KING).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterKingOnF1, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, response.playerMessageKey());
+  }
+
+  @Test
+  void testTwoKnightShuffleAroundPinIsIllegalMove() {
+    // Black Nc6 is pinned (it blocks Qb5 -> Ke8). Black moves Nc6->d4 (illegally exposing the king)
+    // and then Ne5->c6 to re-block, in one turn. Two moves; no single legal move produces the
+    // result, so it is an illegal move.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board("2bqkb1r/pQp1ppp1/2np4/1Q2n3/8/7p/PP1PPPPP/RNB1KBNR b KQk - 9 12");
+
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragMove(Square.C6, Square.D4, Piece.BLACK_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E5, Square.C6, Piece.BLACK_KNIGHT, 1));
+
+    // c6 stays a black knight (the e5 knight refilled it); the net change is e5 -> d4.
+    final BitboardPosition after = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.D4, Piece.BLACK_KNIGHT)
+        .createChangedPosition(Square.E5, Piece.NONE).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, after, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
   }
 
   /** User-reported scenario: kingside castling is legal, the player releases the king on g1,

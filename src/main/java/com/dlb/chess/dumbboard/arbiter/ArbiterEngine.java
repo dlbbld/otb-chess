@@ -11,6 +11,7 @@ import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
 import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.PromotionPieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
@@ -243,17 +244,24 @@ public class ArbiterEngine {
   }
 
   private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove) {
+    final MoveSpecification spec = legalMove.moveSpecification();
+    if (CastlingUtility.calculateIsCastlingMove(spec)) {
+      return event.piece() == Piece.calculateKingPiece(havingMove)
+          && event.square() == CastlingUtility.calculateKingCastlingFrom(havingMove, spec)
+          && event.targetSquare() == CastlingUtility.calculateKingCastlingTo(havingMove, spec);
+    }
+    if (spec.promotionPieceType() != PromotionPieceType.NONE) {
+      // A promotion is released only when the PROMOTED piece (e.g. a queen from the side area) is
+      // placed on the promotion square. A pawn landing on the last rank is an incomplete move, never
+      // a legal release — so it must not start a released-piece commitment. The commitment (and the
+      // restore message) then correctly names the promoted piece, not the pawn.
+      final Piece promotedPiece = Piece.calculate(havingMove, spec.promotionPieceType().getPieceType());
+      return event.piece() == promotedPiece && event.targetSquare() == spec.toSquare();
+    }
     if (event.piece() != legalMove.movingPiece()) {
       return false;
     }
-    if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())) {
-      return event.piece() == Piece.calculateKingPiece(havingMove)
-          && event.square() == CastlingUtility.calculateKingCastlingFrom(havingMove, legalMove.moveSpecification())
-          && event.targetSquare() == CastlingUtility.calculateKingCastlingTo(havingMove,
-              legalMove.moveSpecification());
-    }
-    return event.square() == legalMove.moveSpecification().fromSquare()
-        && event.targetSquare() == legalMove.moveSpecification().toSquare();
+    return event.square() == spec.fromSquare() && event.targetSquare() == spec.toSquare();
   }
 
   private static BitboardPosition applyEvent(BitboardPosition position, BoardEvent event) {

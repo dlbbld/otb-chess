@@ -107,6 +107,12 @@ public class TouchMoveEvaluator {
       if (!kingTouched) {
         if (piece == kingPiece && touchedSquare == kingFrom) {
           kingTouched = true;
+        } else if (piece == rookPiece && (touchedSquare == kingSideRook || touchedSquare == queenSideRook)) {
+          // FIDE 4.4.2: deliberately touching a (castling) rook before the king forbids castling
+          // with it this move. Abandon the castling obligation and fall through to the first-
+          // obligation scan, which binds the touched rook as a normal own-piece obligation. A
+          // later king/rook castling motion must then NOT be accepted as castling.
+          return Optional.empty();
         }
         continue;
       }
