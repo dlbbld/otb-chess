@@ -163,3 +163,21 @@ test('en passant capture is accepted', async ({ browser }) => {
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'd6', 'WHITE_PAWN');
 });
+
+test('the board does not mark the king in check (no red frame)', async ({ browser }) => {
+  // White: Ra1, Ke1. Black: lone Ke8. Ra1-a8+ gives check along the 8th rank. The board must
+  // not inform the checked player — no red frame on the king square, then or after it moves.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/R3K3 w - - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'a1', 'a8');
+  await pressClock(white); // black is now in check and on the move
+
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(black.locator('#board .square.check')).toHaveCount(0);
+  await expect(white.locator('#board .square.check')).toHaveCount(0);
+
+  // ...and it must not appear (or linger) once the king steps off the checked square.
+  await dragPiece(black, 'e8', 'e7');
+  await expect(black.locator('#board .square.check')).toHaveCount(0);
+});

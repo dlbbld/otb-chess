@@ -827,10 +827,6 @@ public class GameSession {
     return drawOfferManager;
   }
 
-  public synchronized boolean isCheck() {
-    return board.isCheck();
-  }
-
   public synchronized BitboardPosition getPositionBeforeTurn() {
     return positionBeforeTurn;
   }

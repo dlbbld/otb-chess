@@ -830,14 +830,12 @@ public class GameWebSocketServer extends WebSocketServer {
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       final var position = room.getSession().getBoard().getBitboardPosition();
       final var havingMove = room.getSession().getHavingMove();
-      final var isCheck = room.getSession().isCheck();
 
       final JsonObject opponentMsg = new JsonObject();
       opponentMsg.addProperty("type", "opponentMoved");
       opponentMsg.addProperty("message", "Opponent completed a move.");
       opponentMsg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
       opponentMsg.addProperty("havingMove", havingMove.name().toLowerCase());
-      opponentMsg.addProperty("isCheck", isCheck);
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
     }
   }
@@ -869,7 +867,6 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("type", "boardUpdate");
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
     msg.addProperty("havingMove", havingMove.name().toLowerCase());
-    msg.addProperty("isCheck", room.getSession().isCheck());
     room.sendToBoth(GSON.toJson(msg));
   }
 

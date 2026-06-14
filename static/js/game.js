@@ -211,9 +211,6 @@ class Game {
         this.board.setEnabled(this.isMyTurn);
         this.resetClaimUiForNewTurn();
       }
-      if (data.isCheck && this.isMyTurn) {
-        this.highlightKingInCheck();
-      }
       this.showArbiterMessage('Your turn.');
       this.clearArbiterButtons();
     });
@@ -236,9 +233,6 @@ class Game {
       this.isMyTurn = data.havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.resetClaimUiForNewTurn();
-      if (data.isCheck && this.isMyTurn) {
-        this.highlightKingInCheck();
-      }
     });
 
     this.ws.on('clockUpdate', (data) => {
@@ -567,16 +561,6 @@ class Game {
     // Send the current physical board state with every event so the server can detect
     // game-ending moves (checkmate/stalemate/etc.) without waiting for a clock press.
     this.ws.sendBoardEvent(event, this.board.getBoardState());
-  }
-
-  highlightKingInCheck() {
-    const kingPiece = this.side === 'white' ? 'WHITE_KING' : 'BLACK_KING';
-    for (const [sq, piece] of Object.entries(this.board.getBoardState())) {
-      if (piece === kingPiece) {
-        this.board.showCheck(sq);
-        break;
-      }
-    }
   }
 
   // === Side area management ===
