@@ -38,7 +38,7 @@ The player configures the game on a single screen before clicking **Create**:
 1. **Side selection** -- White or Black.
 2. **Time control:**
    - **Presets:** 3+0, 3+2, 5+0, 5+3, 15+0, 15+10, 30+0 (default: **30+0**).
-   - **Custom:** manual standard time and increment.
+   - **Custom:** manual time and increment. The initial time must be **at least 1 minute** — 0 is rejected on the start screen (the side to move would otherwise flag the instant the opponent joins, before ever moving). The increment may be 0.
 3. **Maximum illegal moves before game loss** -- dropdown with values **1, 2, 3, ..., 10, Unlimited**. Default **2** (FIDE rule).
    - "Unlimited" disables the game-loss escalation; illegal moves still incur the per-move penalty time.
 4. **Restoration mode** -- radio choice for what happens after a position has to be restored following an arbiter intervention:
@@ -454,14 +454,18 @@ The full unwinnability search (`UnwinnableFullAnalyzer`, the deep CUA helpmate s
 ### Resignation
 
 - No confirmation. Resign is final.
-- Arbiter checks winnability via the **fast** `isUnwinnableQuick(opponent)` (microsecond-scale structural analysis): if the opponent cannot checkmate by any series of legal moves -> draw instead of loss. `POSSIBLY_WINNABLE` is treated as winnable.
-- Draw message: _"{Side} resigned, but because {Opponent} has no possible win, the game is a draw."_
+- Adjudicated via `Adjudicator.adjudicateResignationQuick` (FIDE 5.1.2): a loss unless the opponent cannot checkmate by any series of legal moves, in which case it is a draw.
+- **Draw message — personalised per player** (each player sees their own line). With «reason» being _"insufficient material to mate"_ (a material shortage) or _"no potential mate"_ (unwinnable despite sufficient material):
+  - To the player who resigned: _"You resigned, but because your opponent has «reason», the game is a draw."_
+  - To the opponent: _"Your opponent resigned, but because you have «reason», the game is a draw."_
 - Loss message: _"{Side} resigns. {Opponent} wins the game."_
 
 ### Flag fall
 
-- Arbiter checks winnability via `isUnwinnableQuick(opponent)`: if the opponent cannot checkmate -> draw.
-- Draw message: _"{Side}'s time has elapsed, but because {Opponent} has no possible win, the game is a draw."_
+- Adjudicated via `Adjudicator.adjudicateFlagfallQuick` (FIDE 6.9): the same draw exception as resignation.
+- **Draw message — personalised per player**, with «reason» as above:
+  - To the player who flagged: _"You flagged, but because your opponent has «reason», the game is a draw."_
+  - To the opponent: _"Your opponent flagged, but because you have «reason», the game is a draw."_
 - Loss message: _"{Side} loses on time. {Opponent} wins the game."_
 - Final clock update is sent **before** the `gameEnded` message so the LCD shows `0:00`, not `0:01`.
 

@@ -35,6 +35,7 @@
         <label>Minutes: <input type="number" id="customMinutes" value="30" min="1" max="180"></label>
         <label>Increment (sec): <input type="number" id="customIncrement" value="0" min="0" max="60"></label>
       </div>
+      <div id="timeError" style="color:#c0392b;font-size:13px;margin:0 0 8px;"></div>
 
       <label>Number of illegal moves causing game loss:</label>
       <select id="maxIllegalMoves">
@@ -115,6 +116,21 @@
       const fenError = document.getElementById('fenError');
       fenError.textContent = '';
 
+      // Reject a zero (or empty) initial time — the side to move would flag the instant the
+      // opponent joins, before ever moving. The number input's min=1 only guards the spinner,
+      // not manual entry, so enforce it here.
+      const minutes = parseInt(document.getElementById('customMinutes').value, 10);
+      const incrementSec = parseInt(document.getElementById('customIncrement').value, 10);
+      const timeError = document.getElementById('timeError');
+      timeError.textContent = '';
+      if (!Number.isFinite(minutes) || minutes < 1) {
+        timeError.textContent = 'Minimum time is 1 minute.';
+        document.getElementById('customMinutes').focus();
+        return;
+      }
+      const time = minutes * 60000;
+      const inc = (Number.isFinite(incrementSec) && incrementSec > 0 ? incrementSec : 0) * 1000;
+
       if (fen) {
         try {
           const resp = await fetch('/api/validateFen?fen=' + encodeURIComponent(fen), { cache: 'no-store' });
@@ -130,7 +146,7 @@
       }
 
       let url = '/game.html?creator=true&side=' + side
-        + '&time=' + selectedTime + '&inc=' + selectedInc
+        + '&time=' + time + '&inc=' + inc
         + '&maxIllegal=' + encodeURIComponent(maxIllegal)
         + '&autoResumeAfterRestore=' + encodeURIComponent(autoResumeAfterRestore);
       if (fen) {

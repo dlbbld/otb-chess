@@ -26,6 +26,7 @@ import com.dlb.chess.dumbboard.game.GameSession;
 import com.dlb.chess.dumbboard.game.model.DrawClaimResult;
 import com.dlb.chess.dumbboard.game.model.DrawClaimType;
 import com.dlb.chess.dumbboard.game.model.GameResult;
+import com.dlb.chess.dumbboard.game.model.GameResultType;
 import com.dlb.chess.dumbboard.game.model.GameState;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 import com.dlb.chess.dumbboard.server.message.MessageConverter;
@@ -915,6 +916,14 @@ public class GameWebSocketServer extends WebSocketServer {
     // for the personalised checkmate / stalemate arbiter message; other endings ignore it.
     msg.addProperty("mover", room.getSession().getHavingMove().getOppositeSide().name().toLowerCase());
     msg.addProperty("description", result.description());
+    // For a resignation / flag-fall DRAW (the FIDE "opponent cannot win" exception), tag who
+    // resigned/flagged and why, so the client can phrase the message in the second person.
+    if (result.winner() == Side.NONE
+        && (result.type() == GameResultType.RESIGNATION || result.type() == GameResultType.FLAG_FALL)) {
+      msg.addProperty("actor", room.getSession().getDrawExceptionActor().name().toLowerCase());
+      msg.addProperty("drawReason",
+          room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
+    }
     room.sendToBoth(GSON.toJson(msg));
   }
 

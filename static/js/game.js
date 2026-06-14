@@ -429,6 +429,19 @@ class Game {
         this.showArbiterMessage(data.mover === this.side
           ? 'Your last move led to a fivefold repetition.'
           : "Your opponent's last move led to a fivefold repetition.");
+      } else if ((data.resultType === 'RESIGNATION' || data.resultType === 'FLAG_FALL')
+          && data.winner === 'none') {
+        // FIDE draw exception: the actor resigned/flagged but the opponent cannot mate.
+        // Phrase it in the second person for each player.
+        const verb = data.resultType === 'RESIGNATION' ? 'resigned' : 'flagged';
+        const reason = data.drawReason === 'INSUFFICIENT_MATERIAL'
+          ? 'insufficient material to mate'
+          : 'no potential mate';
+        const msg = data.actor === this.side
+          ? `You ${verb}, but because your opponent has ${reason}, the game is a draw.`
+          : `Your opponent ${verb}, but because you have ${reason}, the game is a draw.`;
+        this.showArbiterMessage(msg);
+        document.getElementById('gameResultReason').textContent = msg;
       }
     });
 

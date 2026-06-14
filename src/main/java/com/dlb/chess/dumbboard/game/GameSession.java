@@ -45,6 +45,13 @@ public class GameSession {
   private GameState state;
   private GameResult result;
 
+  // For the personalised resignation / flag-fall DRAW message (FIDE "opponent cannot win"
+  // exception): who resigned or flagged, and whether the opponent's draw is by insufficient
+  // material (vs. unwinnable despite having material). The client uses these to phrase the
+  // message in the second person for each player.
+  private Side drawExceptionActor = Side.NONE;
+  private boolean drawExceptionByInsufficientMaterial;
+
   // Per-turn state
   private ActionSequence currentSequence;
   private BitboardPosition positionBeforeTurn;
@@ -551,6 +558,8 @@ public class GameSession {
     final Side opponent = side.getOppositeSide();
 
     if (Adjudicator.adjudicateResignationQuick(board, side) == AdjudicationResult.DRAW) {
+      drawExceptionActor = side;
+      drawExceptionByInsufficientMaterial = board.isInsufficientMaterial(opponent);
       final GameResult drawResult = new GameResult(GameResultType.RESIGNATION, Side.NONE,
           sideName(side) + " resigned, but because " + drawReason(opponent) + ", the game is a draw.");
       endGame(drawResult);
@@ -587,6 +596,8 @@ public class GameSession {
 
         final GameResult flagResult;
         if (Adjudicator.adjudicateFlagfallQuick(board, side) == AdjudicationResult.DRAW) {
+          drawExceptionActor = side;
+          drawExceptionByInsufficientMaterial = board.isInsufficientMaterial(opponent);
           flagResult = new GameResult(GameResultType.FLAG_FALL, Side.NONE,
               sideName(side) + " flagged, but because " + drawReason(opponent) + ", the game is a draw.");
         } else {
@@ -815,6 +826,16 @@ public class GameSession {
 
   public synchronized GameResult getResult() {
     return result;
+  }
+
+  /** The side that resigned or flagged in a draw-by-exception ending (for the personalised message). */
+  public synchronized Side getDrawExceptionActor() {
+    return drawExceptionActor;
+  }
+
+  /** Whether the draw-by-exception is by insufficient material (vs. unwinnable despite material). */
+  public synchronized boolean isDrawExceptionByInsufficientMaterial() {
+    return drawExceptionByInsufficientMaterial;
   }
 
   public synchronized Side getHavingMove() {

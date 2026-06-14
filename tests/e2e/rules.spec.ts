@@ -119,7 +119,13 @@ test('resigning when the opponent has only a lone king is a draw (insufficient m
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#gameResultReason')).toContainText('insufficient material to mate');
+  // Personalised per player: the resigner reads "you"; the opponent reads "your opponent".
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'You resigned, but because your opponent has insufficient material to mate',
+  );
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'Your opponent resigned, but because you have insufficient material to mate',
+  );
 });
 
 test('resigning in a blocked position with material is a draw (no potential mate)', async ({ browser }) => {
@@ -131,7 +137,30 @@ test('resigning in a blocked position with material is a draw (no potential mate
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#gameResultReason')).toContainText('no potential mate');
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'You resigned, but because your opponent has no potential mate',
+  );
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'Your opponent resigned, but because you have no potential mate',
+  );
+});
+
+test('a resignation-draw is personalised symmetrically when Black resigns', async ({ browser }) => {
+  // Black: Rd5, Kc4. White: lone Ke6. Black resigns; White cannot mate -> draw. (Black is the creator
+  // because the FEN is black-to-move.)
+  game = await startTwoPlayerGame(browser, { fen: '8/8/4K3/3r4/2k5/8/8/8 b - - 0 50' });
+  const { white, black } = game;
+
+  await resign(black);
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'You resigned, but because your opponent has insufficient material to mate',
+  );
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'Your opponent resigned, but because you have insufficient material to mate',
+  );
 });
 
 test('an illegal move is rejected (arbiter flags an error)', async ({ browser }) => {

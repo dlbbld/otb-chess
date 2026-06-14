@@ -51,3 +51,13 @@ test('a valid starting FEN proceeds to the board', async ({ page }) => {
   // Navigation happened and the game was created (the share code appears on the board page).
   await expect(page.locator('.game-code-value')).toBeVisible({ timeout: 15_000 });
 });
+
+test('a zero-minute initial time is rejected on the start screen', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#customMinutes').fill('0');
+  await page.locator('#createGameBtn').click();
+
+  // The game is not started — the player stays on the lobby with the reason.
+  await expect(page.locator('#timeError')).toContainText('Minimum time');
+  await expect(page.locator('#createGameBtn')).toBeVisible();
+});

@@ -95,7 +95,13 @@ test('flag fall is a draw when the opponent has only a lone king (insufficient m
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#gameResultReason')).toContainText('insufficient material to mate');
+  // Personalised per player: the flagger reads "you"; the opponent reads "your opponent".
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'You flagged, but because your opponent has insufficient material to mate',
+  );
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'Your opponent flagged, but because you have insufficient material to mate',
+  );
 });
 
 test('flag fall is a draw in a blocked position with material (no potential mate)', async ({ browser }) => {
@@ -109,7 +115,12 @@ test('flag fall is a draw in a blocked position with material (no potential mate
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#gameResultReason')).toContainText('no potential mate');
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'You flagged, but because your opponent has no potential mate',
+  );
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'Your opponent flagged, but because you have no potential mate',
+  );
 });
 
 test('pressing the opponent clock does not commit the move', async ({ browser }) => {
