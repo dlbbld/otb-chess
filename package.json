@@ -1,8 +1,8 @@
 {
-  "name": "dumb-chessboard-e2e",
+  "name": "otb-chess-e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "End-to-end tests (Playwright) for the Dumb Chessboard web app.",
+  "description": "End-to-end tests (Playwright) for the OTB Chess web app.",
   "scripts": {
     "build:server": "mvn -q -DskipTests package",
     "e2e": "npm run build:server && playwright test",

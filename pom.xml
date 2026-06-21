@@ -4,8 +4,8 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>com.dlb.chess.dumbboard</groupId>
-	<artifactId>dumb-chessboard</artifactId>
+	<groupId>io.github.dlbbld</groupId>
+	<artifactId>otb-chess</artifactId>
 	<version>0.1.0</version>
 
 	<properties>
@@ -49,13 +49,13 @@
 	</dependencies>
 
 	<build>
-		<!-- Stable artifact name so tooling can reference target/dumb-chessboard.jar regardless
+		<!-- Stable artifact name so tooling can reference target/otb-chess.jar regardless
 		     of version. -->
-		<finalName>dumb-chessboard</finalName>
+		<finalName>otb-chess</finalName>
 		<plugins>
 			<!-- Runnable jar: Main-Class plus a classpath pointing at the dependency jars copied
 			     into target/lib (see maven-dependency-plugin below). Lets
-			     `java -jar target/dumb-chessboard.jar` launch the server directly, which the
+			     `java -jar target/otb-chess.jar` launch the server directly, which the
 			     Playwright E2E webServer uses so the runner owns the JVM process (clean shutdown,
 			     no lingering server). -->
 			<plugin>
@@ -65,7 +65,7 @@
 				<configuration>
 					<archive>
 						<manifest>
-							<mainClass>com.dlb.chess.dumbboard.server.DumbChessboardServer</mainClass>
+							<mainClass>io.github.dlbbld.otbchess.server.OtbChessServer</mainClass>
 							<addClasspath>true</addClasspath>
 							<classpathPrefix>lib/</classpathPrefix>
 						</manifest>

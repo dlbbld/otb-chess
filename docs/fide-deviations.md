@@ -1,6 +1,6 @@
 # FIDE Deviations and Arbiter Policy Encodings
 
-This document tracks where the dumb-chessboard's behaviour intentionally departs from the FIDE Laws of Chess (2023 edition), and where it encodes specific arbiter judgments that FIDE leaves to the human arbiter.
+This document tracks where the otb-chess's behaviour intentionally departs from the FIDE Laws of Chess (2023 edition), and where it encodes specific arbiter judgments that FIDE leaves to the human arbiter.
 
 It complements [`SPECIFICATION.md`](../SPECIFICATION.md), which describes what the system does. This file describes how that behaviour relates to FIDE — for the audience of advanced players, arbiters, and programmers who care about the exact gap.
 
@@ -94,7 +94,7 @@ The trigger is **"touching a piece with the intention of moving or capturing it.
 | **Correct time** (after opponent's own move, before clock-press) | First TOUCH (CLICK or DRAG_*) on any piece | The recipient was waiting on a clean board state. Any piece interaction marks the resumption of their own move-formation, which FIDE treats as rejection. |
 | **Wrong time** (anytime else, e.g. mid-thinking on the recipient's own move) | Move MADE — i.e. a legal release per FIDE 4.7 | The recipient was already mid-deliberation when the offer arrived; touching pieces while deciding is normal play, not rejection. Only completing a move actually constitutes a response. |
 
-**Where in code**: [`GameWebSocketServer.java`](../src/main/java/com/dlb/chess/dumbboard/server/GameWebSocketServer.java) (search "Correct-time offer" / "Wrong-time offer").
+**Where in code**: [`GameWebSocketServer.java`](../src/main/java/io/github/dlbbld/otbchess/server/GameWebSocketServer.java) (search "Correct-time offer" / "Wrong-time offer").
 
 **Rationale**: The asymmetry encodes "intention to move" reasonably for the two contexts. A correct-time offer interrupts a moment of stillness; the recipient's first touch is intentional and committal. A wrong-time offer arrives during active play; the recipient may touch many pieces while thinking before committing, and only a *completed* move signals decision.
 

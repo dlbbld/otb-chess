@@ -22,7 +22,7 @@ Cross-reference: SPECIFICATION.md's **Core Principle #9 — "The player has stan
 
 ## P-002 — Bullet chess is a non-goal
 
-**Rule**: The dumb-chessboard's clock and UX are designed for OTB-style time controls — classical, rapid, standard blitz (≥ 3 minutes per side). Bullet (e.g. 1+0) is **not a target use case**.
+**Rule**: The otb-chess's clock and UX are designed for OTB-style time controls — classical, rapid, standard blitz (≥ 3 minutes per side). Bullet (e.g. 1+0) is **not a target use case**.
 
 **Why**: At bullet speeds, chess becomes a reaction-speed game more than a chess game. The deliberate UX (separate buttons for claim variants, no confirmation dialogs, accurate touch-move handling, j'adoube path under [D-004](fide-deviations.md#d-004)) is the wrong shape for that. Players who want bullet should reach for tools built for it.
 

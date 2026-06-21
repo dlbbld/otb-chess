@@ -1,6 +1,6 @@
 # End-to-end tests (Playwright)
 
-Two-player browser tests for the Dumb Chessboard web app. Each test opens **two isolated
+Two-player browser tests for the OTB Chess web app. Each test opens **two isolated
 browser contexts** (white + black = two real sessions) against one shared Java server.
 
 ## Prerequisites

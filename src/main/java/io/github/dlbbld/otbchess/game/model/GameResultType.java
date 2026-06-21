@@ -1,0 +1,15 @@
+package io.github.dlbbld.otbchess.game.model;
+
+public enum GameResultType {
+  CHECKMATE,
+  STALEMATE,
+  DEAD_POSITION,
+  FIVEFOLD_REPETITION,
+  SEVENTY_FIVE_MOVE,
+  THREEFOLD_CLAIM,
+  FIFTY_MOVE_CLAIM,
+  DRAW_AGREEMENT,
+  RESIGNATION,
+  FLAG_FALL,
+  ILLEGAL_MOVE_GAME_LOST
+}

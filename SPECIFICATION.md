@@ -1,8 +1,8 @@
-# Dumb Chessboard -- Specification
+# OTB Chess -- Specification
 
 ## Context
 
-The chess library (Ashlar Chess) has two validation pipelines: SAN (for PGN import) and MoveSpecification (for programmatic moves). The "dumb chessboard" is a third pipeline -- an educational electronic chessboard that simulates physical board play. The player must execute all actions manually. The board acts as a silent observer during play and evaluates at clock press.
+The chess library (Ashlar Chess) has two validation pipelines: SAN (for PGN import) and MoveSpecification (for programmatic moves). **OTB Chess** is a third pipeline -- an educational electronic chessboard that simulates over-the-board play. The player must execute all actions manually. The board acts as a silent observer during play and evaluates at clock press.
 
 ### Companion docs
 
@@ -287,7 +287,7 @@ Touching is one step short of committing. **Releasing a piece on a legal target 
 
 ## Castling
 
-### Mechanics on the dumb board
+### Mechanics on the board
 
 Castling is performed physically as **two consecutive piece movements**:
 
@@ -449,7 +449,7 @@ Symmetric for both colours. The server tags the `gameEnded` message with the `mo
 
 Threefold repetition and the 50-move rule are deliberately **not** in this list -- under FIDE 9.2 / 9.3 they are *claimable* by a player, not automatic. They appear under *Draw Claims* below. Fivefold and 75-move are the automatic counterparts (FIDE 9.6).
 
-The full unwinnability search (`UnwinnableFullAnalyzer`, the deep CUA helpmate search) is **not** used in the in-game pipeline. Positions that are dead by exhaustive search but not by insufficient material continue, and the players resolve them via stalemate / fivefold / 75-move / claim -- consistent with the dumb-board's "evaluate at clock press" model.
+The full unwinnability search (`UnwinnableFullAnalyzer`, the deep CUA helpmate search) is **not** used in the in-game pipeline. Positions that are dead by exhaustive search but not by insufficient material continue, and the players resolve them via stalemate / fivefold / 75-move / claim -- consistent with the board's "evaluate at clock press" model.
 
 ### Resignation
 
@@ -727,7 +727,7 @@ Messages without a `style` field are interpreted by the client at default (info)
 
 ## Architecture
 
-- **Separate Maven project** (`dumb-chessboard`) depending on **ashlar-chess 18.1.0**.
+- **Separate Maven project** (`otb-chess`) depending on **ashlar-chess 18.1.0**.
 - **All business logic in Java.** Frontend is thin presentation only.
 - **Java built-in `HttpServer`** on port **8080** for static files.
 - **Java-WebSocket library** on port **8081** for two-player real-time communication.
