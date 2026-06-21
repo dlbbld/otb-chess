@@ -66,6 +66,12 @@ public class TouchMoveEvaluator {
       return specificCapture;
     }
 
+    // Tracks whether the player has already touched one or more of their own pieces that had no
+    // legal moves. When the binding own-piece obligation is finally found, this flag distinguishes
+    // "the first piece you touched" (false) from "the first touched piece that can move" (true),
+    // which selects a more specific violation message.
+    boolean unmovableOwnTouchSeen = false;
+
     for (int i = 0; i < events.size(); i++) {
       if (CastlingAttemptDetector.isFailedAttemptWithNoLegalKingMove(events, i, sideToMove, legalMoves)) {
         i++;
@@ -74,11 +80,36 @@ public class TouchMoveEvaluator {
       final BoardEvent event = events.get(i);
       final Optional<TouchMoveObligation> obligation = evaluateEvent(event, sideToMove, legalMoves);
       if (obligation.isPresent()) {
+        final TouchMoveObligation found = obligation.get();
+        if (found.type() == TouchMoveType.OWN_PIECE && unmovableOwnTouchSeen) {
+          return Optional.of(found.asPrecededByUnmovableOwnTouch());
+        }
         return obligation;
+      }
+      if (isOwnPieceTouchWithoutLegalMoves(event, sideToMove, legalMoves)) {
+        unmovableOwnTouchSeen = true;
       }
     }
 
     return Optional.empty();
+  }
+
+  /**
+   * Whether the event is a touch of one of the side-to-move's own pieces that has no legal moves from the touched
+   * square. Such a touch creates no obligation but means a later binding own-piece touch is not the first piece the
+   * player touched.
+   */
+  private static boolean isOwnPieceTouchWithoutLegalMoves(BoardEvent event, Side sideToMove,
+      Set<LegalMove> legalMoves) {
+    final Piece piece = event.piece();
+    if (piece == Piece.NONE || piece.getSide() != sideToMove) {
+      return false;
+    }
+    final Square touchedSquare = determineTouchedSquare(event);
+    if (touchedSquare == Square.NONE) {
+      return false;
+    }
+    return !hasLegalMovesFromSquare(legalMoves, touchedSquare);
   }
 
   /**

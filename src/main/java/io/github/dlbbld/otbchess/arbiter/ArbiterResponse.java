@@ -85,8 +85,16 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
     final List<Object> args;
     switch (obligation.type()) {
       case OWN_PIECE -> {
-        playerKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_PLAYER;
-        opponentKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_OPPONENT;
+        // When the binding piece was reached only after touching own pieces with no legal moves, the
+        // word "first" would be misleading, so a variant message names it as the first touched piece
+        // that can move.
+        if (obligation.precededByUnmovableOwnTouch()) {
+          playerKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_PRECEDED_PLAYER;
+          opponentKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_PRECEDED_OPPONENT;
+        } else {
+          playerKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_PLAYER;
+          opponentKey = MessageKey.ARBITER_TOUCH_MOVE_OWN_OPPONENT;
+        }
         args = List.of(formatPieceName(obligation.piece()), obligation.square().getName());
       }
       case OPPONENT_PIECE -> {

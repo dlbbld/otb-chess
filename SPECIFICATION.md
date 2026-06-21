@@ -224,6 +224,7 @@ Touch-move is evaluated by scanning the action sequence at clock press. There ar
 - The **first** own piece touched (clicked or grabbed) that has at least one legal move establishes a "must move that piece" obligation.
 - If the touched piece has no legal moves, no obligation is established -- the scan continues until a touched own piece with legal moves is found, or no further touches exist.
 - Once established, the own-piece obligation persists for the rest of the turn (subsequent own-piece touches do not override it).
+- **Violation message variant:** if the binding piece was reached only after the player touched one or more of their **own pieces that had no legal moves**, the violation message no longer calls it the "first touched piece" (which would be misleading -- those earlier pieces were touched first). Instead it names it as the **first touched piece that can move**. This is tracked by the `precededByUnmovableOwnTouch` flag on the obligation and selects the `arbiter.touch_move.own.preceded.*` messages instead of `arbiter.touch_move.own.*`. Earlier touches of *opponent* pieces (that cannot be captured) do not trigger the variant.
 
 ### Opponent-piece obligation
 
