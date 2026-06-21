@@ -312,13 +312,6 @@ class ChessBoard {
   clearHighlights() {
     for (const sq of Object.values(this.squares)) {
       sq.element.classList.remove('highlight');
-      sq.element.classList.remove('check');
-    }
-  }
-
-  showCheck(squareName) {
-    if (this.squares[squareName]) {
-      this.squares[squareName].element.classList.add('check');
     }
   }
 

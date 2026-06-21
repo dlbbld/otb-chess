@@ -649,7 +649,29 @@ class TestGameSession {
 
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterD4);
     assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, response.type());
-    assertTrue(response.message().contains("specified move was not executed"));
+    assertTrue(response.message().contains("was not executed"));
+    // The message now names the move the player still owes.
+    assertTrue(response.message().contains("e4"),
+        "Message should name the specified move: " + response.message());
+  }
+
+  @Test
+  void testClaimWithMoveAcceptsLenientSanAndNamesTheMove() {
+    // Strict SAN rejects the spurious "+" (Rd1 is not check); the lenient parser forgives it.
+    // The accepted-claim message names the move the player entered.
+    final Board startingBoard = new Board("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
+    final GameSession session = new GameSession(TEST_TIME,
+        com.dlb.chess.dumbboard.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
+        true, startingBoard);
+    session.startGame();
+
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Rd1+");
+
+    assertTrue(result.accepted(), "Lenient SAN should forgive the spurious check mark: " + result.message());
+    assertFalse(result.invalidMove());
+    assertTrue(result.message().contains("Rd1+"),
+        "Claimant message should name the move: " + result.message());
+    assertEquals(GameState.ENDED, session.getState());
   }
 
   /** When no move from the current position can possibly create a threefold repetition,

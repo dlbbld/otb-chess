@@ -139,6 +139,10 @@ class Game {
       this.setupExtraQueens();
       this.showArbiterMessage('Game created. Waiting for opponent...');
       this.clearArbiterButtons();
+      // While no opponent has joined, the creator can abort the challenge (like Lichess),
+      // not resign. The two swap once the game starts.
+      document.getElementById('abortBtn').style.display = '';
+      document.getElementById('resignBtn').style.display = 'none';
       const codeContainer = document.createElement('div');
       codeContainer.className = 'game-code-display';
       const codeLabel = document.createElement('span');
@@ -175,6 +179,9 @@ class Game {
 
     this.ws.on('gameStarted', (data) => {
       this.gameActive = true;
+      // The opponent has joined: abort is no longer available, resign takes its place.
+      document.getElementById('abortBtn').style.display = 'none';
+      document.getElementById('resignBtn').style.display = '';
       // Use the server-supplied side to move (necessary for custom-FEN games where
       // Black may be to move first); fall back to White for the normal case.
       const havingMove = data.havingMove || 'white';
@@ -211,9 +218,6 @@ class Game {
         this.board.setEnabled(this.isMyTurn);
         this.resetClaimUiForNewTurn();
       }
-      if (data.isCheck && this.isMyTurn) {
-        this.highlightKingInCheck();
-      }
       this.showArbiterMessage('Your turn.');
       this.clearArbiterButtons();
     });
@@ -236,9 +240,6 @@ class Game {
       this.isMyTurn = data.havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.resetClaimUiForNewTurn();
-      if (data.isCheck && this.isMyTurn) {
-        this.highlightKingInCheck();
-      }
     });
 
     this.ws.on('clockUpdate', (data) => {
@@ -260,7 +261,7 @@ class Game {
     this.ws.on('restoreRequired', (data) => {
       this.showArbiterMessage(data.message, data.style || 'info');
       this.clearArbiterButtons();
-      this.showArbiterButton('Do this for me', () => {
+      this.showArbiterButton('Revert', () => {
         this.ws.send({ type: 'restorePosition' });
       });
     });
@@ -364,7 +365,8 @@ class Game {
 
     this.ws.on('drawRejected', (data) => {
       document.getElementById('drawOfferPanel').style.display = 'none';
-      this.showArbiterMessage('Draw offer rejected.');
+      // Personalised by the server ("You rejected..." / "Your opponent rejected...").
+      this.showArbiterMessage(data.message);
     });
 
     this.ws.on('drawClaimResult', (data) => {
@@ -408,6 +410,51 @@ class Game {
       document.getElementById('gameResultScore').textContent = scoreText;
       document.getElementById('gameResultReason').textContent = data.description;
       document.getElementById('gameResultPanel').style.display = 'block';
+
+      // Personalise the arbiter message for moves that immediately end the game instead of
+      // leaving the generic "Move accepted" / "Your turn" from that move. The mover (data.mover)
+      // is the side that played it; the other player is the recipient.
+      if (data.resultType === 'CHECKMATE') {
+        this.showArbiterMessage(data.mover === this.side
+          ? 'Your last move delivered checkmate.'
+          : 'You have been checkmated.');
+      } else if (data.resultType === 'STALEMATE') {
+        this.showArbiterMessage(data.mover === this.side
+          ? 'Your last move resulted in stalemate.'
+          : "Your opponent's last move resulted in stalemate.");
+      } else if (data.resultType === 'SEVENTY_FIVE_MOVE') {
+        this.showArbiterMessage(data.mover === this.side
+          ? 'Your last move led to 75 moves each without a capture or pawn move.'
+          : "Your opponent's last move led to 75 moves each without a capture or pawn move.");
+      } else if (data.resultType === 'FIVEFOLD_REPETITION') {
+        this.showArbiterMessage(data.mover === this.side
+          ? 'Your last move led to a fivefold repetition.'
+          : "Your opponent's last move led to a fivefold repetition.");
+      } else if ((data.resultType === 'RESIGNATION' || data.resultType === 'FLAG_FALL')
+          && data.winner === 'none') {
+        // FIDE draw exception: the actor resigned/flagged but the opponent cannot mate.
+        // Phrase it in the second person for each player.
+        const verb = data.resultType === 'RESIGNATION' ? 'resigned' : 'flagged';
+        const reason = data.drawReason === 'INSUFFICIENT_MATERIAL'
+          ? 'insufficient material to mate'
+          : 'no potential mate';
+        const msg = data.actor === this.side
+          ? `You ${verb}, but because your opponent has ${reason}, the game is a draw.`
+          : `Your opponent ${verb}, but because you have ${reason}, the game is a draw.`;
+        this.showArbiterMessage(msg);
+        document.getElementById('gameResultReason').textContent = msg;
+      } else if (data.resultType === 'DRAW_AGREEMENT' && data.winner === 'none') {
+        // Who accepted goes on top (arbiter message); the result panel keeps the canonical
+        // "The game is drawn by agreement." after the ½-½ score.
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You accepted the draw offer.'
+          : 'Your opponent accepted the draw offer.');
+      }
+    });
+
+    this.ws.on('gameAborted', () => {
+      // Challenge cancelled before it started — back to the lobby to create a new one.
+      window.location.href = '/';
     });
 
     this.ws.on('opponentDisconnected', (data) => {
@@ -480,6 +527,11 @@ class Game {
     document.getElementById('resignBtn').addEventListener('click', () => {
       if (!this.gameActive) return;
       this.ws.sendResign();
+    });
+
+    document.getElementById('abortBtn').addEventListener('click', () => {
+      // Only meaningful before the opponent joins; the button is hidden otherwise.
+      this.ws.sendAbort();
     });
 
     document.getElementById('acceptDrawBtn').addEventListener('click', () => {
@@ -567,16 +619,6 @@ class Game {
     // Send the current physical board state with every event so the server can detect
     // game-ending moves (checkmate/stalemate/etc.) without waiting for a clock press.
     this.ws.sendBoardEvent(event, this.board.getBoardState());
-  }
-
-  highlightKingInCheck() {
-    const kingPiece = this.side === 'white' ? 'WHITE_KING' : 'BLACK_KING';
-    for (const [sq, piece] of Object.entries(this.board.getBoardState())) {
-      if (piece === kingPiece) {
-        this.board.showCheck(sq);
-        break;
-      }
-    }
   }
 
   // === Side area management ===

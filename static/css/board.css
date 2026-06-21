@@ -31,10 +31,6 @@
   box-shadow: inset 0 0 0 3px rgba(255, 255, 0, 0.6);
 }
 
-.square.check {
-  box-shadow: inset 0 0 0 3px rgba(255, 0, 0, 0.7);
-}
-
 .square.opponent-touch {
   box-shadow: inset 0 0 0 3px rgba(100, 149, 237, 0.7);
 }

@@ -149,9 +149,9 @@ export async function claimFiftyMoveWithMove(page: Page, san: string): Promise<v
   await page.locator('#submitClaimMoveBtn').click();
 }
 
-/** Clicks the "Do this for me" button shown to the offending player after an intervention. */
+/** Clicks the "Revert" button shown to the offending player after an intervention. */
 export async function clickRestore(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Do this for me' }).click();
+  await page.getByRole('button', { name: 'Revert' }).click();
 }
 
 /** Clicks the "Ready to continue" button (shown to both players after a restore when auto-resume is off). */

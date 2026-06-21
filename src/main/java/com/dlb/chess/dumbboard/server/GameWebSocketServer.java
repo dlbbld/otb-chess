@@ -26,6 +26,7 @@ import com.dlb.chess.dumbboard.game.GameSession;
 import com.dlb.chess.dumbboard.game.model.DrawClaimResult;
 import com.dlb.chess.dumbboard.game.model.DrawClaimType;
 import com.dlb.chess.dumbboard.game.model.GameResult;
+import com.dlb.chess.dumbboard.game.model.GameResultType;
 import com.dlb.chess.dumbboard.game.model.GameState;
 import com.dlb.chess.dumbboard.game.model.TimeControl;
 import com.dlb.chess.dumbboard.server.message.MessageConverter;
@@ -94,6 +95,7 @@ public class GameWebSocketServer extends WebSocketServer {
         case "rejectDraw" -> handleRejectDraw(conn);
         case "claimDraw" -> handleClaimDraw(conn, json);
         case "resign" -> handleResign(conn);
+        case "abort" -> handleAbort(conn);
         case "requestPgn" -> handleRequestPgn(conn);
         case "restorePosition" -> handleRestorePosition(conn);
         case "readyToContinue" -> handleReadyToContinue(conn);
@@ -400,6 +402,12 @@ public class GameWebSocketServer extends WebSocketServer {
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+    } else if (response.type() == ArbiterResponseType.INCOMPLETE_MOVE
+        && side == room.getSession().getHavingMove()
+        && room.getSession().getMustExecuteMove() != null) {
+      // A rejected claim's specified move was not carried out: offer a Revert to the start of the
+      // turn. The move is still owed afterwards, so the player reverts and then plays it.
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "info");
     }
 
     checkGameEnded(room);
@@ -555,10 +563,16 @@ public class GameWebSocketServer extends WebSocketServer {
     final Side side = room.getSide(conn);
     room.getSession().rejectDraw(side);
 
-    final JsonObject msg = new JsonObject();
-    msg.addProperty("type", "drawRejected");
-    msg.addProperty("message", "Draw offer rejected.");
-    room.sendToBoth(GSON.toJson(msg));
+    // Personalised per player so it is unambiguous who rejected.
+    final JsonObject toRejecter = new JsonObject();
+    toRejecter.addProperty("type", "drawRejected");
+    toRejecter.addProperty("message", "You rejected the draw offer.");
+    room.sendToSide(side, GSON.toJson(toRejecter));
+
+    final JsonObject toOfferer = new JsonObject();
+    toOfferer.addProperty("type", "drawRejected");
+    toOfferer.addProperty("message", "Your opponent rejected the draw offer.");
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(toOfferer));
   }
 
   private void handleClaimDraw(WebSocket conn, JsonObject json) {
@@ -612,6 +626,33 @@ public class GameWebSocketServer extends WebSocketServer {
     final Side side = room.getSide(conn);
     final GameResult result = room.getSession().resign(side);
     sendGameEnded(room, result);
+  }
+
+  /**
+   * Aborts a game that has not started yet (no opponent has joined). Like cancelling a Lichess
+   * challenge: the creator can throw the game away and start a new one while still alone in the
+   * room. Once the opponent has joined the game can only be ended by resignation / play, so an
+   * abort attempt then is rejected. Colour-agnostic, so it works for a Black creator too.
+   */
+  private void handleAbort(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null) {
+      return;
+    }
+    if (room.isFull() || room.getSession().getState() != GameState.WAITING_FOR_PLAYERS) {
+      sendError(conn, "The game cannot be aborted after it has started.");
+      return;
+    }
+
+    room.stopClockTicker();
+    gameRooms.remove(room.getGameId());
+    playerGameMap.remove(conn);
+
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "gameAborted");
+    msg.addProperty("message", "Game aborted.");
+    conn.send(GSON.toJson(msg));
+    System.out.println("Game aborted: " + room.getGameId());
   }
 
   private void handleRequestPgn(WebSocket conn) {
@@ -830,14 +871,12 @@ public class GameWebSocketServer extends WebSocketServer {
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       final var position = room.getSession().getBoard().getBitboardPosition();
       final var havingMove = room.getSession().getHavingMove();
-      final var isCheck = room.getSession().isCheck();
 
       final JsonObject opponentMsg = new JsonObject();
       opponentMsg.addProperty("type", "opponentMoved");
       opponentMsg.addProperty("message", "Opponent completed a move.");
       opponentMsg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
       opponentMsg.addProperty("havingMove", havingMove.name().toLowerCase());
-      opponentMsg.addProperty("isCheck", isCheck);
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
     }
   }
@@ -869,7 +908,6 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("type", "boardUpdate");
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
     msg.addProperty("havingMove", havingMove.name().toLowerCase());
-    msg.addProperty("isCheck", room.getSession().isCheck());
     room.sendToBoth(GSON.toJson(msg));
   }
 
@@ -880,7 +918,24 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("type", "gameEnded");
     msg.addProperty("resultType", result.type().name());
     msg.addProperty("winner", result.winner().name().toLowerCase());
+    // The side that just moved (the opposite of who is now to move). The client uses this only
+    // for the personalised checkmate / stalemate arbiter message; other endings ignore it.
+    msg.addProperty("mover", room.getSession().getHavingMove().getOppositeSide().name().toLowerCase());
     msg.addProperty("description", result.description());
+    // For draws by an explicit player action (resignation, flag-fall under the FIDE "opponent
+    // cannot win" exception, or accepting a draw offer), tag who acted so the client can phrase
+    // the message in the second person. Resignation / flag-fall additionally carry the draw reason.
+    if (result.winner() == Side.NONE
+        && (result.type() == GameResultType.RESIGNATION
+            || result.type() == GameResultType.FLAG_FALL
+            || result.type() == GameResultType.DRAW_AGREEMENT)) {
+      msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());
+    }
+    if (result.winner() == Side.NONE
+        && (result.type() == GameResultType.RESIGNATION || result.type() == GameResultType.FLAG_FALL)) {
+      msg.addProperty("drawReason",
+          room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
+    }
     room.sendToBoth(GSON.toJson(msg));
   }
 

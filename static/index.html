@@ -35,6 +35,7 @@
         <label>Minutes: <input type="number" id="customMinutes" value="30" min="1" max="180"></label>
         <label>Increment (sec): <input type="number" id="customIncrement" value="0" min="0" max="60"></label>
       </div>
+      <div id="timeError" style="color:#c0392b;font-size:13px;margin:0 0 8px;"></div>
 
       <label>Number of illegal moves causing game loss:</label>
       <select id="maxIllegalMoves">
@@ -64,6 +65,7 @@
         the player creating the game is given that side automatically.
       </p>
 
+      <div id="fenError" style="color:#c0392b;font-size:13px;margin:0 0 10px;"></div>
       <button id="createGameBtn" class="primary-btn">Create Game</button>
     </div>
 
@@ -102,15 +104,49 @@
       document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
     });
 
-    // Create game — just redirect to game.html with params, game.js handles the WebSocket
-    document.getElementById('createGameBtn').addEventListener('click', () => {
+    // Create game — validate any supplied FEN first, then redirect to game.html (game.js handles
+    // the WebSocket). An invalid FEN keeps the player on the start screen with the reason rather
+    // than sending them to a board they cannot leave.
+    document.getElementById('createGameBtn').addEventListener('click', async () => {
       const side = document.querySelector('input[name="side"]:checked').value;
       const maxIllegal = document.getElementById('maxIllegalMoves').value;
       const autoResumeAfterRestore =
         document.querySelector('input[name="autoResumeAfterRestore"]:checked').value;
       const fen = document.getElementById('startingFen').value.trim();
+      const fenError = document.getElementById('fenError');
+      fenError.textContent = '';
+
+      // Reject a zero (or empty) initial time — the side to move would flag the instant the
+      // opponent joins, before ever moving. The number input's min=1 only guards the spinner,
+      // not manual entry, so enforce it here.
+      const minutes = parseInt(document.getElementById('customMinutes').value, 10);
+      const incrementSec = parseInt(document.getElementById('customIncrement').value, 10);
+      const timeError = document.getElementById('timeError');
+      timeError.textContent = '';
+      if (!Number.isFinite(minutes) || minutes < 1) {
+        timeError.textContent = 'Minimum time is 1 minute.';
+        document.getElementById('customMinutes').focus();
+        return;
+      }
+      const time = minutes * 60000;
+      const inc = (Number.isFinite(incrementSec) && incrementSec > 0 ? incrementSec : 0) * 1000;
+
+      if (fen) {
+        try {
+          const resp = await fetch('/api/validateFen?fen=' + encodeURIComponent(fen), { cache: 'no-store' });
+          const result = await resp.json();
+          if (!result.valid) {
+            fenError.textContent = result.message || 'Invalid FEN.';
+            return; // stay on the start screen
+          }
+        } catch (e) {
+          fenError.textContent = 'Could not validate the FEN. Please try again.';
+          return;
+        }
+      }
+
       let url = '/game.html?creator=true&side=' + side
-        + '&time=' + selectedTime + '&inc=' + selectedInc
+        + '&time=' + time + '&inc=' + inc
         + '&maxIllegal=' + encodeURIComponent(maxIllegal)
         + '&autoResumeAfterRestore=' + encodeURIComponent(autoResumeAfterRestore);
       if (fen) {

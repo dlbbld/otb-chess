@@ -4,8 +4,8 @@ import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
 import com.dlb.chess.dumbboard.game.model.DrawClaimResult;
 import com.dlb.chess.dumbboard.game.model.DrawClaimType;
-import io.github.dlbbld.ashlarchess.san.SanValidationException;
-import io.github.dlbbld.ashlarchess.san.StrictSanParser;
+import io.github.dlbbld.ashlarchess.san.LenientSanParser;
+import io.github.dlbbld.ashlarchess.san.LenientSanParserValidationException;
 
 /**
  * Handles draw claims: threefold repetition and 50-move rule.
@@ -42,8 +42,8 @@ public class DrawClaimManager {
   private DrawClaimResult claimThreefoldWithMove(Board board, String san) {
     final MoveSpecification moveSpec;
     try {
-      moveSpec = StrictSanParser.parseText(san, board).moveSpecification();
-    } catch (final SanValidationException e) {
+      moveSpec = LenientSanParser.parseText(san, board).moveSpecification();
+    } catch (final LenientSanParserValidationException e) {
       return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
           + " Please enter a legal move for the claim.");
     }
@@ -62,7 +62,7 @@ public class DrawClaimManager {
 
     if (isThreefold) {
       return DrawClaimResult.accepted(
-          "Your claim was accepted.",
+          "Your claim was accepted after your move " + san + ".",
           "Your opponent requested a draw for threefold repetition after the move " + san + ".",
           THREEFOLD_ENDED);
     }
@@ -90,8 +90,8 @@ public class DrawClaimManager {
   private DrawClaimResult claimFiftyMoveWithMove(Board board, String san) {
     final MoveSpecification moveSpec;
     try {
-      moveSpec = StrictSanParser.parseText(san, board).moveSpecification();
-    } catch (final SanValidationException e) {
+      moveSpec = LenientSanParser.parseText(san, board).moveSpecification();
+    } catch (final LenientSanParserValidationException e) {
       return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
           + " Please enter a legal move for the claim.");
     }
@@ -110,7 +110,7 @@ public class DrawClaimManager {
 
     if (isFiftyMove) {
       return DrawClaimResult.accepted(
-          "Your claim was accepted.",
+          "Your claim was accepted after your move " + san + ".",
           "Your opponent requested a draw by the 50-move rule after the move " + san + ".",
           FIFTY_MOVE_ENDED);
     }

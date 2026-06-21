@@ -28,6 +28,8 @@ test('checkmate ends the game 1-0', async ({ browser }) => {
 
   await expectGameResult(white, '1-0');
   await expectGameResult(black, '1-0');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your last move delivered checkmate');
+  await expect(black.locator('#arbiterMessage')).toContainText('You have been checkmated');
 });
 
 test('stalemate ends the game as a draw', async ({ browser }) => {
@@ -40,6 +42,36 @@ test('stalemate ends the game as a draw', async ({ browser }) => {
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your last move resulted in stalemate');
+  await expect(black.locator('#arbiterMessage')).toContainText("opponent's last move resulted in stalemate");
+});
+
+test('checkmate delivered by black is announced symmetrically', async ({ browser }) => {
+  // Black: Ra8, Kh8. White: Kg1 boxed in by its own pawns f2/g2/h2. Ra8-a1 is mate.
+  game = await startTwoPlayerGame(browser, { fen: 'r6k/8/8/8/8/8/5PPP/6K1 b - - 0 1' });
+  const { white, black } = game; // FEN is black-to-move, so the creator plays black
+
+  await dragPiece(black, 'a8', 'a1');
+  await pressClock(black);
+
+  await expectGameResult(black, '0-1');
+  await expectGameResult(white, '0-1');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your last move delivered checkmate');
+  await expect(white.locator('#arbiterMessage')).toContainText('You have been checkmated');
+});
+
+test('stalemate caused by black is announced symmetrically', async ({ browser }) => {
+  // Black: Qf8, Kg3. White: lone Kh1. Qf8-f2 leaves White with no legal move, not in check.
+  game = await startTwoPlayerGame(browser, { fen: '5q2/8/8/8/8/6k1/8/7K b - - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(black, 'f8', 'f2');
+  await pressClock(black);
+
+  await expectGameResult(black, SCORE_DRAW);
+  await expectGameResult(white, SCORE_DRAW);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your last move resulted in stalemate');
+  await expect(white.locator('#arbiterMessage')).toContainText("opponent's last move resulted in stalemate");
 });
 
 test('resignation ends the game for the opponent', async ({ browser }) => {
@@ -87,7 +119,13 @@ test('resigning when the opponent has only a lone king is a draw (insufficient m
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#gameResultReason')).toContainText('insufficient material to mate');
+  // Personalised per player: the resigner reads "you"; the opponent reads "your opponent".
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'You resigned, but because your opponent has insufficient material to mate',
+  );
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'Your opponent resigned, but because you have insufficient material to mate',
+  );
 });
 
 test('resigning in a blocked position with material is a draw (no potential mate)', async ({ browser }) => {
@@ -99,7 +137,30 @@ test('resigning in a blocked position with material is a draw (no potential mate
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#gameResultReason')).toContainText('no potential mate');
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'You resigned, but because your opponent has no potential mate',
+  );
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'Your opponent resigned, but because you have no potential mate',
+  );
+});
+
+test('a resignation-draw is personalised symmetrically when Black resigns', async ({ browser }) => {
+  // Black: Rd5, Kc4. White: lone Ke6. Black resigns; White cannot mate -> draw. (Black is the creator
+  // because the FEN is black-to-move.)
+  game = await startTwoPlayerGame(browser, { fen: '8/8/4K3/3r4/2k5/8/8/8 b - - 0 50' });
+  const { white, black } = game;
+
+  await resign(black);
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'You resigned, but because your opponent has insufficient material to mate',
+  );
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'Your opponent resigned, but because you have insufficient material to mate',
+  );
 });
 
 test('an illegal move is rejected (arbiter flags an error)', async ({ browser }) => {
@@ -144,6 +205,25 @@ test('a draw offer accepted by the opponent ends the game as a draw', async ({ b
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
+  // The result panel keeps the canonical reason; the arbiter message (on top) names who accepted.
+  await expect(white.locator('#gameResultReason')).toContainText('drawn by agreement');
+  await expect(black.locator('#gameResultReason')).toContainText('drawn by agreement');
+  await expect(black.locator('#arbiterMessage')).toContainText('You accepted the draw offer');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your opponent accepted the draw offer');
+});
+
+test('a rejected draw offer names who rejected, for both players', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await offerDraw(white);
+  await black.locator('#rejectDrawBtn').click();
+
+  await expect(black.locator('#arbiterMessage')).toContainText('You rejected the draw offer');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your opponent rejected the draw offer');
+  // The game continues — no result panel.
+  await expect(white.locator('#gameResultPanel')).toBeHidden();
 });
 
 test('en passant capture is accepted', async ({ browser }) => {
@@ -162,4 +242,22 @@ test('en passant capture is accepted', async ({ browser }) => {
   await expectEmpty(white, 'd5');
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'd6', 'WHITE_PAWN');
+});
+
+test('the board does not mark the king in check (no red frame)', async ({ browser }) => {
+  // White: Ra1, Ke1. Black: lone Ke8. Ra1-a8+ gives check along the 8th rank. The board must
+  // not inform the checked player — no red frame on the king square, then or after it moves.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/R3K3 w - - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'a1', 'a8');
+  await pressClock(white); // black is now in check and on the move
+
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(black.locator('#board .square.check')).toHaveCount(0);
+  await expect(white.locator('#board .square.check')).toHaveCount(0);
+
+  // ...and it must not appear (or linger) once the king steps off the checked square.
+  await dragPiece(black, 'e8', 'e7');
+  await expect(black.locator('#board .square.check')).toHaveCount(0);
 });

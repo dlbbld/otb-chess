@@ -38,11 +38,11 @@ The player configures the game on a single screen before clicking **Create**:
 1. **Side selection** -- White or Black.
 2. **Time control:**
    - **Presets:** 3+0, 3+2, 5+0, 5+3, 15+0, 15+10, 30+0 (default: **30+0**).
-   - **Custom:** manual standard time and increment.
+   - **Custom:** manual time and increment. The initial time must be **at least 1 minute** — 0 is rejected on the start screen (the side to move would otherwise flag the instant the opponent joins, before ever moving). The increment may be 0.
 3. **Maximum illegal moves before game loss** -- dropdown with values **1, 2, 3, ..., 10, Unlimited**. Default **2** (FIDE rule).
    - "Unlimited" disables the game-loss escalation; illegal moves still incur the per-move penalty time.
 4. **Restoration mode** -- radio choice for what happens after a position has to be restored following an arbiter intervention:
-   - **Auto-resume after restoration (default).** When the position is restored to the start of the turn (either via the player's manual restoration or the "Do this for me" button), the clock resumes immediately on the side that has the move.
+   - **Auto-resume after restoration (default).** When the position is restored to the start of the turn (either via the player's manual restoration or the "Revert" button), the clock resumes immediately on the side that has the move.
    - **Manual continue (ready-handshake).** After restoration, both players must click **Ready to continue** before the clock restarts. Used when the players want to confirm they have agreed on the position.
 
 5. **Starting position FEN** (optional). A text field on the start screen accepts an
@@ -54,10 +54,12 @@ The player configures the game on a single screen before clicking **Create**:
      second player to join gets the other colour. The override is silent today; a
      visible UX cue (disabling the side selector or showing a small note when a
      FEN is entered) is tracked under "Spec-driven implementation follow-ups".
-   - **Invalid FEN:** the server rejects the create request and returns the
-     chess-library validation reason via the standard error channel
-     ("Invalid FEN: ..."). No game is created. The player can correct the FEN and
-     try again.
+   - **Invalid FEN:** the start screen validates the FEN via `/api/validateFen`
+     (Ashlar Chess) **before** navigating. An invalid FEN is rejected in place: the
+     validation reason ("Invalid FEN: ...") is shown on the start screen, no game is
+     created, and the player stays on the start screen to correct it -- they are never
+     sent to a board they cannot leave. The WebSocket create path validates again as
+     defence in depth.
 
    Validation is performed by the chess library (`new Board(fenString)` ->
    `FenParserAdvanced.parseFenAdvanced` -> `FenAdvancedValidationException`); the
@@ -74,6 +76,14 @@ The player configures the game on a single screen before clicking **Create**:
 6. The creator receives an **8-character game code** with a **Copy code** button.
 7. The second player opens the join page; the **game code field auto-fills** from the URL or from the creator's clipboard share, so the second player only confirms.
 8. Both browsers connect via WebSocket -- the game begins.
+
+### Aborting (before the opponent joins)
+
+While the creator is alone in the room -- the game has been created but nobody has joined -- the board shows an **Abort Game** button in place of **Resign** (which is meaningless with no opponent). Aborting discards the challenge and returns the creator to the start screen to create a new one. This mirrors Lichess, where an open challenge can be cancelled until someone accepts it.
+
+- The swap is colour-agnostic: a Black creator waiting for White gets the same Abort button.
+- Once the opponent joins and the game starts, Abort disappears and Resign takes its place; from then on the game can only end by play, resignation, draw, or flag fall.
+- Server-side, abort is rejected once the game has started (state is no longer `WAITING_FOR_PLAYERS`), so a raced/stale abort cannot cancel a live game.
 
 ---
 
@@ -393,7 +403,7 @@ To match the experience of a real board, certain game-ending moves end the game 
 2. The arbiter instructs the player to restore the position to the **required reference position** for the violation. The reference position is one of two cases:
    - **Start of turn** -- for illegal moves, touch-move violations, opponent-piece movement, position-change-after-restoration. The board returns to the position before the player's first event of this turn.
    - **Release position** -- for released-piece violations. The board returns to the position immediately after the player legally released a piece on a square; the player must then complete a legal move from the committed move set (typically just placing the rook for a castling commitment).
-3. A **"Do this for me"** button is available -- restores the position automatically.
+3. A **"Revert"** button is available -- restores the position automatically.
 4. After restoration:
    - **Auto-resume mode (default):** the clock resumes immediately; the player just plays.
    - **Manual mode:** both players see _"Are you ready to continue?"_ with a **Ready to continue** button. Both must click before the clock restarts.
@@ -426,6 +436,17 @@ To match the experience of a real board, certain game-ending moves end the game 
 4. **Fivefold repetition** -> "The game is drawn by fivefold repetition."
 5. **75-move rule** -> "The game is drawn by the 75-move rule."
 
+Beyond the result-panel description above, a move that immediately ends the game personalises the arbiter message box for each player -- replacing the generic _"Move accepted. Opponent's turn."_ / _"Your turn."_ the ending move would otherwise leave:
+
+| Ending | Mover (played it) | Opponent |
+|---|---|---|
+| Checkmate | _"Your last move delivered checkmate."_ | _"You have been checkmated."_ |
+| Stalemate | _"Your last move resulted in stalemate."_ | _"Your opponent's last move resulted in stalemate."_ |
+| 75-move rule | _"Your last move led to 75 moves each without a capture or pawn move."_ | _"Your opponent's last move led to 75 moves each without a capture or pawn move."_ |
+| Fivefold repetition | _"Your last move led to a fivefold repetition."_ | _"Your opponent's last move led to a fivefold repetition."_ |
+
+Symmetric for both colours. The server tags the `gameEnded` message with the `mover` side (who made the final move) and the client selects each player's line. Insufficient-material draws and the non-move endings (resignation, flag fall, draw agreement, claims) keep their generic / own messages.
+
 Threefold repetition and the 50-move rule are deliberately **not** in this list -- under FIDE 9.2 / 9.3 they are *claimable* by a player, not automatic. They appear under *Draw Claims* below. Fivefold and 75-move are the automatic counterparts (FIDE 9.6).
 
 The full unwinnability search (`UnwinnableFullAnalyzer`, the deep CUA helpmate search) is **not** used in the in-game pipeline. Positions that are dead by exhaustive search but not by insufficient material continue, and the players resolve them via stalemate / fivefold / 75-move / claim -- consistent with the dumb-board's "evaluate at clock press" model.
@@ -433,14 +454,18 @@ The full unwinnability search (`UnwinnableFullAnalyzer`, the deep CUA helpmate s
 ### Resignation
 
 - No confirmation. Resign is final.
-- Arbiter checks winnability via the **fast** `isUnwinnableQuick(opponent)` (microsecond-scale structural analysis): if the opponent cannot checkmate by any series of legal moves -> draw instead of loss. `POSSIBLY_WINNABLE` is treated as winnable.
-- Draw message: _"{Side} resigned, but because {Opponent} has no possible win, the game is a draw."_
+- Adjudicated via `Adjudicator.adjudicateResignationQuick` (FIDE 5.1.2): a loss unless the opponent cannot checkmate by any series of legal moves, in which case it is a draw.
+- **Draw message — personalised per player** (each player sees their own line). With «reason» being _"insufficient material to mate"_ (a material shortage) or _"no potential mate"_ (unwinnable despite sufficient material):
+  - To the player who resigned: _"You resigned, but because your opponent has «reason», the game is a draw."_
+  - To the opponent: _"Your opponent resigned, but because you have «reason», the game is a draw."_
 - Loss message: _"{Side} resigns. {Opponent} wins the game."_
 
 ### Flag fall
 
-- Arbiter checks winnability via `isUnwinnableQuick(opponent)`: if the opponent cannot checkmate -> draw.
-- Draw message: _"{Side}'s time has elapsed, but because {Opponent} has no possible win, the game is a draw."_
+- Adjudicated via `Adjudicator.adjudicateFlagfallQuick` (FIDE 6.9): the same draw exception as resignation.
+- **Draw message — personalised per player**, with «reason» as above:
+  - To the player who flagged: _"You flagged, but because your opponent has «reason», the game is a draw."_
+  - To the opponent: _"Your opponent flagged, but because you have «reason», the game is a draw."_
 - Loss message: _"{Side} loses on time. {Opponent} wins the game."_
 - Final clock update is sent **before** the `gameEnded` message so the LCD shows `0:00`, not `0:01`.
 
@@ -472,7 +497,7 @@ Each button commits immediately when pressed. There is no confirmation dialog an
 
 The player enters a move in **SAN notation** in an inline panel. The server processes the claim in this fixed order:
 
-1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `StrictSanParser.parseText(...)`. The move is **not performed** for validation -- `parseText` checks the move's legality without mutating the board. If the SAN fails:
+1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `LenientSanParser.parseText(...)` -- the lenient pipeline, which accepts canonical SAN plus the library's defined tolerances (e.g. case slips, missing or spurious check/mate marks) as long as the input uniquely identifies one legal move. The move is **not performed** for validation -- the parser leaves the board unchanged. If the SAN cannot be resolved to a legal move:
    - Result: `invalidMove`. Message: _"Invalid move: «Ashlar Chess reason». Please enter a legal move for the claim."_
    - The SAN-input panel stays open and is re-prompted with the input cleared and refocused.
    - The chosen claim channel remains committed; the player cannot switch to a different claim or cancel. The invalid SAN submission is treated as typo-correction and does **not** consume the server-side once-per-turn allowance or trigger the incorrect-claim penalty.
@@ -488,11 +513,13 @@ The player's SAN is echoed verbatim in the message so both players see exactly w
 
 | Outcome | Claimer message | Opponent message | Game-end description |
 |---|---|---|---|
-| **Accepted** | _"Your claim was accepted."_ | _"Your opponent requested a draw for threefold repetition after the move «SAN»."_ (or 50-move variant) | _"The game is drawn by threefold repetition."_ (in the result panel -- short, no duplication of the long claim text) |
+| **Accepted** | _"Your claim was accepted after your move «SAN»."_ | _"Your opponent requested a draw for threefold repetition after the move «SAN»."_ (or 50-move variant) | _"The game is drawn by threefold repetition."_ (in the result panel -- short, no duplication of the long claim text) |
 | **Rejected -- legal SAN but rule not satisfied** | _"Claim rejected, because there is no threefold repetition after the mentioned move «SAN». Please play."_ + `mustExecuteMove` | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none -- game continues; the player must still play the specified move) |
 | **Rejected -- short-circuit** (no move could satisfy) | _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none) |
 
 The arbiter **never silently accepts an illegal SAN** -- the player learns from Ashlar Chess's exact reason.
+
+When a with-move claim is rejected, the player must still make the specified move (FIDE 9.5); the clock restarts on them. If they then press the clock with the board in any other state, the arbiter responds _"The specified move, «SAN», was not executed. Please revert the position and play the specified move."_ together with a **Revert** button that restores the board to the start of the turn. The move is still owed after reverting -- the player reverts, plays the specified move, and presses the clock.
 
 #### Once-per-turn limit (FIDE 9.2 / 9.3)
 
@@ -580,6 +607,13 @@ The offerer currently receives no separate notification of invalidation -- their
 
 If the player offers a draw together with a clock-press but their move is invalid (illegal, touch-move, released-piece), the draw offer is **silently dropped**. It does not count as a repeated offer.
 
+#### Accepting or rejecting
+
+Both outcomes are **personalised per player** so it is always clear who did what:
+
+- **Accepted** -> the result panel keeps `½-½` and _"The game is drawn by agreement."_ (the canonical result). On top, the arbiter message names the actor: _"You accepted the draw offer."_ to the accepter, _"Your opponent accepted the draw offer."_ to the offerer.
+- **Rejected** (the game continues) -> _"You rejected the draw offer."_ to the rejecter, _"Your opponent rejected the draw offer."_ to the offerer.
+
 ---
 
 ## Mid-Play Interventions
@@ -591,7 +625,7 @@ These are checked during play (not only at clock press):
 | **Opponent-piece drag (square -> square)** | Player drags an opponent piece from one square to another (DRAG_MOVE / DRAG_CAPTURE) | Arbiter intervenes immediately with a "you may only move your own pieces" message + restoration. |
 | **Opponent-piece removal** | Player drags an opponent piece off the board | **No intervention.** The board observes silently; this is the first step of a capture-by-removal sequence. The square is added to `removedSquaresThisTurn` so it can be restored from the side area later if the player changes their mind. |
 | **Released-piece commitment violation** | Player has committed a release and a subsequent manipulation moves them off all positions consistent with the committed move set | Restore to release position. |
-| **Position change after restoration** | After a "Do this for me" or manual restoration, the player makes a board change that drifts away from the agreed restored position before resuming | Arbiter intervenes; restoration is repeated. |
+| **Position change after restoration** | After a "Revert" or manual restoration, the player makes a board change that drifts away from the agreed restored position before resuming | Arbiter intervenes; restoration is repeated. |
 
 ---
 
@@ -600,7 +634,7 @@ These are checked during play (not only at clock press):
 1. Player commits a violation (illegal, touch-move, released-piece).
 2. The arbiter shows a red error message explaining what happened.
 3. The arbiter instructs the player to restore the position.
-4. **"Do this for me"** button -- clicking sends the original (or release-) position to the client which restores it automatically. The opponent is told the restoration happened.
+4. **"Revert"** button -- clicking sends the original (or release-) position to the client which restores it automatically. The opponent is told the restoration happened.
 5. Once the physical board matches the target restoration position:
    - **Auto-resume mode:** clock resumes immediately. The arbiter shows _"Position restored. Continue."_
    - **Manual mode:** _"Position restored. Are you ready to continue?"_ with a **Ready to continue** button. Both players must click before the clock restarts. The clock stays paused (PAUSE overlay) until both have confirmed.
@@ -731,7 +765,7 @@ Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, p
 | `IllegalMoveTracker` | Tracks illegal-move count per side; configurable limit (1-10 or unlimited, default 2). |
 | `MidPlayValidator` | Validates opponent-piece movement and piece-restoration during play. Allows opponent-piece **removal** (capture-by-removal); blocks opponent-piece drag-on-board. |
 | `DrawOfferManager` | Draw-offer lifecycle: correct-time, wrong-time A/B, repeat counter, wrong-time counter, escalating penalties (info -> warning -> game lost). |
-| `DrawClaimManager` | Threefold and 50-move claims. Validates SAN first (Ashlar Chess `StrictSanParser`), then short-circuits via `canClaim...WithOwnMove()`, then performs/checks. Returns per-player + opponent + game-end messages. |
+| `DrawClaimManager` | Threefold and 50-move claims. Validates SAN first (Ashlar Chess `LenientSanParser`), then short-circuits via `canClaim...WithOwnMove()`, then performs/checks. Returns per-player + opponent + game-end messages. |
 | `GameSession` | Central orchestrator: board, clock, arbiter, draw, resign, ready-to-continue, restoration state machine, must-execute-move, **per-turn claim ledger** (FIDE 9.2/9.3 once-per-turn limit), rejected-claim -> draw-offer conversion. |
 | `ClockManager` | Time control with increment, nanoTime precision. |
 | `GameRoom` | Two WebSocket connections + the session; routes messages by side. |

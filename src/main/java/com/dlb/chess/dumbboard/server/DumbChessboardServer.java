@@ -2,10 +2,16 @@ package com.dlb.chess.dumbboard.server;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpServer;
+
+import io.github.dlbbld.ashlarchess.board.Board;
 
 /**
  * Main entry point for the Dumb Chessboard server.
@@ -50,6 +56,18 @@ public class DumbChessboardServer {
           os.write(body);
         }
       });
+      // Validates a starting FEN before the lobby navigates to the board, so an invalid FEN keeps
+      // the player on the start screen with the reason instead of stranding them on a dead board.
+      // Returns {"valid":true} or {"valid":false,"message":"Invalid FEN: ..."} from Ashlar Chess.
+      httpServer.createContext("/api/validateFen", exchange -> {
+        final byte[] body = validateFenResponse(exchange.getRequestURI().getRawQuery());
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(200, body.length);
+        try (var os = exchange.getResponseBody()) {
+          os.write(body);
+        }
+      });
       httpServer.createContext("/", staticHandler::handle);
       httpServer.setExecutor(null);
       httpServer.start();
@@ -68,5 +86,42 @@ public class DumbChessboardServer {
     System.out.println();
     System.out.println("Dumb Chessboard is ready!");
     System.out.println("Open http://localhost:" + HTTP_PORT + " in your browser to start.");
+  }
+
+  private static final Gson GSON = new Gson();
+
+  /**
+   * Builds the {@code /api/validateFen} response body. An empty FEN means the normal starting
+   * position and is always valid. Any parse failure is treated as a user FEN error (the FEN is
+   * user input) and reported verbatim from Ashlar Chess, mirroring the create-game validation.
+   */
+  private static byte[] validateFenResponse(String rawQuery) {
+    final String fen = queryParam(rawQuery, "fen");
+    final JsonObject obj = new JsonObject();
+    if (fen == null || fen.isBlank()) {
+      obj.addProperty("valid", true);
+    } else {
+      try {
+        new Board(fen.trim());
+        obj.addProperty("valid", true);
+      } catch (final Exception e) {
+        obj.addProperty("valid", false);
+        obj.addProperty("message", "Invalid FEN: " + e.getMessage());
+      }
+    }
+    return GSON.toJson(obj).getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static String queryParam(String rawQuery, String key) {
+    if (rawQuery == null) {
+      return null;
+    }
+    for (final String pair : rawQuery.split("&")) {
+      final int eq = pair.indexOf('=');
+      if (eq > 0 && key.equals(pair.substring(0, eq))) {
+        return URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+      }
+    }
+    return null;
   }
 }

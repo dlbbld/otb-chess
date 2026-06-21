@@ -95,7 +95,13 @@ test('flag fall is a draw when the opponent has only a lone king (insufficient m
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#gameResultReason')).toContainText('insufficient material to mate');
+  // Personalised per player: the flagger reads "you"; the opponent reads "your opponent".
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'You flagged, but because your opponent has insufficient material to mate',
+  );
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'Your opponent flagged, but because you have insufficient material to mate',
+  );
 });
 
 test('flag fall is a draw in a blocked position with material (no potential mate)', async ({ browser }) => {
@@ -109,7 +115,12 @@ test('flag fall is a draw in a blocked position with material (no potential mate
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#gameResultReason')).toContainText('no potential mate');
+  await expect(white.locator('#gameResultReason')).toContainText(
+    'You flagged, but because your opponent has no potential mate',
+  );
+  await expect(black.locator('#gameResultReason')).toContainText(
+    'Your opponent flagged, but because you have no potential mate',
+  );
 });
 
 test('pressing the opponent clock does not commit the move', async ({ browser }) => {
@@ -155,7 +166,7 @@ test('en passant that would expose the own king is rejected', async ({ browser }
   await pressClock(white);
 
   // No legal move produces this position -> the arbiter requires a restore.
-  await clickRestore(white); // the "Do this for me" button only exists if the move was rejected
+  await clickRestore(white); // the "Revert" button only exists if the move was rejected
   await expectPiece(white, 'e5', 'WHITE_PAWN'); // position restored
 });
 
