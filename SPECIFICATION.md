@@ -61,8 +61,8 @@ The player configures the game on a single screen before clicking **Create**:
      sent to a board they cannot leave. The WebSocket create path validates again as
      defence in depth.
 
-   Validation is performed by the chess library (`new Board(fenString)` ->
-   `FenParserAdvanced.parseFenAdvanced` -> `FenAdvancedValidationException`); the
+   Validation is performed by the chess library (`Board.fromFenStrict(fenString)` ->
+   `StrictFenParser` -> `StrictFenSemanticValidationException`); the
    exception's message is forwarded verbatim. This is consistent with the
    "no-leak" rule for unexpected exceptions (see *Internal Errors* below):
    Ashlar Chess validation messages -- whether for FEN, SAN, or move legality --
@@ -497,7 +497,7 @@ Each button commits immediately when pressed. There is no confirmation dialog an
 
 The player enters a move in **SAN notation** in an inline panel. The server processes the claim in this fixed order:
 
-1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `LenientSanParser.parseText(...)` -- the lenient pipeline, which accepts canonical SAN plus the library's defined tolerances (e.g. case slips, missing or spurious check/mate marks) as long as the input uniquely identifies one legal move. The move is **not performed** for validation -- the parser leaves the board unchanged. If the SAN cannot be resolved to a legal move:
+1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `LenientSanParser.parse(...)` -- the lenient pipeline, which accepts canonical SAN plus the library's defined tolerances (e.g. case slips, missing or spurious check/mate marks) as long as the input uniquely identifies one legal move. The move is **not performed** for validation -- the parser leaves the board unchanged. If the SAN cannot be resolved to a legal move:
    - Result: `invalidMove`. Message: _"Invalid move: «Ashlar Chess reason». Please enter a legal move for the claim."_
    - The SAN-input panel stays open and is re-prompted with the input cleared and refocused.
    - The chosen claim channel remains committed; the player cannot switch to a different claim or cancel. The invalid SAN submission is treated as typo-correction and does **not** consume the server-side once-per-turn allowance or trigger the incorrect-claim penalty.
@@ -727,7 +727,7 @@ Messages without a `style` field are interpreted by the client at default (info)
 
 ## Architecture
 
-- **Separate Maven project** (`otb-chess`) depending on **ashlar-chess 18.1.0**.
+- **Separate Maven project** (`otb-chess`) depending on **ashlar-chess 19.0.0**.
 - **All business logic in Java.** Frontend is thin presentation only.
 - **Java built-in `HttpServer`** on port **8080** for static files.
 - **Java-WebSocket library** on port **8081** for two-player real-time communication.
@@ -800,7 +800,7 @@ Each row names a verification path: an automated test (where applicable) or a ma
 | `NONE`-to-`NONE` update error | Old `StaticPosition.createChangedPosition` rejected no-op updates; the post-Ashlar `BitboardPositions` overlay applies them harmlessly | Automated -- `TestMessageConverter.testRoundTripPositionWithManyEmptySquares` |
 | Touch-move not recognising castling | Castling `fromSquare` is `NONE` | Automated -- `TestTouchMoveEvaluator.testCastlingSatisfiesKingTouchObligation` |
 | Failed castling double-punishment | Released-piece rule fired on king release in addition to failed-castling | Automated -- `TestArbiterEngine.testFailedAdjacentCastlingAttemptWithNoKingMovesDoesNotBindRook` |
-| Castling broadcast crash with `NonePointerException` | `MoveSpecification.from/toSquare` are `Square.NONE` for castling; `Square.NONE.getName()` throws | Manual -- safeguarded by `CastlingUtility.calculateIsCastlingMove` branch in `sendArbiterResponse` |
+| Castling broadcast crash with `NonePointerException` | `MoveSpecification.from/toSquare` are `Square.NONE` for castling; `Square.NONE.getName()` throws | Manual -- safeguarded by `CastlingUtility.isCastlingMove` branch in `sendArbiterResponse` |
 | Flag-fall LCD shows `0:01` | Final `clockUpdate` was sent after `gameEnded` | Manual |
 | Auto-end incremented illegal-move counter | `evaluateForAutoEnd` was reusing `evaluateClockPress` | Automated -- `TestGameSessionFlow` (released-piece interaction tests) |
 | `Invalid move:` in claim hid the SAN panel | Frontend hid the panel on submit; rejected-with-invalid-move never re-prompted | Automated -- `TestGameSession.testClaimWithInvalidSanIsRejectedAsInvalidMove` (+ 50-move counterpart) |
