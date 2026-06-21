@@ -4,8 +4,10 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.adjudication.AdjudicationResult;
+import io.github.dlbbld.ashlarchess.adjudication.Adjudicator;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
@@ -22,8 +24,6 @@ import io.github.dlbbld.otbchess.game.model.GameResult;
 import io.github.dlbbld.otbchess.game.model.GameResultType;
 import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
-import io.github.dlbbld.ashlarchess.adjudication.AdjudicationResult;
-import io.github.dlbbld.ashlarchess.adjudication.Adjudicator;
 
 /**
  * Central orchestrator for an OTB Chess game.

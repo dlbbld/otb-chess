@@ -10,7 +10,6 @@ import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.otbchess.core.BitboardPositions;
-import io.github.dlbbld.otbchess.server.message.MessageConverter;
 
 class TestMessageConverter {
 

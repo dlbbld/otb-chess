@@ -8,13 +8,11 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
-import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.model.LegalMove;
-import io.github.dlbbld.otbchess.core.BitboardPositions;
-import io.github.dlbbld.otbchess.core.PositionComparator;
 
 class TestPositionComparator {
 

@@ -5,18 +5,18 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.PieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.board.enums.SquareUtility;
-import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.model.LegalMove;
 import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
 import io.github.dlbbld.otbchess.castling.CastlingAttemptDetector;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
-import io.github.dlbbld.ashlarchess.model.LegalMove;
 
 /**
  * Evaluates touch-move obligations from the action sequence.

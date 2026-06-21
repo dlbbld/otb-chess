@@ -14,8 +14,11 @@ import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
-import io.github.dlbbld.ashlarchess.board.Board;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
@@ -23,7 +26,6 @@ import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.event.BoardEvent;
-import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
 import io.github.dlbbld.otbchess.game.model.DrawClaimType;
 import io.github.dlbbld.otbchess.game.model.GameResult;
@@ -32,9 +34,6 @@ import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
 import io.github.dlbbld.otbchess.server.message.MessageConverter;
 import io.github.dlbbld.otbchess.server.model.GameRoom;
-
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 
 /**
  * WebSocket server for OTB Chess game communication.

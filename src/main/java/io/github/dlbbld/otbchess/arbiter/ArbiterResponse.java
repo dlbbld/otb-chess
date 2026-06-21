@@ -12,7 +12,6 @@ import io.github.dlbbld.otbchess.message.MessageKey;
 import io.github.dlbbld.otbchess.message.MessageSeverity;
 import io.github.dlbbld.otbchess.message.Messages;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveObligation;
-import io.github.dlbbld.otbchess.touchmove.TouchMoveType;
 
 /**
  * Represents the arbiter's response after evaluating a clock press or a mid-play event.

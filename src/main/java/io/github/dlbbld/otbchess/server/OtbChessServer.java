@@ -78,7 +78,7 @@ public class OtbChessServer {
       // Stop it so the JVM can exit instead of lingering on :8081 (its selector thread is non-daemon).
       try {
         wsServer.stop();
-      } catch (InterruptedException stopInterrupted) {
+      } catch (final InterruptedException stopInterrupted) {
         Thread.currentThread().interrupt();
       }
       throw e;

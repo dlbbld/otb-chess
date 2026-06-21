@@ -14,9 +14,6 @@ import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
-import io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator;
-import io.github.dlbbld.otbchess.touchmove.TouchMoveObligation;
-import io.github.dlbbld.otbchess.touchmove.TouchMoveType;
 
 class TestTouchMoveEvaluator {
 

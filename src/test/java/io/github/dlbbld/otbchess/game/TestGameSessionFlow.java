@@ -14,7 +14,6 @@ import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.core.BitboardPositions;
 import io.github.dlbbld.otbchess.event.BoardEvent;
-import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
 

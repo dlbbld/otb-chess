@@ -10,18 +10,15 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
-import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.core.BitboardPositions;
-import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
-import io.github.dlbbld.otbchess.game.DrawOfferManager;
-import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
 import io.github.dlbbld.otbchess.game.model.DrawClaimType;
 import io.github.dlbbld.otbchess.game.model.GameResult;
@@ -451,21 +448,21 @@ class TestGameSession {
     final DrawOfferManager dom = session.getDrawOfferManager();
 
     // First offer — normal
-    var result1 = dom.offerDrawCorrectTime(Side.WHITE);
+    final var result1 = dom.offerDrawCorrectTime(Side.WHITE);
     assertTrue(result1.accepted());
 
     // Second offer (repeated, same side, offer still active) — info
-    var result2 = dom.offerDrawCorrectTime(Side.WHITE);
+    final var result2 = dom.offerDrawCorrectTime(Side.WHITE);
     assertFalse(result2.accepted());
     assertTrue(result2.arbiterMessage().contains("cannot repeat"));
 
     // Third offer — warning
-    var result3 = dom.offerDrawCorrectTime(Side.WHITE);
+    final var result3 = dom.offerDrawCorrectTime(Side.WHITE);
     assertFalse(result3.accepted());
     assertTrue(result3.arbiterMessage().contains("will lose"));
 
     // Fourth offer — game lost
-    var result4 = dom.offerDrawCorrectTime(Side.WHITE);
+    final var result4 = dom.offerDrawCorrectTime(Side.WHITE);
     assertTrue(result4.gameLost());
   }
 

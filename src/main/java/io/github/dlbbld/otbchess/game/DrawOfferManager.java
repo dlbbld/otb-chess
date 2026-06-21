@@ -128,10 +128,10 @@ public class DrawOfferManager {
     }
     // count == PENALTY_INFO — wording depends on whether the offerer has the move.
     if (offererHasMove) {
-      return DrawOfferResult
-          .wrongTime("Please note that when having the move, the draw offer should be made after making"
-              + " your move and before pressing the clock. Not following this procedure could lead"
-              + " to a warning. The offer still counts as a draw offer.");
+      return DrawOfferResult.wrongTime("""
+          Please note that when having the move, the draw offer should be made after making\
+           your move and before pressing the clock. Not following this procedure could lead\
+           to a warning. The offer still counts as a draw offer.""");
     }
     return DrawOfferResult
         .wrongTime("Please note that the draw offer should be made on your own turn. Not following this"

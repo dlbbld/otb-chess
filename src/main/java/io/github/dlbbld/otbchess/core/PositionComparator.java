@@ -4,8 +4,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
-import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.model.LegalMove;
 
 public class PositionComparator {

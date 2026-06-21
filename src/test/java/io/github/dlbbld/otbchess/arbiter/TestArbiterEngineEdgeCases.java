@@ -1,19 +1,15 @@
 package io.github.dlbbld.otbchess.arbiter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
-import io.github.dlbbld.otbchess.arbiter.ArbiterEngine;
-import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
-import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.core.BitboardPositions;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
