@@ -9,20 +9,19 @@ import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
 
 /**
- * Derives a {@link BitboardPosition} by overlaying explicit square-to-piece updates onto a base
- * position.
+ * Derives a {@link BitboardPosition} by overlaying explicit square-to-piece updates onto a base position.
  *
- * <p>This replaces the {@code StaticPosition.createChangedPosition(...)} family from the pre-Ashlar
- * API. Ashlar's {@link BitboardPosition} is an immutable twelve-bitboard record with no public
- * "set this square to this piece" primitive, so the board's reconstruction of a physical
- * position from board events rebuilds the bitboards directly. The board uses little-endian
- * rank-file indexing (a1 = bit 0, h8 = bit 63).
+ * <p>
+ * This replaces the {@code StaticPosition.createChangedPosition(...)} family from the pre-Ashlar API. Ashlar's
+ * {@link BitboardPosition} is an immutable twelve-bitboard record with no public "set this square to this piece"
+ * primitive, so the board's reconstruction of a physical position from board events rebuilds the bitboards directly.
+ * The board uses little-endian rank-file indexing (a1 = bit 0, h8 = bit 63).
  *
- * <p>{@link BitboardPosition}'s constructor only enforces that the bitboards are pairwise disjoint
- * (no square carries two pieces); it does not require a legal position. Each update therefore
- * vacates the square on every bitboard before placing the new occupant, which keeps every
- * intermediate position disjoint even for the partial / transient placements the board derives
- * from physical board events.
+ * <p>
+ * {@link BitboardPosition}'s constructor only enforces that the bitboards are pairwise disjoint (no square carries two
+ * pieces); it does not require a legal position. Each update therefore vacates the square on every bitboard before
+ * placing the new occupant, which keeps every intermediate position disjoint even for the partial / transient
+ * placements the board derives from physical board events.
  */
 public final class BitboardPositions {
 
@@ -85,8 +84,8 @@ public final class BitboardPositions {
       }
     }
 
-    return new BitboardPosition(whitePawns, whiteRooks, whiteKnights, whiteBishops, whiteQueens,
-        whiteKings, blackPawns, blackRooks, blackKnights, blackBishops, blackQueens, blackKings);
+    return new BitboardPosition(whitePawns, whiteRooks, whiteKnights, whiteBishops, whiteQueens, whiteKings, blackPawns,
+        blackRooks, blackKnights, blackBishops, blackQueens, blackKings);
   }
 
   private static int index(Square square) {

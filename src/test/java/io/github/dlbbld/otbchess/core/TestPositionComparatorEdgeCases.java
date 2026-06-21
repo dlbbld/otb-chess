@@ -17,8 +17,7 @@ import io.github.dlbbld.otbchess.core.BitboardPositions;
 import io.github.dlbbld.otbchess.core.PositionComparator;
 
 /**
- * Edge case tests for PositionComparator, covering scenarios that came up during
- * manual testing and GUI integration.
+ * Edge case tests for PositionComparator, covering scenarios that came up during manual testing and GUI integration.
  */
 class TestPositionComparatorEdgeCases {
 
@@ -27,10 +26,8 @@ class TestPositionComparatorEdgeCases {
     // Player moves two pieces (e.g. pawn e4 AND knight f3) — no single legal move produces this
     final Board board = new Board();
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN)
-        .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN)
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
 
     final Set<LegalMove> matches = PositionComparator.findMatchingMoves(board, afterPosition);
     assertTrue(matches.isEmpty());
@@ -73,10 +70,8 @@ class TestPositionComparatorEdgeCases {
 
     // White queenside castling: king e1->c1, rook a1->d1
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E1, Piece.NONE)
-        .createChangedPosition(Square.A1, Piece.NONE)
-        .createChangedPosition(Square.C1, Piece.WHITE_KING)
-        .createChangedPosition(Square.D1, Piece.WHITE_ROOK).build();
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.A1, Piece.NONE)
+        .createChangedPosition(Square.C1, Piece.WHITE_KING).createChangedPosition(Square.D1, Piece.WHITE_ROOK).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
     assertTrue(match.isPresent());
@@ -97,16 +92,14 @@ class TestPositionComparatorEdgeCases {
 
     // Promote to rook (not queen)
     final BitboardPosition afterRook = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.B7, Piece.NONE)
-        .createChangedPosition(Square.A8, Piece.WHITE_ROOK).build();
+        .createChangedPosition(Square.B7, Piece.NONE).createChangedPosition(Square.A8, Piece.WHITE_ROOK).build();
 
     final Optional<LegalMove> matchRook = PositionComparator.findUniqueMatchingMove(board, afterRook);
     assertTrue(matchRook.isPresent());
 
     // Promote to bishop
     final BitboardPosition afterBishop = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.B7, Piece.NONE)
-        .createChangedPosition(Square.A8, Piece.WHITE_BISHOP).build();
+        .createChangedPosition(Square.B7, Piece.NONE).createChangedPosition(Square.A8, Piece.WHITE_BISHOP).build();
 
     final Optional<LegalMove> matchBishop = PositionComparator.findUniqueMatchingMove(board, afterBishop);
     assertTrue(matchBishop.isPresent());
@@ -128,10 +121,8 @@ class TestPositionComparatorEdgeCases {
     // rook move h1->f1 is a valid rook move on its own, not castling
     // The position with both pieces moved should match castling (position is identical)
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E1, Piece.NONE)
-        .createChangedPosition(Square.H1, Piece.NONE)
-        .createChangedPosition(Square.G1, Piece.WHITE_KING)
-        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.G1, Piece.WHITE_KING).createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
 
     // Position comparison finds castling as a match — the rook-first rule
     // is enforced by touch-move in the ArbiterEngine, not by position comparison
@@ -146,8 +137,7 @@ class TestPositionComparatorEdgeCases {
 
     // Black plays e5
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E7, Piece.NONE)
-        .createChangedPosition(Square.E5, Piece.BLACK_PAWN).build();
+        .createChangedPosition(Square.E7, Piece.NONE).createChangedPosition(Square.E5, Piece.BLACK_PAWN).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
     assertTrue(match.isPresent());

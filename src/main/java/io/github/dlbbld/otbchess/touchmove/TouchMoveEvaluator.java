@@ -21,10 +21,11 @@ import io.github.dlbbld.ashlarchess.model.LegalMove;
 /**
  * Evaluates touch-move obligations from the action sequence.
  *
- * <p>Scans the action sequence from the beginning. For each touch/move event:
+ * <p>
+ * Scans the action sequence from the beginning. For each touch/move event:
  * <ul>
- *   <li>If an own piece is touched and has legal moves from that square → OWN_PIECE obligation</li>
- *   <li>If an opponent piece is touched and can be legally captured → OPPONENT_PIECE obligation</li>
+ * <li>If an own piece is touched and has legal moves from that square → OWN_PIECE obligation</li>
+ * <li>If an opponent piece is touched and can be legally captured → OPPONENT_PIECE obligation</li>
  * </ul>
  * The first obligation found in the sequence is the binding one.
  */
@@ -33,14 +34,14 @@ public class TouchMoveEvaluator {
   /**
    * Finds the first touch-move obligation in the action sequence.
    *
-   * <p>Detection order:
+   * <p>
+   * Detection order:
    * <ol>
-   *   <li><b>King-then-rook combined touch (FIDE 4.4.a)</b> — if the player has touched their
-   *       own king (on the king's starting square) and then their own rook (on a rook starting
-   *       square), and castling on the touched rook's side is legal, return a CASTLING
-   *       obligation. This takes precedence over the plain own-piece obligation that the king
-   *       touch would otherwise create, because castling is the strictly more specific commitment.</li>
-   *   <li>Otherwise, scan for the first own-piece or opponent-piece obligation (existing rules).</li>
+   * <li><b>King-then-rook combined touch (FIDE 4.4.a)</b> — if the player has touched their own king (on the king's
+   * starting square) and then their own rook (on a rook starting square), and castling on the touched rook's side is
+   * legal, return a CASTLING obligation. This takes precedence over the plain own-piece obligation that the king touch
+   * would otherwise create, because castling is the strictly more specific commitment.</li>
+   * <li>Otherwise, scan for the first own-piece or opponent-piece obligation (existing rules).</li>
    * </ol>
    *
    * @param sequence the action sequence recorded during the player's turn
@@ -60,8 +61,7 @@ public class TouchMoveEvaluator {
     // FIDE 4.3.3: touching an own piece and an opponent piece it can legally capture binds that
     // specific capture. This is more specific than the plain own-piece / opponent-piece rules, so
     // it takes precedence over the first-obligation scan below.
-    final Optional<TouchMoveObligation> specificCapture = findSpecificCaptureObligation(events, sideToMove,
-        legalMoves);
+    final Optional<TouchMoveObligation> specificCapture = findSpecificCaptureObligation(events, sideToMove, legalMoves);
     if (specificCapture.isPresent()) {
       return specificCapture;
     }
@@ -82,12 +82,12 @@ public class TouchMoveEvaluator {
   }
 
   /**
-   * Detects the king-then-rook touch pattern (FIDE 4.4.a) and returns a CASTLING obligation
-   * if castling on the touched rook's side is legal. Returns empty otherwise.
+   * Detects the king-then-rook touch pattern (FIDE 4.4.a) and returns a CASTLING obligation if castling on the touched
+   * rook's side is legal. Returns empty otherwise.
    *
-   * <p>Order matters: the king must be touched before the rook. Rook-first creates a regular
-   * own-piece obligation under the existing rule (and our spec disallows castling that begins
-   * with a rook move regardless).
+   * <p>
+   * Order matters: the king must be touched before the rook. Rook-first creates a regular own-piece obligation under
+   * the existing rule (and our spec disallows castling that begins with a rook move regardless).
    */
   private static Optional<TouchMoveObligation> findCastlingObligation(List<BoardEvent> events, Side sideToMove,
       Set<LegalMove> legalMoves) {
@@ -157,14 +157,13 @@ public class TouchMoveEvaluator {
   }
 
   /**
-   * Detects FIDE 4.3.3: the player touched one of their own pieces (that has legal moves) and one of
-   * the opponent's pieces, and the own piece can legally capture the opponent piece. The player must
-   * then make that specific capture. Returns empty when the pattern does not apply, in which case the
-   * caller falls back to the first-touched obligation (which is exactly the 4.3.3 fallback: move or
-   * capture the first piece touched that can be moved or captured).
+   * Detects FIDE 4.3.3: the player touched one of their own pieces (that has legal moves) and one of the opponent's
+   * pieces, and the own piece can legally capture the opponent piece. The player must then make that specific capture.
+   * Returns empty when the pattern does not apply, in which case the caller falls back to the first-touched obligation
+   * (which is exactly the 4.3.3 fallback: move or capture the first piece touched that can be moved or captured).
    */
-  private static Optional<TouchMoveObligation> findSpecificCaptureObligation(List<BoardEvent> events,
-      Side sideToMove, Set<LegalMove> legalMoves) {
+  private static Optional<TouchMoveObligation> findSpecificCaptureObligation(List<BoardEvent> events, Side sideToMove,
+      Set<LegalMove> legalMoves) {
     Square ownSquare = Square.NONE;
     Piece ownPiece = Piece.NONE;
     Square opponentSquare = Square.NONE;
@@ -203,8 +202,7 @@ public class TouchMoveEvaluator {
   private static boolean canCapture(Set<LegalMove> legalMoves, Square fromSquare, Square toSquare) {
     for (final LegalMove legalMove : legalMoves) {
       if (legalMove.moveSpecification().fromSquare() == fromSquare
-          && legalMove.moveSpecification().toSquare() == toSquare
-          && legalMove.capturedPiece() != Piece.NONE) {
+          && legalMove.moveSpecification().toSquare() == toSquare && legalMove.capturedPiece() != Piece.NONE) {
         return true;
       }
     }
@@ -243,10 +241,9 @@ public class TouchMoveEvaluator {
   }
 
   /**
-   * Determines the square where the piece was touched, based on the event type.
-   * For CLICK and REMOVE: the square of the piece.
-   * For DRAG_MOVE and DRAG_CAPTURE: the source square (where the piece was picked up).
-   * For RESTORE events: no touch-move applies (piece is from side area).
+   * Determines the square where the piece was touched, based on the event type. For CLICK and REMOVE: the square of the
+   * piece. For DRAG_MOVE and DRAG_CAPTURE: the source square (where the piece was picked up). For RESTORE events: no
+   * touch-move applies (piece is from side area).
    */
   private static Square determineTouchedSquare(BoardEvent event) {
     return switch (event.type()) {
@@ -257,9 +254,8 @@ public class TouchMoveEvaluator {
   }
 
   /**
-   * Checks whether there are any legal moves originating from the given square.
-   * For castling moves, the fromSquare is NONE in the MoveSpecification, so we
-   * additionally check the king's castling origin square.
+   * Checks whether there are any legal moves originating from the given square. For castling moves, the fromSquare is
+   * NONE in the MoveSpecification, so we additionally check the king's castling origin square.
    */
   private static boolean hasLegalMovesFromSquare(Set<LegalMove> legalMoves, Square square) {
     for (final LegalMove legalMove : legalMoves) {
@@ -313,18 +309,18 @@ public class TouchMoveEvaluator {
         yield false;
       }
       case OPPONENT_PIECE ->
-        // Must capture the touched opponent piece: the move must land on the obligation square and be a capture
-        legalMove.moveSpecification().toSquare() == obligation.square() && legalMove.capturedPiece() != Piece.NONE;
+          // Must capture the touched opponent piece: the move must land on the obligation square and be a capture
+          legalMove.moveSpecification().toSquare() == obligation.square() && legalMove.capturedPiece() != Piece.NONE;
       case SPECIFIC_CAPTURE ->
-        // FIDE 4.3.3: must capture the touched opponent piece with the touched own piece — the move
-        // must originate from the own square, land on the opponent square, and be a capture.
-        legalMove.moveSpecification().fromSquare() == obligation.square()
-            && legalMove.moveSpecification().toSquare() == obligation.toSquare()
-            && legalMove.capturedPiece() != Piece.NONE;
+          // FIDE 4.3.3: must capture the touched opponent piece with the touched own piece — the move
+          // must originate from the own square, land on the opponent square, and be a capture.
+          legalMove.moveSpecification().fromSquare() == obligation.square()
+              && legalMove.moveSpecification().toSquare() == obligation.toSquare()
+              && legalMove.capturedPiece() != Piece.NONE;
       case CASTLING ->
-        // Must castle on the touched rook's side. Only the matching castling move satisfies it.
-        CastlingUtility.isCastlingMove(legalMove.moveSpecification())
-            && legalMove.moveSpecification().castlingMove() == obligation.castlingMove();
+          // Must castle on the touched rook's side. Only the matching castling move satisfies it.
+          CastlingUtility.isCastlingMove(legalMove.moveSpecification())
+              && legalMove.moveSpecification().castlingMove() == obligation.castlingMove();
     };
   }
 }

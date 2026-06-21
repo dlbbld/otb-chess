@@ -17,8 +17,8 @@ public class PositionComparator {
     final BitboardPosition beforePosition = board.getBitboardPosition();
 
     for (final LegalMove legalMove : board.getLegalMoves()) {
-      final BitboardPosition positionAfterMove = beforePosition.afterMove(
-          legalMove.moveSpecification(), legalMove.movingSide());
+      final BitboardPosition positionAfterMove = beforePosition.afterMove(legalMove.moveSpecification(),
+          legalMove.movingSide());
       if (positionAfterMove.equals(afterPosition)) {
         matchingMoves.add(legalMove);
       }

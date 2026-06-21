@@ -18,12 +18,13 @@ import io.github.dlbbld.otbchess.event.BoardEventType;
 public class MessageConverter {
 
   /**
-   * Converts a client board state map to a BitboardPosition.
-   * The map is keyed by square name (e.g. "e2") with piece name values (e.g. "WHITE_PAWN" or "NONE").
+   * Converts a client board state map to a BitboardPosition. The map is keyed by square name (e.g. "e2") with piece
+   * name values (e.g. "WHITE_PAWN" or "NONE").
    *
-   * <p>Only non-NONE pieces are applied as updates to the empty position, because
-   * {@code BitboardPosition.createChangedPosition} does not allow setting a square
-   * to the same piece it already contains (including NONE to NONE).
+   * <p>
+   * Only non-NONE pieces are applied as updates to the empty position, because
+   * {@code BitboardPosition.createChangedPosition} does not allow setting a square to the same piece it already
+   * contains (including NONE to NONE).
    */
   public static BitboardPosition toStaticPosition(Map<String, String> boardState) {
     final List<UpdateSquare> updates = new ArrayList<>();

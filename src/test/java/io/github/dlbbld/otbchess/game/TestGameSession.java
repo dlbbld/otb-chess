@@ -41,12 +41,10 @@ class TestGameSession {
     final BitboardPosition before = session.getBoard().getBitboardPosition();
 
     // Record the drag event
-    session.recordEvent(side,
-        BoardEvent.dragMove(from, to, movingPiece, System.currentTimeMillis()));
+    session.recordEvent(side, BoardEvent.dragMove(from, to, movingPiece, System.currentTimeMillis()));
 
     // Construct after-position
-    final BitboardPosition afterPosition = BitboardPositions.from(before)
-        .createChangedPosition(from, Piece.NONE)
+    final BitboardPosition afterPosition = BitboardPositions.from(before).createChangedPosition(from, Piece.NONE)
         .createChangedPosition(to, movingPiece).build();
 
     return session.pressClockButton(side, afterPosition);
@@ -60,11 +58,9 @@ class TestGameSession {
     final Side side = session.getHavingMove();
     final BitboardPosition before = session.getBoard().getBitboardPosition();
 
-    session.recordEvent(side,
-        BoardEvent.dragCapture(from, to, movingPiece, capturedPiece, System.currentTimeMillis()));
+    session.recordEvent(side, BoardEvent.dragCapture(from, to, movingPiece, capturedPiece, System.currentTimeMillis()));
 
-    final BitboardPosition afterPosition = BitboardPositions.from(before)
-        .createChangedPosition(from, Piece.NONE)
+    final BitboardPosition afterPosition = BitboardPositions.from(before).createChangedPosition(from, Piece.NONE)
         .createChangedPosition(to, movingPiece).build();
 
     return session.pressClockButton(side, afterPosition);
@@ -97,12 +93,10 @@ class TestGameSession {
     final Side side = session.getHavingMove();
 
     // Illegal move: knight to g3 (impossible)
-    session.recordEvent(side,
-        BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
+    session.recordEvent(side, BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
 
     final BitboardPosition illegalPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = session.pressClockButton(side, illegalPos);
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
@@ -141,8 +135,7 @@ class TestGameSession {
 
     session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 1));
     final BitboardPosition afterPosition = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterPosition);
 
@@ -160,15 +153,16 @@ class TestGameSession {
 
     assertTrue(response.isPresent());
     assertEquals(ArbiterResponseType.POSITION_CHANGE, response.get().type());
-    assertEquals("Position change: You moved an opponent's piece. That is not allowed. "
-        + "Please restore the position.", response.get().message());
+    assertEquals(
+        "Position change: You moved an opponent's piece. That is not allowed. " + "Please restore the position.",
+        response.get().message());
   }
 
-  /** Capture-by-removal: the player lifts the opponent piece off the board (REMOVE) and
-      then moves their own piece onto the now-empty square. Both events must be allowed
-      mid-play (no immediate intervention) and the resulting position must be accepted at
-      clock press as a normal capture, since it equals the position after the legal capture
-      move. */
+  /**
+   * Capture-by-removal: the player lifts the opponent piece off the board (REMOVE) and then moves their own piece onto
+   * the now-empty square. Both events must be allowed mid-play (no immediate intervention) and the resulting position
+   * must be accepted at clock press as a normal capture, since it equals the position after the legal capture move.
+   */
   @Test
   void testCaptureByRemovingOpponentPieceFirstThenMoving() {
     final GameSession session = new GameSession(TEST_TIME);
@@ -196,15 +190,16 @@ class TestGameSession {
     // Step 3: Press the clock. The resulting position equals the position after the legal
     // capture Nxe5, so the arbiter accepts it as a normal capture move.
     final BitboardPosition afterCapture = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.E5, Piece.WHITE_KNIGHT)
-        .createChangedPosition(Square.F3, Piece.NONE).build();
+        .createChangedPosition(Square.E5, Piece.WHITE_KNIGHT).createChangedPosition(Square.F3, Piece.NONE).build();
     final ArbiterResponse pressResponse = session.pressClockButton(Side.WHITE, afterCapture);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, pressResponse.type());
     assertEquals(Side.BLACK, session.getHavingMove());
   }
 
-  /** Stand-alone unit check on the validator: the REMOVE of an opponent piece does not
-      trigger any mid-play intervention, while DRAG_MOVE of the same opponent piece does. */
+  /**
+   * Stand-alone unit check on the validator: the REMOVE of an opponent piece does not trigger any mid-play
+   * intervention, while DRAG_MOVE of the same opponent piece does.
+   */
   @Test
   void testRemoveOfOpponentPieceIsAllowedDragOfOpponentPieceIsNot() {
     final GameSession session = new GameSession(TEST_TIME);
@@ -227,8 +222,7 @@ class TestGameSession {
 
     final Side side = session.getHavingMove();
     final BitboardPosition illegalPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     // First illegal move
     session.recordEvent(side, BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
@@ -252,8 +246,7 @@ class TestGameSession {
     // FEN with Black to move: White just played e4. Standard openings notation.
     final Board board = Board.fromFenStrict("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
     final GameSession session = new GameSession(TEST_TIME,
-        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, board);
+        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true, board);
     session.startGame();
 
     assertEquals(GameState.IN_PROGRESS, session.getState());
@@ -261,16 +254,13 @@ class TestGameSession {
     assertEquals(Side.BLACK, session.getHavingMove());
     // Black's clock is the one running — verify by attempting a White move first
     // and confirming it's rejected as "not your turn".
-    final ArbiterResponse rejected = session.pressClockButton(Side.WHITE,
-        session.getBoard().getBitboardPosition());
+    final ArbiterResponse rejected = session.pressClockButton(Side.WHITE, session.getBoard().getBitboardPosition());
     assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, rejected.type());
 
     // Black plays e5 (the natural reply) and the move is accepted.
-    session.recordEvent(Side.BLACK,
-        BoardEvent.dragMove(Square.E7, Square.E5, Piece.BLACK_PAWN, 0));
+    session.recordEvent(Side.BLACK, BoardEvent.dragMove(Square.E7, Square.E5, Piece.BLACK_PAWN, 0));
     final BitboardPosition afterE5 = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.E7, Piece.NONE)
-        .createChangedPosition(Square.E5, Piece.BLACK_PAWN).build();
+        .createChangedPosition(Square.E7, Piece.NONE).createChangedPosition(Square.E5, Piece.BLACK_PAWN).build();
     final ArbiterResponse accepted = session.pressClockButton(Side.BLACK, afterE5);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, accepted.type());
     assertEquals(Side.WHITE, session.getHavingMove());
@@ -323,8 +313,8 @@ class TestGameSession {
     // White resigns, but Black has only a lone king and can never mate (FIDE 5.1.2 exception):
     // the game is a draw, and the message names the material shortage.
     final GameSession session = new GameSession(TEST_TIME,
-        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, Board.fromFenStrict("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
+        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true,
+        Board.fromFenStrict("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
     session.startGame();
 
     final GameResult result = session.resign(Side.WHITE);
@@ -341,16 +331,15 @@ class TestGameSession {
     // White resigns in a fully blocked pawn wall: Black has pawns (sufficient material) but can
     // never break through, so the position is unwinnable -> draw, reported as "no potential mate".
     final GameSession session = new GameSession(TEST_TIME,
-        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, Board.fromFenStrict("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
+        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true,
+        Board.fromFenStrict("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
     session.startGame();
 
     final GameResult result = session.resign(Side.WHITE);
 
     assertEquals(GameResultType.RESIGNATION, result.type());
     assertEquals(Side.NONE, result.winner());
-    assertEquals("White resigned, but because Black has no potential mate, the game is a draw.",
-        result.description());
+    assertEquals("White resigned, but because Black has no potential mate, the game is a draw.", result.description());
   }
 
   @Test
@@ -358,8 +347,8 @@ class TestGameSession {
     // White's flag falls (zero time), but Black has a lone king: the FIDE 6.9 exception draws it,
     // and the message names the material shortage. TimeControl(0,0) flags the side to move at once.
     final GameSession session = new GameSession(new TimeControl(0, 0),
-        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, Board.fromFenStrict("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
+        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true,
+        Board.fromFenStrict("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
     session.startGame();
 
     final Optional<GameResult> result = session.checkFlagFall();
@@ -375,8 +364,8 @@ class TestGameSession {
   void testFlagFallDrawWhenOpponentHasNoMatePotentialDespiteMaterial() {
     // White flags in a blocked pawn wall: Black has material but no way to mate -> draw.
     final GameSession session = new GameSession(new TimeControl(0, 0),
-        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, Board.fromFenStrict("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
+        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true,
+        Board.fromFenStrict("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
     session.startGame();
 
     final Optional<GameResult> result = session.checkFlagFall();
@@ -398,8 +387,7 @@ class TestGameSession {
     session.recordEvent(white, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
 
     final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     session.offerDrawCorrectTime(white, afterE4);
     assertTrue(session.getDrawOfferManager().isDrawOffered());
@@ -421,8 +409,7 @@ class TestGameSession {
     session.recordEvent(white, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
 
     final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     session.offerDrawCorrectTime(white, afterE4);
 
@@ -442,8 +429,7 @@ class TestGameSession {
     session.recordEvent(white, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
 
     final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     session.offerDrawCorrectTime(white, afterE4);
 
@@ -548,11 +534,12 @@ class TestGameSession {
     assertTrue(session.getResult().isDraw());
   }
 
-  /** Plays an eight-half-move knight shuffle (Nf3 Nf6 Ng1 Ng8 ×2) so the initial position
-      has occurred 3 times. White is to move. From here white's `Nf3` would create the
-      3rd occurrence of position-after-1.Nf3 ⇒ `canClaimThreefoldRepetitionRuleWithOwnMove()`
-      is true. This keeps the with-move short-circuit from firing and lets the tests
-      exercise the per-move SAN-validation / rejectedWithMove paths. */
+  /**
+   * Plays an eight-half-move knight shuffle (Nf3 Nf6 Ng1 Ng8 ×2) so the initial position has occurred 3 times. White is
+   * to move. From here white's `Nf3` would create the 3rd occurrence of position-after-1.Nf3 ⇒
+   * `canClaimThreefoldRepetitionRuleWithOwnMove()` is true. This keeps the with-move short-circuit from firing and lets
+   * the tests exercise the per-move SAN-validation / rejectedWithMove paths.
+   */
   private void shuffleKnightsToReachThreefoldClaimable(GameSession session) {
     makeMove(session, Square.G1, Square.F3, Piece.WHITE_KNIGHT);
     makeMove(session, Square.G8, Square.F6, Piece.BLACK_KNIGHT);
@@ -579,8 +566,7 @@ class TestGameSession {
 
     // Now white must play e4.
     final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterE4);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
@@ -596,8 +582,7 @@ class TestGameSession {
 
     // SAN "e9" is structurally invalid (no rank 9). Ashlar Chess rejects it; we surface the
     // reason via invalidMove so the SAN-input panel re-prompts.
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove(),
@@ -619,13 +604,11 @@ class TestGameSession {
     // so the short-circuit does not fire and the SAN-validation path is reachable.
     final Board startingBoard = Board.fromFenStrict("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
     final GameSession session = new GameSession(TEST_TIME,
-        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, startingBoard);
+        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true, startingBoard);
     session.startGame();
 
     // SAN "Kz9" is structurally invalid.
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Kz9");
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Kz9");
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove());
@@ -646,15 +629,13 @@ class TestGameSession {
     // White plays d4 instead of e4 — the must-execute-move is still e4, so this fails as
     // INCOMPLETE_MOVE.
     final BitboardPosition afterD4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
-        .createChangedPosition(Square.D2, Piece.NONE)
-        .createChangedPosition(Square.D4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.D2, Piece.NONE).createChangedPosition(Square.D4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = session.pressClockButton(Side.WHITE, afterD4);
     assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, response.type());
     assertTrue(response.message().contains("was not executed"));
     // The message now names the move the player still owes.
-    assertTrue(response.message().contains("e4"),
-        "Message should name the specified move: " + response.message());
+    assertTrue(response.message().contains("e4"), "Message should name the specified move: " + response.message());
   }
 
   @Test
@@ -663,24 +644,23 @@ class TestGameSession {
     // The accepted-claim message names the move the player entered.
     final Board startingBoard = Board.fromFenStrict("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
     final GameSession session = new GameSession(TEST_TIME,
-        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, startingBoard);
+        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true, startingBoard);
     session.startGame();
 
     final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Rd1+");
 
     assertTrue(result.accepted(), "Lenient SAN should forgive the spurious check mark: " + result.message());
     assertFalse(result.invalidMove());
-    assertTrue(result.message().contains("Rd1+"),
-        "Claimant message should name the move: " + result.message());
+    assertTrue(result.message().contains("Rd1+"), "Claimant message should name the move: " + result.message());
     assertEquals(GameState.ENDED, session.getState());
   }
 
-  /** When no move from the current position can possibly create a threefold repetition,
-      the with-move claim short-circuits with a generic "no move could satisfy" rejection
-      BEFORE the SAN is even validated. The player's SAN is not tested for legality (no
-      invalidMove flag set), and no must-execute-move is established — the player is free
-      to play any legal move. */
+  /**
+   * When no move from the current position can possibly create a threefold repetition, the with-move claim
+   * short-circuits with a generic "no move could satisfy" rejection BEFORE the SAN is even validated. The player's SAN
+   * is not tested for legality (no invalidMove flag set), and no must-execute-move is established — the player is free
+   * to play any legal move.
+   */
   @Test
   void testThreefoldClaimWithMoveShortCircuitsWhenImpossibleFromCurrentPosition() {
     final GameSession session = new GameSession(TEST_TIME);
@@ -689,14 +669,12 @@ class TestGameSession {
     // The SAN ("e4") is legal, so it passes SAN validation; the short-circuit then fires
     // on the impossibility of ever reaching threefold and rejects the claim without
     // performing the move.
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e4");
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e4");
 
     assertFalse(result.accepted());
     assertFalse(result.invalidMove());
     assertTrue(result.moveToPerform().isEmpty());
-    assertTrue(result.message().contains("no move from the current position can lead to"
-        + " a threefold repetition"));
+    assertTrue(result.message().contains("no move from the current position can lead to" + " a threefold repetition"));
     assertNull(session.getMustExecuteMove());
     assertEquals(Side.WHITE, session.getHavingMove());
     assertEquals(GameState.IN_PROGRESS, session.getState());
@@ -708,26 +686,25 @@ class TestGameSession {
     session.startGame();
     // Half-move clock 0; canClaimFiftyMoveRuleWithOwnMove() requires 99+. SAN ("e4") is
     // legal, so SAN validation passes and the short-circuit then rejects the claim.
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "e4");
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "e4");
 
     assertFalse(result.accepted());
     assertFalse(result.invalidMove());
     assertTrue(result.moveToPerform().isEmpty());
-    assertTrue(result.message().contains("no move from the current position can satisfy"
-        + " the 50-move rule"));
+    assertTrue(result.message().contains("no move from the current position can satisfy" + " the 50-move rule"));
     assertNull(session.getMustExecuteMove());
   }
 
-  /** SAN validation must precede the short-circuit: even when no move could satisfy the
-      claim, an invalid SAN is reported as invalidMove first so the player can correct it. */
+  /**
+   * SAN validation must precede the short-circuit: even when no move could satisfy the claim, an invalid SAN is
+   * reported as invalidMove first so the player can correct it.
+   */
   @Test
   void testInvalidSanReportedBeforeShortCircuitForThreefold() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
 
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove());
@@ -739,8 +716,7 @@ class TestGameSession {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
 
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Kz9");
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Kz9");
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove());
@@ -806,12 +782,10 @@ class TestGameSession {
     session.startGame();
     // Invalid SAN on a with-move claim does not constitute a completed claim attempt — the
     // player is re-prompted and may try another claim with a legal SAN.
-    final DrawClaimResult invalid = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+    final DrawClaimResult invalid = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
     assertTrue(invalid.invalidMove());
 
-    final DrawClaimResult onBoard = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    final DrawClaimResult onBoard = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
     // A normal rejection (the position has not occurred 3 times), NOT the
     // "already-made-a-claim" lock.
     assertFalse(onBoard.accepted());
@@ -819,9 +793,8 @@ class TestGameSession {
   }
 
   /**
-   * FIDE 9.4: a player loses the right to claim under 9.2/9.3 once any piece has been
-   * touched on this move. The session must reject claims after a CLICK, DRAG_*, or
-   * REMOVE event in the current turn, before processing the claim.
+   * FIDE 9.4: a player loses the right to claim under 9.2/9.3 once any piece has been touched on this move. The session
+   * must reject claims after a CLICK, DRAG_*, or REMOVE event in the current turn, before processing the claim.
    */
   @Test
   void testClaimAfterTouchingPieceIsRejectedPerFide94() {
@@ -830,13 +803,11 @@ class TestGameSession {
     shuffleKnightsToReachThreefoldClaimable(session);
 
     // White touches a piece (CLICK on own knight) before attempting a claim.
-    session.recordEvent(Side.WHITE,
-        BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, System.currentTimeMillis()));
+    session.recordEvent(Side.WHITE, BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, System.currentTimeMillis()));
 
     // The position has actually occurred three times (knight shuffle reached threefold)
     // so without the 9.4 check the claim would succeed. With the check, it must be rejected.
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
 
     assertFalse(result.accepted(),
         "FIDE 9.4: claim must be rejected after touching a piece, even if position is repeated");
@@ -846,9 +817,9 @@ class TestGameSession {
   }
 
   /**
-   * FIDE 9.5.3: an incorrect (i.e. completed but rejected) draw claim adds 2 minutes to
-   * the opponent's clock. Applies to rejected on-board and claim-with-move attempts;
-   * does NOT apply to invalid-SAN cases (the player can re-prompt with a correct SAN).
+   * FIDE 9.5.3: an incorrect (i.e. completed but rejected) draw claim adds 2 minutes to the opponent's clock. Applies
+   * to rejected on-board and claim-with-move attempts; does NOT apply to invalid-SAN cases (the player can re-prompt
+   * with a correct SAN).
    */
   @Test
   void testRejectedClaimAddsTwoMinutePenaltyToOpponentPerFide953() {
@@ -858,11 +829,9 @@ class TestGameSession {
     // is incorrect and should incur the FIDE 9.5.3 penalty.
     final long blackBefore = session.getClock().getRemainingTimeMs(Side.BLACK);
 
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
 
-    assertFalse(result.accepted(),
-        "Threefold has not occurred — the claim must be rejected");
+    assertFalse(result.accepted(), "Threefold has not occurred — the claim must be rejected");
     assertFalse(result.invalidMove(), "It is a completed claim attempt, not invalid SAN");
 
     final long blackAfter = session.getClock().getRemainingTimeMs(Side.BLACK);
@@ -874,8 +843,8 @@ class TestGameSession {
   }
 
   /**
-   * Invalid-SAN claims do NOT trigger the FIDE 9.5.3 penalty — the player has not actually
-   * completed a claim; they can re-prompt with a correct SAN.
+   * Invalid-SAN claims do NOT trigger the FIDE 9.5.3 penalty — the player has not actually completed a claim; they can
+   * re-prompt with a correct SAN.
    */
   @Test
   void testInvalidSanClaimDoesNotTriggerNineFiveThreePenalty() {
@@ -885,8 +854,7 @@ class TestGameSession {
 
     final long blackBefore = session.getClock().getRemainingTimeMs(Side.BLACK);
 
-    final DrawClaimResult result = session.claimDraw(
-        Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
 
     assertTrue(result.invalidMove(), "Invalid SAN must surface as invalidMove, not as a rejection");
 

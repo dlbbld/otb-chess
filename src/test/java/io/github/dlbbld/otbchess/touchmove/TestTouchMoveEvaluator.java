@@ -336,8 +336,8 @@ class TestTouchMoveEvaluator {
   // ---- King-then-rook combined touch (FIDE 4.4.a) ----
 
   /**
-   * Sets up a position where White has both castling rights and the path is clear for kingside
-   * castling. Used by the CASTLING-obligation tests below.
+   * Sets up a position where White has both castling rights and the path is clear for kingside castling. Used by the
+   * CASTLING-obligation tests below.
    */
   private static Board whiteKingsideClearBoard() {
     final Board board = new Board();
@@ -420,9 +420,8 @@ class TestTouchMoveEvaluator {
     assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
     assertEquals(Square.H1, obligation.get().square());
 
-    final var castling = board.getLegalMoves().stream()
-        .filter(m -> m.moveSpecification()
-            .castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE)
+    final var castling = board.getLegalMoves().stream().filter(
+        m -> m.moveSpecification().castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE)
         .findFirst().orElseThrow();
     assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation.get(), castling));
   }
@@ -430,11 +429,11 @@ class TestTouchMoveEvaluator {
   @Test
   void testCastlingMoveSatisfiesCastlingObligation() {
     final Board board = whiteKingsideClearBoard();
-    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1,
-        Piece.WHITE_KING, io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE);
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1, Piece.WHITE_KING,
+        io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE);
 
-    final var castling = board.getLegalMoves().stream()
-        .filter(m -> m.moveSpecification().castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE)
+    final var castling = board.getLegalMoves().stream().filter(
+        m -> m.moveSpecification().castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE)
         .findFirst().orElseThrow();
 
     assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation, castling));
@@ -443,15 +442,14 @@ class TestTouchMoveEvaluator {
   @Test
   void testNonCastlingKingMoveDoesNotSatisfyCastlingObligation() {
     final Board board = whiteKingsideClearBoard();
-    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1,
-        Piece.WHITE_KING, io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE);
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1, Piece.WHITE_KING,
+        io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE);
 
     // A plain king move (e1->f1 if legal — but with bishop gone it should be) doesn't satisfy
     // the castling obligation. Fall back to a search to find any non-castling king move.
     final var plainKingMove = board.getLegalMoves().stream()
         .filter(m -> m.moveSpecification().castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.NONE)
-        .filter(m -> m.moveSpecification().fromSquare() == Square.E1)
-        .findFirst().orElseThrow();
+        .filter(m -> m.moveSpecification().fromSquare() == Square.E1).findFirst().orElseThrow();
 
     assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation, plainKingMove));
   }
@@ -460,12 +458,12 @@ class TestTouchMoveEvaluator {
   void testCastlingObligationOtherSideMoveRejected() {
     // White: king on e1, both rooks on starting squares, no pieces in the way for either side.
     final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
-    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1,
-        Piece.WHITE_KING, io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE);
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1, Piece.WHITE_KING,
+        io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE);
 
     // Queenside castling is legal in this position but does NOT satisfy a kingside obligation.
-    final var queensideCastling = board.getLegalMoves().stream()
-        .filter(m -> m.moveSpecification().castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.QUEEN_SIDE)
+    final var queensideCastling = board.getLegalMoves().stream().filter(
+        m -> m.moveSpecification().castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.QUEEN_SIDE)
         .findFirst().orElseThrow();
 
     assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation, queensideCastling));

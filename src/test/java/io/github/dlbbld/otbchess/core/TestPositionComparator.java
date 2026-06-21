@@ -24,8 +24,7 @@ class TestPositionComparator {
 
     // Simulate: white pawn from e2 to e3
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E3, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E3, Piece.WHITE_PAWN).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
 
@@ -40,8 +39,7 @@ class TestPositionComparator {
 
     // Simulate: white pawn from e2 to e4
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
 
@@ -56,8 +54,7 @@ class TestPositionComparator {
 
     // Simulate: knight from g1 to f3
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
 
@@ -77,8 +74,7 @@ class TestPositionComparator {
 
     // Black's turn: exd4
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E5, Piece.NONE)
-        .createChangedPosition(Square.D4, Piece.BLACK_PAWN).build();
+        .createChangedPosition(Square.E5, Piece.NONE).createChangedPosition(Square.D4, Piece.BLACK_PAWN).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
 
@@ -102,10 +98,8 @@ class TestPositionComparator {
     // White's turn: O-O (kingside castling)
     // King e1 -> g1, Rook h1 -> f1
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E1, Piece.NONE)
-        .createChangedPosition(Square.H1, Piece.NONE)
-        .createChangedPosition(Square.G1, Piece.WHITE_KING)
-        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.G1, Piece.WHITE_KING).createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
 
@@ -124,8 +118,7 @@ class TestPositionComparator {
     // White's turn: exf6 (en passant)
     // White pawn e5 -> f6, black pawn on f5 disappears
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E5, Piece.NONE)
-        .createChangedPosition(Square.F5, Piece.NONE)
+        .createChangedPosition(Square.E5, Piece.NONE).createChangedPosition(Square.F5, Piece.NONE)
         .createChangedPosition(Square.F6, Piece.WHITE_PAWN).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
@@ -152,8 +145,7 @@ class TestPositionComparator {
     // White's turn: bxa8=Q (promotion to queen, capturing the rook)
     // Pawn b7 disappears, queen appears on a8 (replacing black rook)
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.B7, Piece.NONE)
-        .createChangedPosition(Square.A8, Piece.WHITE_QUEEN).build();
+        .createChangedPosition(Square.B7, Piece.NONE).createChangedPosition(Square.A8, Piece.WHITE_QUEEN).build();
 
     final Optional<LegalMove> match = PositionComparator.findUniqueMatchingMove(board, afterPosition);
 
@@ -176,8 +168,7 @@ class TestPositionComparator {
 
     // White's turn: bxa8=N (promotion to knight, capturing the rook)
     final BitboardPosition afterPositionKnight = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.B7, Piece.NONE)
-        .createChangedPosition(Square.A8, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.B7, Piece.NONE).createChangedPosition(Square.A8, Piece.WHITE_KNIGHT).build();
 
     final Optional<LegalMove> matchKnight = PositionComparator.findUniqueMatchingMove(board, afterPositionKnight);
 
@@ -193,8 +184,7 @@ class TestPositionComparator {
     // Create a position that cannot arise from any legal move
     // Move knight to an impossible square
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
 
     final Set<LegalMove> matches = PositionComparator.findMatchingMoves(board, afterPosition);
 

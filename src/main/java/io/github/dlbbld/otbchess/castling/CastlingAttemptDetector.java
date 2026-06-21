@@ -26,9 +26,7 @@ public final class CastlingAttemptDetector {
   private CastlingAttemptDetector() {
   }
 
-  public record Attempt(
-      MoveSpecification moveSpecification,
-      Square kingReleaseSquare) {
+  public record Attempt(MoveSpecification moveSpecification, Square kingReleaseSquare) {
   }
 
   public static Optional<Attempt> findPhysicalAttempt(Board board, BitboardPosition afterPosition,
@@ -121,14 +119,12 @@ public final class CastlingAttemptDetector {
   }
 
   private static boolean isKingEvent(Side sideToMove, MoveSpecification moveSpecification, BoardEvent event) {
-    return isDragEvent(event)
-        && event.piece() == Piece.of(sideToMove, PieceType.KING)
+    return isDragEvent(event) && event.piece() == Piece.of(sideToMove, PieceType.KING)
         && event.square() == CastlingUtility.calculateKingCastlingFrom(sideToMove, moveSpecification);
   }
 
   private static boolean isRookEvent(Side sideToMove, CastlingMove castlingMove, BoardEvent event) {
-    return isDragEvent(event)
-        && event.piece() == Piece.of(sideToMove, PieceType.ROOK)
+    return isDragEvent(event) && event.piece() == Piece.of(sideToMove, PieceType.ROOK)
         && event.square() == calculateRookCastlingFrom(sideToMove, castlingMove);
   }
 
@@ -142,11 +138,10 @@ public final class CastlingAttemptDetector {
 
   private static boolean isPositionAfterEvents(BitboardPosition beforePosition, BitboardPosition afterPosition,
       BoardEvent kingEvent, BoardEvent rookEvent) {
-    final BitboardPosition expectedPhysicalPosition = BitboardPositions.withUpdates(beforePosition, List.of(
-        new UpdateSquare(kingEvent.square(), Piece.NONE),
-        new UpdateSquare(rookEvent.square(), Piece.NONE),
-        new UpdateSquare(kingEvent.targetSquare(), kingEvent.piece()),
-        new UpdateSquare(rookEvent.targetSquare(), rookEvent.piece())));
+    final BitboardPosition expectedPhysicalPosition = BitboardPositions.withUpdates(beforePosition,
+        List.of(new UpdateSquare(kingEvent.square(), Piece.NONE), new UpdateSquare(rookEvent.square(), Piece.NONE),
+            new UpdateSquare(kingEvent.targetSquare(), kingEvent.piece()),
+            new UpdateSquare(rookEvent.targetSquare(), rookEvent.piece())));
     return expectedPhysicalPosition.equals(afterPosition);
   }
 

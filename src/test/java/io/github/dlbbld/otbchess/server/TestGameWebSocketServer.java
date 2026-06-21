@@ -36,13 +36,8 @@ class TestGameWebSocketServer {
 
   @Test
   void testOpponentIllegalMoveMessageUsesOpponentReasonNotPlayerMessage() {
-    final IllegalMoveDetail detail = new IllegalMoveDetail(
-        Optional.of("player-only wording: you must restore"),
-        Optional.of("opponent-safe wording: they must restore"),
-        Side.WHITE,
-        1,
-        2,
-        false);
+    final IllegalMoveDetail detail = new IllegalMoveDetail(Optional.of("player-only wording: you must restore"),
+        Optional.of("opponent-safe wording: they must restore"), Side.WHITE, 1, 2, false);
     final ArbiterResponse response = ArbiterResponse.illegalMove(detail);
 
     assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT, response.playerMessageKey());

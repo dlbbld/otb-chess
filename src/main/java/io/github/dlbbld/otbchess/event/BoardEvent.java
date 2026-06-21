@@ -6,21 +6,16 @@ import io.github.dlbbld.ashlarchess.board.enums.Square;
 /**
  * Represents a single board manipulation event during a player's turn.
  *
- * @param type          the type of event
- * @param square        the square involved (source square for drags, clicked square for click)
- * @param targetSquare  the target square (for DRAG_MOVE, DRAG_CAPTURE, RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED);
- *                      Square.NONE for CLICK and REMOVE
- * @param piece         the piece being acted upon
- * @param displacedPiece the piece displaced from the target square (for DRAG_CAPTURE, RESTORE_TO_OCCUPIED);
- *                       Piece.NONE otherwise
- * @param timestampMs   the timestamp of the event in milliseconds
+ * @param type           the type of event
+ * @param square         the square involved (source square for drags, clicked square for click)
+ * @param targetSquare   the target square (for DRAG_MOVE, DRAG_CAPTURE, RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED);
+ *                       Square.NONE for CLICK and REMOVE
+ * @param piece          the piece being acted upon
+ * @param displacedPiece the piece displaced from the target square (for DRAG_CAPTURE, RESTORE_TO_OCCUPIED); Piece.NONE
+ *                       otherwise
+ * @param timestampMs    the timestamp of the event in milliseconds
  */
-public record BoardEvent(
-    BoardEventType type,
-    Square square,
-    Square targetSquare,
-    Piece piece,
-    Piece displacedPiece,
+public record BoardEvent(BoardEventType type, Square square, Square targetSquare, Piece piece, Piece displacedPiece,
     long timestampMs) {
 
   public static BoardEvent click(Square square, Piece piece, long timestampMs) {

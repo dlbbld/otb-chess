@@ -25,8 +25,7 @@ public class GameRoom {
   private ScheduledFuture<?> clockTickFuture;
 
   public GameRoom(String gameId, TimeControl timeControl) {
-    this(gameId, timeControl,
-        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true);
+    this(gameId, timeControl, io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true);
   }
 
   public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves) {
@@ -38,12 +37,11 @@ public class GameRoom {
   }
 
   /**
-   * Constructor accepting a custom starting board (e.g. parsed from a FEN supplied
-   * on the start screen). FEN parsing and validation happen at the server boundary
-   * before the room is built.
+   * Constructor accepting a custom starting board (e.g. parsed from a FEN supplied on the start screen). FEN parsing
+   * and validation happen at the server boundary before the room is built.
    */
-  public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves,
-      boolean autoResumeAfterRestore, Board startingBoard) {
+  public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore,
+      Board startingBoard) {
     this.gameId = gameId;
     this.session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
     this.timeControl = timeControl;

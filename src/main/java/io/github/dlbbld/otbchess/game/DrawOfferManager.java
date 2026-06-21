@@ -7,12 +7,13 @@ import io.github.dlbbld.ashlarchess.board.enums.Side;
 /**
  * Manages draw offer lifecycle per FIDE rule 9.1.2.1.
  *
- * <p>Rules:
+ * <p>
+ * Rules:
  * <ul>
- *   <li>Correct time: after making a move, before pressing the clock</li>
- *   <li>Wrong time: still valid, but escalating penalties (info → warning → game loss)</li>
- *   <li>Opponent can accept until they touch a piece or press the clock</li>
- *   <li>Repeated offers: separate escalation (info → warning → game loss)</li>
+ * <li>Correct time: after making a move, before pressing the clock</li>
+ * <li>Wrong time: still valid, but escalating penalties (info → warning → game loss)</li>
+ * <li>Opponent can accept until they touch a piece or press the clock</li>
+ * <li>Repeated offers: separate escalation (info → warning → game loss)</li>
  * </ul>
  */
 public class DrawOfferManager {
@@ -24,12 +25,12 @@ public class DrawOfferManager {
   private boolean drawOffered;
   private Side offeringSide;
   private boolean opponentTouchedPiece;
-  /** True iff the active offer was made at the correct time (offerer on move, after making
-      a move). Used to choose the right "offer-no-longer-acceptable" trigger:
-      correct-time → opponent's TOUCH invalidates the offer (FIDE 9.1.2.1);
-      wrong-time   → opponent's LEGAL RELEASE invalidates the offer instead (player was
-                     mid-thinking when the offer arrived; merely touching a piece while
-                     deciding their move shouldn't penalise them). */
+  /**
+   * True iff the active offer was made at the correct time (offerer on move, after making a move). Used to choose the
+   * right "offer-no-longer-acceptable" trigger: correct-time → opponent's TOUCH invalidates the offer (FIDE 9.1.2.1);
+   * wrong-time → opponent's LEGAL RELEASE invalidates the offer instead (player was mid-thinking when the offer
+   * arrived; merely touching a piece while deciding their move shouldn't penalise them).
+   */
   private boolean wasOfferedAtCorrectTime;
 
   // Repeated offer tracking (per side, cumulative across the game)
@@ -54,11 +55,7 @@ public class DrawOfferManager {
   /**
    * Result of a draw offer attempt.
    */
-  public record DrawOfferResult(
-      boolean accepted,
-      boolean gameLost,
-      boolean isWrongTime,
-      String arbiterMessage) {
+  public record DrawOfferResult(boolean accepted, boolean gameLost, boolean isWrongTime, String arbiterMessage) {
 
     public static DrawOfferResult ok() {
       return new DrawOfferResult(true, false, false, null);
@@ -99,13 +96,12 @@ public class DrawOfferManager {
   }
 
   /**
-   * Attempts to offer a draw at the wrong time (not the player's turn, or no move made).
-   * The offer is still valid per FIDE 9.1.2.1, but escalating penalties apply per 11.5.
+   * Attempts to offer a draw at the wrong time (not the player's turn, or no move made). The offer is still valid per
+   * FIDE 9.1.2.1, but escalating penalties apply per 11.5.
    */
   /**
-   * @param offererHasMove whether the offering side has the move (case A: on move but no
-   *     move attempted yet) vs. is not on move (case B: opponent's turn). Used only to choose
-   *     the wording of the first-info message.
+   * @param offererHasMove whether the offering side has the move (case A: on move but no move attempted yet) vs. is not
+   *                       on move (case B: opponent's turn). Used only to choose the wording of the first-info message.
    */
   public DrawOfferResult offerDrawWrongTime(Side side, boolean offererHasMove) {
     // Check for repeated offer first
@@ -123,23 +119,22 @@ public class DrawOfferManager {
     this.wasOfferedAtCorrectTime = false;
 
     if (count >= PENALTY_GAME_LOST) {
-      return DrawOfferResult.wrongTimeGameLost(
-          "You have repeatedly offered a draw at the wrong time. You lose the game.");
+      return DrawOfferResult
+          .wrongTimeGameLost("You have repeatedly offered a draw at the wrong time. You lose the game.");
     }
     if (count == PENALTY_WARNING) {
       return DrawOfferResult.wrongTime(
-          "You are offering a draw at the wrong time. "
-              + "The next wrong-time draw offer will lose the game.");
+          "You are offering a draw at the wrong time. " + "The next wrong-time draw offer will lose the game.");
     }
     // count == PENALTY_INFO — wording depends on whether the offerer has the move.
     if (offererHasMove) {
-      return DrawOfferResult.wrongTime(
-          "Please note that when having the move, the draw offer should be made after making"
+      return DrawOfferResult
+          .wrongTime("Please note that when having the move, the draw offer should be made after making"
               + " your move and before pressing the clock. Not following this procedure could lead"
               + " to a warning. The offer still counts as a draw offer.");
     }
-    return DrawOfferResult.wrongTime(
-        "Please note that the draw offer should be made on your own turn. Not following this"
+    return DrawOfferResult
+        .wrongTime("Please note that the draw offer should be made on your own turn. Not following this"
             + " procedure could lead to a warning. The offer still counts as a draw offer.");
   }
 
@@ -147,16 +142,14 @@ public class DrawOfferManager {
     final int count = incrementRepeatCount(side);
 
     if (count >= PENALTY_GAME_LOST) {
-      return DrawOfferResult.repeatedGameLost(
-          "You have repeatedly offered a draw. You lose the game.");
+      return DrawOfferResult.repeatedGameLost("You have repeatedly offered a draw. You lose the game.");
     }
     if (count == PENALTY_WARNING) {
-      return DrawOfferResult.repeated(
-          "You cannot repeat the draw offer. The next repeated draw offer will lose the game.");
+      return DrawOfferResult
+          .repeated("You cannot repeat the draw offer. The next repeated draw offer will lose the game.");
     }
     // count == PENALTY_INFO
-    return DrawOfferResult.repeated(
-        "You cannot repeat the draw offer on the same move.");
+    return DrawOfferResult.repeated("You cannot repeat the draw offer on the same move.");
   }
 
   /**

@@ -34,11 +34,12 @@ import io.github.dlbbld.otbchess.touchmove.TouchMoveType;
 /**
  * The arbiter engine combines touch-move evaluation with position comparison.
  *
- * <p>Called when the player presses the clock (or offers a draw, which also triggers evaluation).
- * Performs two-layer evaluation:
+ * <p>
+ * Called when the player presses the clock (or offers a draw, which also triggers evaluation). Performs two-layer
+ * evaluation:
  * <ol>
- *   <li>Layer 1 (Position Comparison): does the board state correspond to a legal move?</li>
- *   <li>Layer 2 (Touch-Move): if a touch-move obligation exists, does the move satisfy it?</li>
+ * <li>Layer 1 (Position Comparison): does the board state correspond to a legal move?</li>
+ * <li>Layer 2 (Touch-Move): if a touch-move obligation exists, does the move satisfy it?</li>
  * </ol>
  */
 public class ArbiterEngine {
@@ -62,22 +63,19 @@ public class ArbiterEngine {
   }
 
   /**
-   * Side-effect-free check used by the auto-end path to find out whether a
-   * released-piece commitment (FIDE 4.7) currently binds the player to a final
-   * position that the given {@code afterPosition} does not satisfy. If true, no
-   * code that bypasses {@link #evaluateClockPress} should accept the position
-   * as a move — the committed move must be played via the normal clock-press
-   * flow, where the violation is reported and the recovery flow runs.
+   * Side-effect-free check used by the auto-end path to find out whether a released-piece commitment (FIDE 4.7)
+   * currently binds the player to a final position that the given {@code afterPosition} does not satisfy. If true, no
+   * code that bypasses {@link #evaluateClockPress} should accept the position as a move — the committed move must be
+   * played via the normal clock-press flow, where the violation is reported and the recovery flow runs.
    */
   public boolean hasReleasedPieceViolation(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
     return findReleasedPieceViolation(board, afterPosition, sequence).isPresent();
   }
 
   /**
-   * Side-effect-free check: does the action sequence contain at least one release event whose
-   * resulting position is part of a legal move from {@code positionBeforeTurn}? Equivalent to
-   * "has the on-move player committed to a move via FIDE 4.7?" without comparing against any
-   * particular {@code afterPosition}.
+   * Side-effect-free check: does the action sequence contain at least one release event whose resulting position is
+   * part of a legal move from {@code positionBeforeTurn}? Equivalent to "has the on-move player committed to a move via
+   * FIDE 4.7?" without comparing against any particular {@code afterPosition}.
    */
   public boolean hasReleasedPieceCommitment(Board board, ActionSequence sequence) {
     BitboardPosition currentPosition = board.getBitboardPosition();
@@ -96,9 +94,9 @@ public class ArbiterEngine {
   /**
    * Evaluates the board state when the player presses the clock.
    *
-   * @param board          the board state before this turn's move
-   * @param afterPosition  the physical board state after the player's manipulations
-   * @param sequence       the action sequence recorded during this turn
+   * @param board         the board state before this turn's move
+   * @param afterPosition the physical board state after the player's manipulations
+   * @param sequence      the action sequence recorded during this turn
    * @return the arbiter's response
    */
   public ArbiterResponse evaluateClockPress(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
@@ -116,16 +114,11 @@ public class ArbiterEngine {
       if (castlingMove.isPresent()) {
         final MoveSpecification spec = castlingMove.get().moveSpecification();
         final Side castlingSide = castlingMove.get().movingSide();
-        final Square rookFrom = CastlingAttemptDetector.calculateRookCastlingFrom(castlingSide,
-            spec.castlingMove());
-        final Square rookTo = CastlingAttemptDetector.calculateRookCastlingTo(castlingSide,
-            spec.castlingMove());
-        final String castlingDirection = spec.castlingMove() == CastlingMove.KING_SIDE
-            ? "kingside" : "queenside";
-        return ArbiterResponse.releasedPieceViolationCastling(
-            new ArbiterResponse.ReleasedPieceCastlingContext(lock.piece(), lock.square(),
-                castlingDirection, rookFrom, rookTo),
-            lock.releasePosition());
+        final Square rookFrom = CastlingAttemptDetector.calculateRookCastlingFrom(castlingSide, spec.castlingMove());
+        final Square rookTo = CastlingAttemptDetector.calculateRookCastlingTo(castlingSide, spec.castlingMove());
+        final String castlingDirection = spec.castlingMove() == CastlingMove.KING_SIDE ? "kingside" : "queenside";
+        return ArbiterResponse.releasedPieceViolationCastling(new ArbiterResponse.ReleasedPieceCastlingContext(
+            lock.piece(), lock.square(), castlingDirection, rookFrom, rookTo), lock.releasePosition());
       }
       return ArbiterResponse.releasedPieceViolation(new ReleasedPieceContext(lock.piece(), lock.square()),
           lock.releasePosition());
@@ -160,25 +153,19 @@ public class ArbiterEngine {
     return ArbiterResponse.moveAccepted(matchedMove);
   }
 
-  private record ReleasedPieceLock(
-      BitboardPosition releasePosition,
-      Set<BitboardPosition> allowedFinalPositions,
-      Set<LegalMove> committedMoves,
-      Piece piece,
-      Square square) {
+  private record ReleasedPieceLock(BitboardPosition releasePosition, Set<BitboardPosition> allowedFinalPositions,
+      Set<LegalMove> committedMoves, Piece piece, Square square) {
 
     /**
-     * True iff every legal move consistent with the release is a castling move (i.e. the
-     * release commits the player exclusively to castling). In that case the player must
-     * complete the castling rather than restore the released piece, and the message
-     * should reflect that.
+     * True iff every legal move consistent with the release is a castling move (i.e. the release commits the player
+     * exclusively to castling). In that case the player must complete the castling rather than restore the released
+     * piece, and the message should reflect that.
      */
     boolean isCastlingOnlyCommitment() {
       if (committedMoves.isEmpty()) {
         return false;
       }
-      return committedMoves.stream()
-          .allMatch(m -> CastlingUtility.isCastlingMove(m.moveSpecification()));
+      return committedMoves.stream().allMatch(m -> CastlingUtility.isCastlingMove(m.moveSpecification()));
     }
 
     /** The unique castling move the player is committed to, when {@link #isCastlingOnlyCommitment()}. */
@@ -194,8 +181,8 @@ public class ArbiterEngine {
       ActionSequence sequence) {
     final Optional<AttemptedMove> attemptedCastling = inferPhysicalCastlingAttempt(board, afterPosition,
         sequence.getEventsSinceReleasedPieceRuleReset());
-    if (attemptedCastling.isPresent() && shouldBypassReleasedPieceForInvalidCastlingAttempt(board,
-        attemptedCastling.get())) {
+    if (attemptedCastling.isPresent()
+        && shouldBypassReleasedPieceForInvalidCastlingAttempt(board, attemptedCastling.get())) {
       return Optional.empty();
     }
 
@@ -209,8 +196,7 @@ public class ArbiterEngine {
         final ReleaseCommitment commitment = findCommitmentForRelease(board, event);
         if (!commitment.allowedFinalPositions().isEmpty()) {
           firstReleasedLegalPosition = Optional.of(new ReleasedPieceLock(currentPosition,
-              commitment.allowedFinalPositions(), commitment.committedMoves(),
-              event.piece(), event.targetSquare()));
+              commitment.allowedFinalPositions(), commitment.committedMoves(), event.piece(), event.targetSquare()));
         }
       }
     }
@@ -223,10 +209,9 @@ public class ArbiterEngine {
   }
 
   /**
-   * Captures both the set of allowed final positions and the set of legal moves that
-   * the release commits the player to. The legal-move set lets the message-building
-   * code recognise a castling-only commitment and produce the castling-specific
-   * arbiter message.
+   * Captures both the set of allowed final positions and the set of legal moves that the release commits the player to.
+   * The legal-move set lets the message-building code recognise a castling-only commitment and produce the
+   * castling-specific arbiter message.
    */
   private record ReleaseCommitment(Set<BitboardPosition> allowedFinalPositions, Set<LegalMove> committedMoves) {
   }
@@ -237,8 +222,7 @@ public class ArbiterEngine {
     for (final LegalMove legalMove : board.getLegalMoves()) {
       if (isReleasePartOfLegalMove(board.getSideToMove(), event, legalMove)) {
         moves.add(legalMove);
-        positions.add(board.getBitboardPosition().afterMove(
-            legalMove.moveSpecification(), board.getSideToMove()));
+        positions.add(board.getBitboardPosition().afterMove(legalMove.moveSpecification(), board.getSideToMove()));
       }
     }
     return new ReleaseCommitment(positions, moves);
@@ -292,8 +276,8 @@ public class ArbiterEngine {
 
   private static boolean isReleaseOnBoard(BoardEvent event) {
     return switch (event.type()) {
-      case DRAG_MOVE, DRAG_CAPTURE, RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED ->
-          event.piece() != Piece.NONE && event.targetSquare() != Square.NONE;
+      case DRAG_MOVE, DRAG_CAPTURE, RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> event.piece() != Piece.NONE
+          && event.targetSquare() != Square.NONE;
       case CLICK, REMOVE -> false;
     };
   }
@@ -303,12 +287,8 @@ public class ArbiterEngine {
     illegalMoveTracker.recordIllegalMove(sideToMove);
     final Optional<IllegalMoveReason> reason = explainSimpleIllegalMove(board, afterPosition, sequence);
     final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
-    final IllegalMoveDetail detail = new IllegalMoveDetail(
-        reason.map(IllegalMoveReason::playerReason),
-        reason.map(IllegalMoveReason::opponentReason),
-        sideToMove,
-        count,
-        illegalMoveTracker.getMaxIllegalMoves(),
+    final IllegalMoveDetail detail = new IllegalMoveDetail(reason.map(IllegalMoveReason::playerReason),
+        reason.map(IllegalMoveReason::opponentReason), sideToMove, count, illegalMoveTracker.getMaxIllegalMoves(),
         illegalMoveTracker.isUnlimited());
 
     if (illegalMoveTracker.isGameLost(sideToMove)) {
@@ -321,10 +301,7 @@ public class ArbiterEngine {
   /**
    * Physical move inferred from the player's board manipulations.
    */
-  private record AttemptedMove(
-      MoveSpecification moveSpecification,
-      boolean castlingAttempt,
-      Square kingReleaseSquare) {
+  private record AttemptedMove(MoveSpecification moveSpecification, boolean castlingAttempt, Square kingReleaseSquare) {
   }
 
   private record IllegalMoveReason(String playerReason, String opponentReason) {
@@ -398,8 +375,7 @@ public class ArbiterEngine {
         attempt.moveSpecification());
     final Piece kingPiece = Piece.of(board.getSideToMove(), PieceType.KING);
     for (final LegalMove legalMove : board.getLegalMoves()) {
-      if (!CastlingUtility.isCastlingMove(legalMove.moveSpecification())
-          && legalMove.movingPiece() == kingPiece
+      if (!CastlingUtility.isCastlingMove(legalMove.moveSpecification()) && legalMove.movingPiece() == kingPiece
           && legalMove.moveSpecification().fromSquare() == kingFrom
           && legalMove.moveSpecification().toSquare() == attempt.kingReleaseSquare()) {
         return true;
@@ -439,8 +415,7 @@ public class ArbiterEngine {
     }
 
     final MoveSpecification moveSpecification = createMoveSpecification(moveEvent);
-    return Optional.of(new AttemptedMove(moveSpecification,
-        CastlingUtility.isCastlingMove(moveSpecification),
+    return Optional.of(new AttemptedMove(moveSpecification, CastlingUtility.isCastlingMove(moveSpecification),
         CastlingUtility.isCastlingMove(moveSpecification) ? moveEvent.targetSquare() : Square.NONE));
   }
 
