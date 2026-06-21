@@ -31,7 +31,7 @@ public class MessageConverter {
     for (final Map.Entry<String, String> entry : boardState.entrySet()) {
       final Piece piece = Piece.valueOf(entry.getValue());
       if (piece != Piece.NONE) {
-        final Square square = Square.calculate(entry.getKey());
+        final Square square = Square.parse(entry.getKey());
         updates.add(new UpdateSquare(square, piece));
       }
     }
@@ -59,8 +59,8 @@ public class MessageConverter {
   public static BoardEvent toBoardEvent(String eventType, String square, String targetSquare, String piece,
       String displacedPiece) {
     final BoardEventType type = BoardEventType.valueOf(eventType);
-    final Square sq = "NONE".equals(square) ? Square.NONE : Square.calculate(square);
-    final Square targetSq = "NONE".equals(targetSquare) ? Square.NONE : Square.calculate(targetSquare);
+    final Square sq = "NONE".equals(square) ? Square.NONE : Square.parse(square);
+    final Square targetSq = "NONE".equals(targetSquare) ? Square.NONE : Square.parse(targetSquare);
     final Piece p = Piece.valueOf(piece);
     final Piece dp = Piece.valueOf(displacedPiece);
     final long timestamp = System.currentTimeMillis();

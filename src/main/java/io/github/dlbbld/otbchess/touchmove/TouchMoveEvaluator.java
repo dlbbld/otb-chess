@@ -7,8 +7,10 @@ import java.util.Set;
 
 import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.PieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.enums.SquareUtility;
 import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
 import io.github.dlbbld.otbchess.castling.CastlingAttemptDetector;
@@ -91,10 +93,10 @@ public class TouchMoveEvaluator {
       Set<LegalMove> legalMoves) {
     final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(sideToMove,
         new io.github.dlbbld.ashlarchess.common.model.MoveSpecification(CastlingMove.KING_SIDE));
-    final Piece kingPiece = Piece.calculateKingPiece(sideToMove);
-    final Piece rookPiece = Piece.calculateRookPiece(sideToMove);
-    final Square kingSideRook = Square.calculateKingSideRookOriginalSquare(sideToMove);
-    final Square queenSideRook = Square.calculateQueenSideRookOriginalSquare(sideToMove);
+    final Piece kingPiece = Piece.of(sideToMove, PieceType.KING);
+    final Piece rookPiece = Piece.of(sideToMove, PieceType.ROOK);
+    final Square kingSideRook = SquareUtility.calculateKingSideRookOriginalSquare(sideToMove);
+    final Square queenSideRook = SquareUtility.calculateQueenSideRookOriginalSquare(sideToMove);
 
     boolean kingTouched = false;
     for (final BoardEvent event : events) {
@@ -143,10 +145,10 @@ public class TouchMoveEvaluator {
 
   private static boolean isCastlingLegalOnSide(Set<LegalMove> legalMoves, Side sideToMove, CastlingMove side) {
     for (final LegalMove legalMove : legalMoves) {
-      if (legalMove.havingMove() != sideToMove) {
+      if (legalMove.movingSide() != sideToMove) {
         continue;
       }
-      if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())
+      if (CastlingUtility.isCastlingMove(legalMove.moveSpecification())
           && legalMove.moveSpecification().castlingMove() == side) {
         return true;
       }
@@ -202,7 +204,7 @@ public class TouchMoveEvaluator {
     for (final LegalMove legalMove : legalMoves) {
       if (legalMove.moveSpecification().fromSquare() == fromSquare
           && legalMove.moveSpecification().toSquare() == toSquare
-          && legalMove.pieceCaptured() != Piece.NONE) {
+          && legalMove.capturedPiece() != Piece.NONE) {
         return true;
       }
     }
@@ -265,8 +267,8 @@ public class TouchMoveEvaluator {
         return true;
       }
       // Castling: MoveSpecification has fromSquare = NONE, but the king originates from a specific square
-      if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())) {
-        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.havingMove(),
+      if (CastlingUtility.isCastlingMove(legalMove.moveSpecification())) {
+        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.movingSide(),
             legalMove.moveSpecification());
         if (kingFrom == square) {
           return true;
@@ -281,7 +283,7 @@ public class TouchMoveEvaluator {
    */
   private static boolean canBeCapturedOnSquare(Set<LegalMove> legalMoves, Square square) {
     for (final LegalMove legalMove : legalMoves) {
-      if (legalMove.moveSpecification().toSquare() == square && legalMove.pieceCaptured() != Piece.NONE) {
+      if (legalMove.moveSpecification().toSquare() == square && legalMove.capturedPiece() != Piece.NONE) {
         return true;
       }
     }
@@ -303,8 +305,8 @@ public class TouchMoveEvaluator {
           yield true;
         }
         // Castling: king originates from the obligation square
-        if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())) {
-          final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.havingMove(),
+        if (CastlingUtility.isCastlingMove(legalMove.moveSpecification())) {
+          final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.movingSide(),
               legalMove.moveSpecification());
           yield kingFrom == obligation.square();
         }
@@ -312,16 +314,16 @@ public class TouchMoveEvaluator {
       }
       case OPPONENT_PIECE ->
         // Must capture the touched opponent piece: the move must land on the obligation square and be a capture
-        legalMove.moveSpecification().toSquare() == obligation.square() && legalMove.pieceCaptured() != Piece.NONE;
+        legalMove.moveSpecification().toSquare() == obligation.square() && legalMove.capturedPiece() != Piece.NONE;
       case SPECIFIC_CAPTURE ->
         // FIDE 4.3.3: must capture the touched opponent piece with the touched own piece — the move
         // must originate from the own square, land on the opponent square, and be a capture.
         legalMove.moveSpecification().fromSquare() == obligation.square()
             && legalMove.moveSpecification().toSquare() == obligation.toSquare()
-            && legalMove.pieceCaptured() != Piece.NONE;
+            && legalMove.capturedPiece() != Piece.NONE;
       case CASTLING ->
         // Must castle on the touched rook's side. Only the matching castling move satisfies it.
-        CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())
+        CastlingUtility.isCastlingMove(legalMove.moveSpecification())
             && legalMove.moveSpecification().castlingMove() == obligation.castlingMove();
     };
   }

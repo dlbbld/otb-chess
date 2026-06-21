@@ -42,7 +42,7 @@ public class DrawClaimManager {
   private DrawClaimResult claimThreefoldWithMove(Board board, String san) {
     final MoveSpecification moveSpec;
     try {
-      moveSpec = LenientSanParser.parseText(san, board).moveSpecification();
+      moveSpec = LenientSanParser.parse(san, board).moveSpecification();
     } catch (final LenientSanParserValidationException e) {
       return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
           + " Please enter a legal move for the claim.");
@@ -90,7 +90,7 @@ public class DrawClaimManager {
   private DrawClaimResult claimFiftyMoveWithMove(Board board, String san) {
     final MoveSpecification moveSpec;
     try {
-      moveSpec = LenientSanParser.parseText(san, board).moveSpecification();
+      moveSpec = LenientSanParser.parse(san, board).moveSpecification();
     } catch (final LenientSanParserValidationException e) {
       return DrawClaimResult.invalidMove("Invalid move: " + e.getMessage()
           + " Please enter a legal move for the claim.");

@@ -161,22 +161,17 @@ public class GameWebSocketServer extends WebSocketServer {
     } else {
       final Board parsed;
       try {
-        parsed = new Board(fenInput);
-      } catch (final io.github.dlbbld.ashlarchess.common.exceptions.FenAdvancedValidationException
-          | io.github.dlbbld.ashlarchess.common.exceptions.FenRawValidationException e) {
-        // Expected user error — surface the chess library's specific validation reason.
-        sendError(conn, "Invalid FEN: " + e.getMessage());
-        return;
+        parsed = Board.fromFenStrict(fenInput);
       } catch (final RuntimeException e) {
-        // Any other parsing failure: still treat as user error rather than internal,
-        // because the FEN string is user input.
+        // Any parse failure is treated as a user FEN error (the FEN string is user input),
+        // surfacing the chess library's specific validation reason rather than an internal error.
         sendError(conn, "Invalid FEN: " + e.getMessage());
         return;
       }
       startingBoard = parsed;
       // Side-to-move from the FEN wins. If the FEN has Black to move, the creator
       // (who joins first) plays Black; the second player gets White.
-      creatorSide = parsed.getHavingMove() == io.github.dlbbld.ashlarchess.board.enums.Side.WHITE ? "white" : "black";
+      creatorSide = parsed.getSideToMove() == io.github.dlbbld.ashlarchess.board.enums.Side.WHITE ? "white" : "black";
     }
 
     final String gameId = UUID.randomUUID().toString().substring(0, 8);
@@ -200,7 +195,7 @@ public class GameWebSocketServer extends WebSocketServer {
     response.addProperty("side", creatorSide);
     response.add("board",
         GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
-    response.addProperty("havingMove", startingBoard.getHavingMove().name().toLowerCase());
+    response.addProperty("havingMove", startingBoard.getSideToMove().name().toLowerCase());
     conn.send(GSON.toJson(response));
 
     System.out.println("Game created: " + gameId + " by " + creatorSide
@@ -851,8 +846,8 @@ public class GameWebSocketServer extends WebSocketServer {
       // (calling getName() on them throws NonePointerException). Resolve the
       // king's actual from/to squares via CastlingUtility instead, and tag the
       // move so the client can recognise it.
-      if (CastlingUtility.calculateIsCastlingMove(spec)) {
-        final Side moveSide = move.havingMove();
+      if (CastlingUtility.isCastlingMove(spec)) {
+        final Side moveSide = move.movingSide();
         final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(moveSide, spec);
         final Square kingTo = CastlingUtility.calculateKingCastlingTo(moveSide, spec);
         moveData.addProperty("from", kingFrom.getName());

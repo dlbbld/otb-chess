@@ -127,7 +127,7 @@ class TestArbiterEngineEdgeCases {
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
-    assertEquals(Piece.BLACK_PAWN, response.acceptedMove().get().pieceCaptured());
+    assertEquals(Piece.BLACK_PAWN, response.acceptedMove().get().capturedPiece());
   }
 
   @Test

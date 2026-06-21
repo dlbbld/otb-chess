@@ -11,6 +11,7 @@ import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
 import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.PieceType;
 import io.github.dlbbld.ashlarchess.board.enums.PromotionPieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
@@ -101,7 +102,7 @@ public class ArbiterEngine {
    * @return the arbiter's response
    */
   public ArbiterResponse evaluateClockPress(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
-    final Side sideToMove = board.getHavingMove();
+    final Side sideToMove = board.getSideToMove();
 
     final Optional<ReleasedPieceLock> releasedPieceViolation = findReleasedPieceViolation(board, afterPosition,
         sequence);
@@ -114,7 +115,7 @@ public class ArbiterEngine {
       final Optional<LegalMove> castlingMove = lock.uniqueCastlingMove();
       if (castlingMove.isPresent()) {
         final MoveSpecification spec = castlingMove.get().moveSpecification();
-        final Side castlingSide = castlingMove.get().havingMove();
+        final Side castlingSide = castlingMove.get().movingSide();
         final Square rookFrom = CastlingAttemptDetector.calculateRookCastlingFrom(castlingSide,
             spec.castlingMove());
         final Square rookTo = CastlingAttemptDetector.calculateRookCastlingTo(castlingSide,
@@ -177,7 +178,7 @@ public class ArbiterEngine {
         return false;
       }
       return committedMoves.stream()
-          .allMatch(m -> CastlingUtility.calculateIsCastlingMove(m.moveSpecification()));
+          .allMatch(m -> CastlingUtility.isCastlingMove(m.moveSpecification()));
     }
 
     /** The unique castling move the player is committed to, when {@link #isCastlingOnlyCommitment()}. */
@@ -234,10 +235,10 @@ public class ArbiterEngine {
     final Set<BitboardPosition> positions = new HashSet<>();
     final Set<LegalMove> moves = new HashSet<>();
     for (final LegalMove legalMove : board.getLegalMoves()) {
-      if (isReleasePartOfLegalMove(board.getHavingMove(), event, legalMove)) {
+      if (isReleasePartOfLegalMove(board.getSideToMove(), event, legalMove)) {
         moves.add(legalMove);
         positions.add(board.getBitboardPosition().afterMove(
-            legalMove.moveSpecification(), board.getHavingMove()));
+            legalMove.moveSpecification(), board.getSideToMove()));
       }
     }
     return new ReleaseCommitment(positions, moves);
@@ -245,8 +246,8 @@ public class ArbiterEngine {
 
   private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove) {
     final MoveSpecification spec = legalMove.moveSpecification();
-    if (CastlingUtility.calculateIsCastlingMove(spec)) {
-      return event.piece() == Piece.calculateKingPiece(havingMove)
+    if (CastlingUtility.isCastlingMove(spec)) {
+      return event.piece() == Piece.of(havingMove, PieceType.KING)
           && event.square() == CastlingUtility.calculateKingCastlingFrom(havingMove, spec)
           && event.targetSquare() == CastlingUtility.calculateKingCastlingTo(havingMove, spec);
     }
@@ -255,7 +256,7 @@ public class ArbiterEngine {
       // placed on the promotion square. A pawn landing on the last rank is an incomplete move, never
       // a legal release — so it must not start a released-piece commitment. The commitment (and the
       // restore message) then correctly names the promoted piece, not the pawn.
-      final Piece promotedPiece = Piece.calculate(havingMove, spec.promotionPieceType().getPieceType());
+      final Piece promotedPiece = Piece.of(havingMove, spec.promotionPieceType().getPieceType());
       return event.piece() == promotedPiece && event.targetSquare() == spec.toSquare();
     }
     if (event.piece() != legalMove.movingPiece()) {
@@ -348,7 +349,7 @@ public class ArbiterEngine {
     } catch (final RuntimeException e) {
       return Optional.empty();
     }
-    final BitboardPosition expectedPosition = beforePosition.afterMove(moveSpecification, board.getHavingMove());
+    final BitboardPosition expectedPosition = beforePosition.afterMove(moveSpecification, board.getSideToMove());
     if (!expectedPosition.equals(afterPosition)) {
       final String reason = "the move itself is legal, but the final board position is not correct";
       return Optional.of(new IllegalMoveReason(reason, reason));
@@ -393,11 +394,11 @@ public class ArbiterEngine {
     if (attempt.kingReleaseSquare() == Square.NONE) {
       return false;
     }
-    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getHavingMove(),
+    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getSideToMove(),
         attempt.moveSpecification());
-    final Piece kingPiece = Piece.calculateKingPiece(board.getHavingMove());
+    final Piece kingPiece = Piece.of(board.getSideToMove(), PieceType.KING);
     for (final LegalMove legalMove : board.getLegalMoves()) {
-      if (!CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())
+      if (!CastlingUtility.isCastlingMove(legalMove.moveSpecification())
           && legalMove.movingPiece() == kingPiece
           && legalMove.moveSpecification().fromSquare() == kingFrom
           && legalMove.moveSpecification().toSquare() == attempt.kingReleaseSquare()) {
@@ -424,7 +425,7 @@ public class ArbiterEngine {
       moveEvent = event;
     }
 
-    if (moveEvent == null || moveEvent.piece() == Piece.NONE || moveEvent.piece().getSide() != board.getHavingMove()
+    if (moveEvent == null || moveEvent.piece() == Piece.NONE || moveEvent.piece().getSide() != board.getSideToMove()
         || moveEvent.square() == Square.NONE || moveEvent.targetSquare() == Square.NONE
         || moveEvent.square() == moveEvent.targetSquare()) {
       return Optional.empty();
@@ -439,8 +440,8 @@ public class ArbiterEngine {
 
     final MoveSpecification moveSpecification = createMoveSpecification(moveEvent);
     return Optional.of(new AttemptedMove(moveSpecification,
-        CastlingUtility.calculateIsCastlingMove(moveSpecification),
-        CastlingUtility.calculateIsCastlingMove(moveSpecification) ? moveEvent.targetSquare() : Square.NONE));
+        CastlingUtility.isCastlingMove(moveSpecification),
+        CastlingUtility.isCastlingMove(moveSpecification) ? moveEvent.targetSquare() : Square.NONE));
   }
 
   private static MoveSpecification createMoveSpecification(BoardEvent event) {
@@ -486,9 +487,9 @@ public class ArbiterEngine {
     }
 
     final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
-    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getHavingMove(),
+    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getSideToMove(),
         attemptedMove.moveSpecification());
-    final Piece kingPiece = Piece.calculateKingPiece(board.getHavingMove());
+    final Piece kingPiece = Piece.of(board.getSideToMove(), PieceType.KING);
 
     if (obligation.isPresent()) {
       final TouchMoveObligation value = obligation.get();

@@ -143,7 +143,7 @@ class TestArbiterEngine {
     // bxa8: the pawn lands on a8 (incomplete), is lifted, and a queen is placed on a8 — promotion
     // complete. The pawn-on-a8 step must not be treated as a released-piece commitment.
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+    final Board board = Board.fromFenStrict(PROMOTION_CAPTURE_FEN);
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
@@ -163,7 +163,7 @@ class TestArbiterEngine {
     // After the queen is released on a8 (bxa8=Q completed), swapping it back for the pawn is a
     // released-piece violation naming the QUEEN (not the pawn) — and not an illegal move.
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+    final Board board = Board.fromFenStrict(PROMOTION_CAPTURE_FEN);
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
@@ -191,7 +191,7 @@ class TestArbiterEngine {
     // After bxa8=Q is completed, switching the queen for a knight is NOT a new promotion (bxa8=N)
     // and NOT an illegal move — it is a released-piece violation: the queen is committed.
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board(PROMOTION_CAPTURE_FEN);
+    final Board board = Board.fromFenStrict(PROMOTION_CAPTURE_FEN);
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragCapture(Square.B7, Square.A8, Piece.WHITE_PAWN, Piece.BLACK_ROOK, 0));
@@ -281,7 +281,7 @@ class TestArbiterEngine {
     // moved on to f1. Pressing the clock must be a released-piece violation (the king is committed
     // to completing the castle), not an accepted move.
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
@@ -303,7 +303,7 @@ class TestArbiterEngine {
     // and then Ne5->c6 to re-block, in one turn. Two moves; no single legal move produces the
     // result, so it is an illegal move.
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board("2bqkb1r/pQp1ppp1/2np4/1Q2n3/8/7p/PP1PPPPP/RNB1KBNR b KQk - 9 12");
+    final Board board = Board.fromFenStrict("2bqkb1r/pQp1ppp1/2np4/1Q2n3/8/7p/PP1PPPPP/RNB1KBNR b KQk - 9 12");
 
     final ActionSequence sequence = new ActionSequence(Side.BLACK);
     sequence.addEvent(BoardEvent.dragMove(Square.C6, Square.D4, Piece.BLACK_KNIGHT, 0));
@@ -645,7 +645,7 @@ class TestArbiterEngine {
   @Test
   void testIllegalCastlingAttemptReportsCastlingReasonAndKingObligation() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board("k4r2/8/8/8/8/8/8/4K2R w K - 0 1");
+    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/8/4K2R w K - 0 1");
 
     // White tries to castle through f1, which is attacked by the black rook on f8.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
@@ -671,7 +671,7 @@ class TestArbiterEngine {
   @Test
   void testFailedAdjacentCastlingAttemptWithNoKingMovesDoesNotBindRook() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
 
     // White attempts a malformed kingside castling motion. Castling is impossible because f1 is
     // attacked, and the king has no legal move at all from e1.
@@ -711,7 +711,7 @@ class TestArbiterEngine {
   @Test
   void testNonCastlingKingAndRookMovesDoNotReportCastlingFailure() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.E3, Piece.WHITE_KING, 0));
@@ -732,7 +732,7 @@ class TestArbiterEngine {
   @Test
   void testFailedAdjacentCastlingAttemptWithLegalKingReleaseStillBindsReleasedPiece() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = new Board("k7/8/8/8/8/8/P2PPP2/3QK2R w - - 0 1");
+    final Board board = Board.fromFenStrict("k7/8/8/8/8/8/P2PPP2/3QK2R w - - 0 1");
 
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.F1, Piece.WHITE_KING, 0));

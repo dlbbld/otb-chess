@@ -8,8 +8,10 @@ import java.util.Set;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.PieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
+import io.github.dlbbld.ashlarchess.board.enums.SquareUtility;
 import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
 import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
@@ -40,7 +42,7 @@ public final class CastlingAttemptDetector {
     final BoardEvent rookEvent = moveEvents.get(1);
     for (final CastlingMove castlingMove : List.of(CastlingMove.KING_SIDE, CastlingMove.QUEEN_SIDE)) {
       final MoveSpecification moveSpecification = new MoveSpecification(castlingMove);
-      if (isCastlingAttempt(board.getHavingMove(), moveSpecification, castlingMove, kingEvent, rookEvent)
+      if (isCastlingAttempt(board.getSideToMove(), moveSpecification, castlingMove, kingEvent, rookEvent)
           && isPositionAfterEvents(board.getBitboardPosition(), afterPosition, kingEvent, rookEvent)) {
         return Optional.of(new Attempt(moveSpecification, kingEvent.targetSquare()));
       }
@@ -120,20 +122,20 @@ public final class CastlingAttemptDetector {
 
   private static boolean isKingEvent(Side sideToMove, MoveSpecification moveSpecification, BoardEvent event) {
     return isDragEvent(event)
-        && event.piece() == Piece.calculateKingPiece(sideToMove)
+        && event.piece() == Piece.of(sideToMove, PieceType.KING)
         && event.square() == CastlingUtility.calculateKingCastlingFrom(sideToMove, moveSpecification);
   }
 
   private static boolean isRookEvent(Side sideToMove, CastlingMove castlingMove, BoardEvent event) {
     return isDragEvent(event)
-        && event.piece() == Piece.calculateRookPiece(sideToMove)
+        && event.piece() == Piece.of(sideToMove, PieceType.ROOK)
         && event.square() == calculateRookCastlingFrom(sideToMove, castlingMove);
   }
 
   public static Square calculateRookCastlingFrom(Side sideToMove, CastlingMove castlingMove) {
     return switch (castlingMove) {
-      case KING_SIDE -> Square.calculateKingSideRookOriginalSquare(sideToMove);
-      case QUEEN_SIDE -> Square.calculateQueenSideRookOriginalSquare(sideToMove);
+      case KING_SIDE -> SquareUtility.calculateKingSideRookOriginalSquare(sideToMove);
+      case QUEEN_SIDE -> SquareUtility.calculateQueenSideRookOriginalSquare(sideToMove);
       case NONE -> throw new IllegalArgumentException();
     };
   }
@@ -153,8 +155,8 @@ public final class CastlingAttemptDetector {
       if (legalMove.moveSpecification().fromSquare() == square) {
         return true;
       }
-      if (CastlingUtility.calculateIsCastlingMove(legalMove.moveSpecification())) {
-        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.havingMove(),
+      if (CastlingUtility.isCastlingMove(legalMove.moveSpecification())) {
+        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.movingSide(),
             legalMove.moveSpecification());
         if (kingFrom == square) {
           return true;

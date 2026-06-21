@@ -250,7 +250,7 @@ class TestGameSession {
   @Test
   void testCustomFenStartingPositionWithBlackToMove() {
     // FEN with Black to move: White just played e4. Standard openings notation.
-    final Board board = new Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
+    final Board board = Board.fromFenStrict("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
     final GameSession session = new GameSession(TEST_TIME,
         io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
         true, board);
@@ -324,7 +324,7 @@ class TestGameSession {
     // the game is a draw, and the message names the material shortage.
     final GameSession session = new GameSession(TEST_TIME,
         io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, new Board("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
+        true, Board.fromFenStrict("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
     session.startGame();
 
     final GameResult result = session.resign(Side.WHITE);
@@ -342,7 +342,7 @@ class TestGameSession {
     // never break through, so the position is unwinnable -> draw, reported as "no potential mate".
     final GameSession session = new GameSession(TEST_TIME,
         io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, new Board("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
+        true, Board.fromFenStrict("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
     session.startGame();
 
     final GameResult result = session.resign(Side.WHITE);
@@ -359,7 +359,7 @@ class TestGameSession {
     // and the message names the material shortage. TimeControl(0,0) flags the side to move at once.
     final GameSession session = new GameSession(new TimeControl(0, 0),
         io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, new Board("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
+        true, Board.fromFenStrict("8/8/4k3/3R4/2K5/8/8/8 w - - 0 50"));
     session.startGame();
 
     final Optional<GameResult> result = session.checkFlagFall();
@@ -376,7 +376,7 @@ class TestGameSession {
     // White flags in a blocked pawn wall: Black has material but no way to mate -> draw.
     final GameSession session = new GameSession(new TimeControl(0, 0),
         io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
-        true, new Board("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
+        true, Board.fromFenStrict("8/8/3k4/1p2p1p1/pP1pP1P1/P2P4/1K6/8 w - - 32 62"));
     session.startGame();
 
     final Optional<GameResult> result = session.checkFlagFall();
@@ -617,7 +617,7 @@ class TestGameSession {
     // Custom FEN with halfMoveClock = 99, white to move, K+R vs K. Any non-capture
     // non-pawn move advances the clock to 100 ⇒ canClaimFiftyMoveRuleWithOwnMove() == true,
     // so the short-circuit does not fire and the SAN-validation path is reachable.
-    final Board startingBoard = new Board("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
+    final Board startingBoard = Board.fromFenStrict("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
     final GameSession session = new GameSession(TEST_TIME,
         io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
         true, startingBoard);
@@ -661,7 +661,7 @@ class TestGameSession {
   void testClaimWithMoveAcceptsLenientSanAndNamesTheMove() {
     // Strict SAN rejects the spurious "+" (Rd1 is not check); the lenient parser forgives it.
     // The accepted-claim message names the move the player entered.
-    final Board startingBoard = new Board("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
+    final Board startingBoard = Board.fromFenStrict("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
     final GameSession session = new GameSession(TEST_TIME,
         io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES,
         true, startingBoard);

@@ -85,7 +85,7 @@ class TestPositionComparator {
     assertTrue(match.isPresent());
     assertEquals(Square.E5, match.get().moveSpecification().fromSquare());
     assertEquals(Square.D4, match.get().moveSpecification().toSquare());
-    assertEquals(Piece.WHITE_PAWN, match.get().pieceCaptured());
+    assertEquals(Piece.WHITE_PAWN, match.get().capturedPiece());
   }
 
   @Test

@@ -113,7 +113,7 @@ public class GameSession {
 
     this.state = GameState.WAITING_FOR_PLAYERS;
     this.result = null;
-    this.currentSequence = new ActionSequence(board.getHavingMove());
+    this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
     this.removedSquaresThisTurn = new HashSet<>();
     this.mustExecuteMove = null;
@@ -132,7 +132,7 @@ public class GameSession {
     this.state = GameState.IN_PROGRESS;
     // The clock starts on whichever side is to move in the starting position,
     // not blindly on White, so a FEN with Black to move correctly clocks Black.
-    this.clock.startClock(board.getHavingMove());
+    this.clock.startClock(board.getSideToMove());
   }
 
   // ===== Mid-play event recording =====
@@ -144,7 +144,7 @@ public class GameSession {
     if (state != GameState.IN_PROGRESS) {
       return Optional.empty();
     }
-    if (side != board.getHavingMove()) {
+    if (side != board.getSideToMove()) {
       return Optional.empty();
     }
 
@@ -192,7 +192,7 @@ public class GameSession {
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
-    if (side != board.getHavingMove()) {
+    if (side != board.getSideToMove()) {
       return ArbiterResponse.incompleteMove("It is not your turn.");
     }
 
@@ -223,7 +223,7 @@ public class GameSession {
     if (state != GameState.IN_PROGRESS) {
       return Optional.empty();
     }
-    if (side != board.getHavingMove()) {
+    if (side != board.getSideToMove()) {
       return Optional.empty();
     }
     // Skip during the patient-loop recovery from a rejected draw claim — that path requires the
@@ -330,7 +330,7 @@ public class GameSession {
   private ArbiterResponse evaluateMustExecuteMove(BitboardPosition afterPosition) {
     // Compute expected position after the specified move
     final BitboardPosition expectedPosition = positionBeforeTurn.afterMove(
-        mustExecuteMove, board.getHavingMove());
+        mustExecuteMove, board.getSideToMove());
 
     if (expectedPosition.equals(afterPosition)) {
       // Correct — perform the move
@@ -418,7 +418,7 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
     }
 
-    final boolean offererHasMove = side == board.getHavingMove();
+    final boolean offererHasMove = side == board.getSideToMove();
     final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
     if (result.gameLost()) {
       endGame(new GameResult(GameResultType.DRAW_AGREEMENT, side.getOppositeSide(), result.arbiterMessage()));
@@ -478,7 +478,7 @@ public class GameSession {
     if (state != GameState.IN_PROGRESS) {
       return DrawClaimResult.error("You cannot claim a draw now.");
     }
-    if (side != board.getHavingMove()) {
+    if (side != board.getSideToMove()) {
       // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is.
       return DrawClaimResult.error("You cannot claim a draw when not having the move.");
     }
@@ -627,7 +627,7 @@ public class GameSession {
   private Optional<GameResult> checkAutomaticEndings() {
     // 1. Checkmate
     if (board.isCheckmate()) {
-      final Side winner = board.getHavingMove().getOppositeSide();
+      final Side winner = board.getSideToMove().getOppositeSide();
       return Optional.of(new GameResult(GameResultType.CHECKMATE, winner,
           sideName(winner) + " won the game by checkmate."));
     }
@@ -662,7 +662,7 @@ public class GameSession {
   // ===== Helpers =====
 
   private void startNewTurn() {
-    this.currentSequence = new ActionSequence(board.getHavingMove());
+    this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
     this.restorationTargetPosition = positionBeforeTurn;
     this.removedSquaresThisTurn.clear();
@@ -758,7 +758,7 @@ public class GameSession {
   public synchronized void resumeAfterRestorationDelay() {
     if (state == GameState.IN_PROGRESS && restorationResumePending && !waitingForReady && !waitingForRestoration) {
       restorationResumePending = false;
-      clock.startClock(board.getHavingMove());
+      clock.startClock(board.getSideToMove());
     }
   }
 
@@ -779,7 +779,7 @@ public class GameSession {
     if (whiteReady && blackReady) {
       waitingForReady = false;
       if (state == GameState.IN_PROGRESS) {
-        clock.startClock(board.getHavingMove());
+        clock.startClock(board.getSideToMove());
       }
       return true;
     }
@@ -816,7 +816,7 @@ public class GameSession {
   // ===== PGN export =====
 
   public synchronized String exportPgn() {
-    return PgnCreate.createPgnString(board);
+    return PgnCreate.toPgnString(board);
   }
 
   // ===== Getters =====
@@ -840,7 +840,7 @@ public class GameSession {
   }
 
   public synchronized Side getHavingMove() {
-    return board.getHavingMove();
+    return board.getSideToMove();
   }
 
   public synchronized Board getBoard() {

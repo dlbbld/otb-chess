@@ -102,7 +102,7 @@ public class OtbChessServer {
       obj.addProperty("valid", true);
     } else {
       try {
-        new Board(fen.trim());
+        Board.fromFenStrict(fen.trim());
         obj.addProperty("valid", true);
       } catch (final Exception e) {
         obj.addProperty("valid", false);

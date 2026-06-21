@@ -313,7 +313,7 @@ class TestTouchMoveEvaluator {
 
   @Test
   void testFailedCastlingAttemptWithNoKingMovesDoesNotBindRook() {
-    final Board board = new Board("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
 
     // The king has no legal move. The rook h1-g1 move is part of the failed castling attempt,
@@ -459,7 +459,7 @@ class TestTouchMoveEvaluator {
   @Test
   void testCastlingObligationOtherSideMoveRejected() {
     // White: king on e1, both rooks on starting squares, no pieces in the way for either side.
-    final Board board = new Board("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
     final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1,
         Piece.WHITE_KING, io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE);
 
@@ -493,7 +493,7 @@ class TestTouchMoveEvaluator {
   @Test
   void testTouchedRookDeterminesSideWhenBothLegal() {
     // Both castling sides legal for White. Touching K then queenside rook a1 → must castle queenside.
-    final Board board = new Board("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
 
     sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
