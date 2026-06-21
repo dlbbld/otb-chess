@@ -12,7 +12,6 @@ import io.github.dlbbld.otbchess.message.MessageKey;
 import io.github.dlbbld.otbchess.message.MessageSeverity;
 import io.github.dlbbld.otbchess.message.Messages;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveObligation;
-import io.github.dlbbld.otbchess.touchmove.TouchMoveType;
 
 /**
  * Represents the arbiter's response after evaluating a clock press or a mid-play event.
@@ -28,34 +27,21 @@ import io.github.dlbbld.otbchess.touchmove.TouchMoveType;
  * @param illegalMoveDetail    structured illegal-move context
  * @param releasedPieceContext structured released-piece context
  */
-public record ArbiterResponse(
-    ArbiterResponseType type,
-    MessageKey playerMessageKey,
-    List<Object> playerMessageArgs,
-    Optional<MessageKey> opponentMessageKey,
-    List<Object> opponentMessageArgs,
-    Optional<LegalMove> acceptedMove,
-    Optional<TouchMoveObligation> obligation,
-    Optional<BitboardPosition> restorePosition,
-    Optional<IllegalMoveDetail> illegalMoveDetail,
-    Optional<ReleasedPieceContext> releasedPieceContext) {
+public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessageKey, List<Object> playerMessageArgs,
+    Optional<MessageKey> opponentMessageKey, List<Object> opponentMessageArgs, Optional<LegalMove> acceptedMove,
+    Optional<TouchMoveObligation> obligation, Optional<BitboardPosition> restorePosition,
+    Optional<IllegalMoveDetail> illegalMoveDetail, Optional<ReleasedPieceContext> releasedPieceContext) {
 
   public ArbiterResponse {
     playerMessageArgs = List.copyOf(playerMessageArgs);
     opponentMessageArgs = List.copyOf(opponentMessageArgs);
   }
 
-  public record IllegalMoveDetail(
-      Optional<String> playerReason,
-      Optional<String> opponentReason,
-      Side side,
-      int count,
-      int maxIllegalMoves,
-      boolean unlimited) {
+  public record IllegalMoveDetail(Optional<String> playerReason, Optional<String> opponentReason, Side side, int count,
+      int maxIllegalMoves, boolean unlimited) {
 
     String playerReasonPrefix() {
-      return playerReason.map(reason -> "Illegal move: " + ensureSentence(reason) + " ")
-          .orElse("Illegal move. ");
+      return playerReason.map(reason -> "Illegal move: " + ensureSentence(reason) + " ").orElse("Illegal move. ");
     }
 
     Optional<String> opponentReasonDetail() {
@@ -79,17 +65,11 @@ public record ArbiterResponse(
   }
 
   /**
-   * Released-piece context for the case where the release commits the player
-   * exclusively to a castling move. Carries the castling direction and the rook
-   * from/to so the message can tell the player to complete the castling — rather
-   * than misleadingly asking them to "put the king back", since the king is
-   * already on the right square.
+   * Released-piece context for the case where the release commits the player exclusively to a castling move. Carries
+   * the castling direction and the rook from/to so the message can tell the player to complete the castling — rather
+   * than misleadingly asking them to "put the king back", since the king is already on the right square.
    */
-  public record ReleasedPieceCastlingContext(
-      Piece piece,
-      Square square,
-      String castlingDirection,
-      Square rookFrom,
+  public record ReleasedPieceCastlingContext(Piece piece, Square square, String castlingDirection, Square rookFrom,
       Square rookTo) {
   }
 
@@ -127,40 +107,33 @@ public record ArbiterResponse(
       }
       default -> throw new IllegalStateException("Unhandled obligation type: " + obligation.type());
     }
-    return new ArbiterResponse(ArbiterResponseType.TOUCH_MOVE_VIOLATION, playerKey, args,
-        Optional.of(opponentKey), args, Optional.empty(), Optional.of(obligation), Optional.empty(),
-        Optional.empty(), Optional.empty());
+    return new ArbiterResponse(ArbiterResponseType.TOUCH_MOVE_VIOLATION, playerKey, args, Optional.of(opponentKey),
+        args, Optional.empty(), Optional.of(obligation), Optional.empty(), Optional.empty(), Optional.empty());
   }
 
   public static ArbiterResponse releasedPieceViolation(ReleasedPieceContext context, BitboardPosition restorePosition) {
     final List<Object> args = List.of(formatPieceName(context.piece()), context.square().getName());
-    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION,
-        MessageKey.ARBITER_RELEASED_PIECE_PLAYER, args, Optional.of(MessageKey.ARBITER_RELEASED_PIECE_OPPONENT),
-        args, Optional.empty(), Optional.empty(), Optional.ofNullable(restorePosition), Optional.empty(),
-        Optional.of(context));
+    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION, MessageKey.ARBITER_RELEASED_PIECE_PLAYER,
+        args, Optional.of(MessageKey.ARBITER_RELEASED_PIECE_OPPONENT), args, Optional.empty(), Optional.empty(),
+        Optional.ofNullable(restorePosition), Optional.empty(), Optional.of(context));
   }
 
   /**
-   * Released-piece violation where the release commits the player to castling. The
-   * message tells the player to complete the castling by placing the rook on its
-   * target square; the king is already correctly placed.
+   * Released-piece violation where the release commits the player to castling. The message tells the player to complete
+   * the castling by placing the rook on its target square; the king is already correctly placed.
    */
   public static ArbiterResponse releasedPieceViolationCastling(ReleasedPieceCastlingContext context,
       BitboardPosition restorePosition) {
-    final List<Object> args = List.of(
-        context.square().getName(),
-        context.castlingDirection(),
-        context.rookFrom().getName(),
-        context.rookTo().getName());
+    final List<Object> args = List.of(context.square().getName(), context.castlingDirection(),
+        context.rookFrom().getName(), context.rookTo().getName());
     // The standard ReleasedPieceContext (piece + square) is also carried, so callers
     // that read structured fields without distinguishing castling still see the king
     // and the release square.
     final ReleasedPieceContext releasedContext = new ReleasedPieceContext(context.piece(), context.square());
     return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION,
         MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, args,
-        Optional.of(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_OPPONENT), args,
-        Optional.empty(), Optional.empty(), Optional.ofNullable(restorePosition), Optional.empty(),
-        Optional.of(releasedContext));
+        Optional.of(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_OPPONENT), args, Optional.empty(), Optional.empty(),
+        Optional.ofNullable(restorePosition), Optional.empty(), Optional.of(releasedContext));
   }
 
   public static ArbiterResponse illegalMove(IllegalMoveDetail detail) {
@@ -182,13 +155,13 @@ public record ArbiterResponse(
     }
 
     final Optional<String> opponentReason = detail.opponentReasonDetail();
-    final Optional<MessageKey> opponentKey = Optional.of(opponentReason.isPresent()
-        ? MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT
-        : MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT_GENERIC);
+    final Optional<MessageKey> opponentKey = Optional
+        .of(opponentReason.isPresent() ? MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT
+            : MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT_GENERIC);
     final List<Object> opponentArgs = opponentReason.<List<Object>>map(List::of).orElseGet(List::of);
 
-    return new ArbiterResponse(ArbiterResponseType.ILLEGAL_MOVE, playerKey, playerArgs, opponentKey,
-        opponentArgs, Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(detail), Optional.empty());
+    return new ArbiterResponse(ArbiterResponseType.ILLEGAL_MOVE, playerKey, playerArgs, opponentKey, opponentArgs,
+        Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(detail), Optional.empty());
   }
 
   public static ArbiterResponse illegalMoveGameLost(IllegalMoveDetail detail) {
@@ -212,9 +185,9 @@ public record ArbiterResponse(
   }
 
   public static ArbiterResponse revertOpponentPiece() {
-    return new ArbiterResponse(ArbiterResponseType.POSITION_CHANGE,
-        MessageKey.ARBITER_POSITION_CHANGE_OPPONENT_PIECE, List.of(), Optional.empty(), List.of(),
-        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+    return new ArbiterResponse(ArbiterResponseType.POSITION_CHANGE, MessageKey.ARBITER_POSITION_CHANGE_OPPONENT_PIECE,
+        List.of(), Optional.empty(), List.of(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+        Optional.empty());
   }
 
   public static ArbiterResponse revertRestoration(String message) {
@@ -243,8 +216,8 @@ public record ArbiterResponse(
   }
 
   private static ArbiterResponse custom(ArbiterResponseType type, MessageKey key, String message) {
-    return new ArbiterResponse(type, key, List.of(message), Optional.empty(), List.of(),
-        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+    return new ArbiterResponse(type, key, List.of(message), Optional.empty(), List.of(), Optional.empty(),
+        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
   }
 
   private static String formatPieceName(Piece piece) {

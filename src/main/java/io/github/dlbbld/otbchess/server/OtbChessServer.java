@@ -16,10 +16,11 @@ import io.github.dlbbld.ashlarchess.board.Board;
 /**
  * Main entry point for the OTB Chess server.
  *
- * <p>Starts two servers:
+ * <p>
+ * Starts two servers:
  * <ul>
- *   <li>HTTP server on port 8080 for serving static files (HTML, CSS, JS)</li>
- *   <li>WebSocket server on port 8081 for real-time game communication</li>
+ * <li>HTTP server on port 8080 for serving static files (HTML, CSS, JS)</li>
+ * <li>WebSocket server on port 8081 for real-time game communication</li>
  * </ul>
  */
 public class OtbChessServer {
@@ -77,7 +78,7 @@ public class OtbChessServer {
       // Stop it so the JVM can exit instead of lingering on :8081 (its selector thread is non-daemon).
       try {
         wsServer.stop();
-      } catch (InterruptedException stopInterrupted) {
+      } catch (final InterruptedException stopInterrupted) {
         Thread.currentThread().interrupt();
       }
       throw e;
@@ -91,9 +92,9 @@ public class OtbChessServer {
   private static final Gson GSON = new Gson();
 
   /**
-   * Builds the {@code /api/validateFen} response body. An empty FEN means the normal starting
-   * position and is always valid. Any parse failure is treated as a user FEN error (the FEN is
-   * user input) and reported verbatim from Ashlar Chess, mirroring the create-game validation.
+   * Builds the {@code /api/validateFen} response body. An empty FEN means the normal starting position and is always
+   * valid. Any parse failure is treated as a user FEN error (the FEN is user input) and reported verbatim from Ashlar
+   * Chess, mirroring the create-game validation.
    */
   private static byte[] validateFenResponse(String rawQuery) {
     final String fen = queryParam(rawQuery, "fen");
@@ -102,7 +103,7 @@ public class OtbChessServer {
       obj.addProperty("valid", true);
     } else {
       try {
-        new Board(fen.trim());
+        Board.fromFenStrict(fen.trim());
         obj.addProperty("valid", true);
       } catch (final Exception e) {
         obj.addProperty("valid", false);

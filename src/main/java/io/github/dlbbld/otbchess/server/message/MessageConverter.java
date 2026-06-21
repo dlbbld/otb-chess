@@ -18,12 +18,13 @@ import io.github.dlbbld.otbchess.event.BoardEventType;
 public class MessageConverter {
 
   /**
-   * Converts a client board state map to a BitboardPosition.
-   * The map is keyed by square name (e.g. "e2") with piece name values (e.g. "WHITE_PAWN" or "NONE").
+   * Converts a client board state map to a BitboardPosition. The map is keyed by square name (e.g. "e2") with piece
+   * name values (e.g. "WHITE_PAWN" or "NONE").
    *
-   * <p>Only non-NONE pieces are applied as updates to the empty position, because
-   * {@code BitboardPosition.createChangedPosition} does not allow setting a square
-   * to the same piece it already contains (including NONE to NONE).
+   * <p>
+   * Only non-NONE pieces are applied as updates to the empty position, because
+   * {@code BitboardPosition.createChangedPosition} does not allow setting a square to the same piece it already
+   * contains (including NONE to NONE).
    */
   public static BitboardPosition toStaticPosition(Map<String, String> boardState) {
     final List<UpdateSquare> updates = new ArrayList<>();
@@ -31,7 +32,7 @@ public class MessageConverter {
     for (final Map.Entry<String, String> entry : boardState.entrySet()) {
       final Piece piece = Piece.valueOf(entry.getValue());
       if (piece != Piece.NONE) {
-        final Square square = Square.calculate(entry.getKey());
+        final Square square = Square.parse(entry.getKey());
         updates.add(new UpdateSquare(square, piece));
       }
     }
@@ -59,8 +60,8 @@ public class MessageConverter {
   public static BoardEvent toBoardEvent(String eventType, String square, String targetSquare, String piece,
       String displacedPiece) {
     final BoardEventType type = BoardEventType.valueOf(eventType);
-    final Square sq = "NONE".equals(square) ? Square.NONE : Square.calculate(square);
-    final Square targetSq = "NONE".equals(targetSquare) ? Square.NONE : Square.calculate(targetSquare);
+    final Square sq = "NONE".equals(square) ? Square.NONE : Square.parse(square);
+    final Square targetSq = "NONE".equals(targetSquare) ? Square.NONE : Square.parse(targetSquare);
     final Piece p = Piece.valueOf(piece);
     final Piece dp = Piece.valueOf(displacedPiece);
     final long timestamp = System.currentTimeMillis();

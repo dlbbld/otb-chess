@@ -6,8 +6,9 @@ import io.github.dlbbld.otbchess.game.model.TimeControl;
 /**
  * Manages chess clocks for both players.
  *
- * <p>Uses {@code System.nanoTime()} for precise elapsed time measurement.
- * The clock runs on the server side. Updates are sent to clients periodically.
+ * <p>
+ * Uses {@code System.nanoTime()} for precise elapsed time measurement. The clock runs on the server side. Updates are
+ * sent to clients periodically.
  */
 public class ClockManager {
 
@@ -46,8 +47,8 @@ public class ClockManager {
   }
 
   /**
-   * Switches the clock: stops the current side's clock (adding increment), starts the opponent's.
-   * Called after a valid move is accepted.
+   * Switches the clock: stops the current side's clock (adding increment), starts the opponent's. Called after a valid
+   * move is accepted.
    */
   public void switchClock() {
     tick();
@@ -73,8 +74,8 @@ public class ClockManager {
   }
 
   /**
-   * Returns the remaining time for the given side in milliseconds.
-   * Accounts for currently elapsed time if the clock is running.
+   * Returns the remaining time for the given side in milliseconds. Accounts for currently elapsed time if the clock is
+   * running.
    */
   public long getRemainingTimeMs(Side side) {
     tick();
@@ -100,8 +101,7 @@ public class ClockManager {
   }
 
   /**
-   * Updates elapsed time for the running clock.
-   * Must be called before reading time values.
+   * Updates elapsed time for the running clock. Must be called before reading time values.
    */
   public void tick() {
     if (runningFor == Side.NONE) {

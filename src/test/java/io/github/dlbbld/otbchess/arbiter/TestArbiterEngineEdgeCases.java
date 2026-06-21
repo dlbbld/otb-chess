@@ -1,19 +1,15 @@
 package io.github.dlbbld.otbchess.arbiter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
-import io.github.dlbbld.otbchess.arbiter.ArbiterEngine;
-import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
-import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.core.BitboardPositions;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
@@ -36,8 +32,7 @@ class TestArbiterEngineEdgeCases {
     sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0));
     // But final position is e4 (pawn moved, not knight)
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
@@ -59,8 +54,7 @@ class TestArbiterEngineEdgeCases {
     sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
 
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
@@ -76,16 +70,14 @@ class TestArbiterEngineEdgeCases {
     seq1.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
     seq1.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
     final BitboardPosition afterE4 = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
     engine.evaluateClockPress(board, afterE4, seq1);
 
     // Then an actual illegal move
     final ActionSequence seq2 = new ActionSequence(Side.WHITE);
     seq2.addEvent(BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
     final BitboardPosition illegal = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build();
     engine.evaluateClockPress(board, illegal, seq2);
 
     // Only the illegal move counts, not the touch-move violation
@@ -103,8 +95,7 @@ class TestArbiterEngineEdgeCases {
     // Empty sequence — no events
 
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E2, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
@@ -122,12 +113,11 @@ class TestArbiterEngineEdgeCases {
     sequence.addEvent(BoardEvent.dragCapture(Square.E4, Square.D5, Piece.WHITE_PAWN, Piece.BLACK_PAWN, 0));
 
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E4, Piece.NONE)
-        .createChangedPosition(Square.D5, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.E4, Piece.NONE).createChangedPosition(Square.D5, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
-    assertEquals(Piece.BLACK_PAWN, response.acceptedMove().get().pieceCaptured());
+    assertEquals(Piece.BLACK_PAWN, response.acceptedMove().get().capturedPiece());
   }
 
   @Test
@@ -144,8 +134,7 @@ class TestArbiterEngineEdgeCases {
     sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 1));
 
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.G1, Piece.NONE)
-        .createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
     assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
@@ -162,8 +151,7 @@ class TestArbiterEngineEdgeCases {
     final ActionSequence seq = new ActionSequence(Side.BLACK);
     seq.addEvent(BoardEvent.dragMove(Square.E7, Square.E4, Piece.BLACK_PAWN, 0));
     final BitboardPosition illegal = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.E7, Piece.NONE)
-        .createChangedPosition(Square.E4, Piece.BLACK_PAWN).build();
+        .createChangedPosition(Square.E7, Piece.NONE).createChangedPosition(Square.E4, Piece.BLACK_PAWN).build();
     engine.evaluateClockPress(board, illegal, seq);
 
     assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.BLACK));

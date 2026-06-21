@@ -4,8 +4,10 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.adjudication.AdjudicationResult;
+import io.github.dlbbld.ashlarchess.adjudication.Adjudicator;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
@@ -22,15 +24,15 @@ import io.github.dlbbld.otbchess.game.model.GameResult;
 import io.github.dlbbld.otbchess.game.model.GameResultType;
 import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
-import io.github.dlbbld.ashlarchess.adjudication.AdjudicationResult;
-import io.github.dlbbld.ashlarchess.adjudication.Adjudicator;
 
 /**
  * Central orchestrator for an OTB Chess game.
  *
- * <p>Holds the game state and coordinates all managers: clock, arbiter, draw offers, draw claims.
+ * <p>
+ * Holds the game state and coordinates all managers: clock, arbiter, draw offers, draw claims.
  *
- * <p>Thread safety: methods are synchronized because WebSocket messages arrive from different threads.
+ * <p>
+ * Thread safety: methods are synchronized because WebSocket messages arrive from different threads.
  */
 public class GameSession {
 
@@ -93,13 +95,13 @@ public class GameSession {
   }
 
   /**
-   * Constructor for games that start from a non-initial position (e.g. a custom FEN
-   * supplied on the start screen). The board is pre-built by the caller; FEN parsing
-   * and validation happen at the server boundary so the validation reason can be
-   * returned to the client before the {@link GameSession} is created.
+   * Constructor for games that start from a non-initial position (e.g. a custom FEN supplied on the start screen). The
+   * board is pre-built by the caller; FEN parsing and validation happen at the server boundary so the validation reason
+   * can be returned to the client before the {@link GameSession} is created.
    *
-   * <p>The starting side-to-move is taken from the supplied board, so e.g. a FEN with
-   * Black to move correctly starts the clock on Black at game start.
+   * <p>
+   * The starting side-to-move is taken from the supplied board, so e.g. a FEN with Black to move correctly starts the
+   * clock on Black at game start.
    */
   public GameSession(TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore,
       Board startingBoard) {
@@ -113,7 +115,7 @@ public class GameSession {
 
     this.state = GameState.WAITING_FOR_PLAYERS;
     this.result = null;
-    this.currentSequence = new ActionSequence(board.getHavingMove());
+    this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
     this.removedSquaresThisTurn = new HashSet<>();
     this.mustExecuteMove = null;
@@ -132,7 +134,7 @@ public class GameSession {
     this.state = GameState.IN_PROGRESS;
     // The clock starts on whichever side is to move in the starting position,
     // not blindly on White, so a FEN with Black to move correctly clocks Black.
-    this.clock.startClock(board.getHavingMove());
+    this.clock.startClock(board.getSideToMove());
   }
 
   // ===== Mid-play event recording =====
@@ -144,7 +146,7 @@ public class GameSession {
     if (state != GameState.IN_PROGRESS) {
       return Optional.empty();
     }
-    if (side != board.getHavingMove()) {
+    if (side != board.getSideToMove()) {
       return Optional.empty();
     }
 
@@ -157,20 +159,19 @@ public class GameSession {
     }
 
     // Track removed opponent pieces. Two paths:
-    //   • DRAG_CAPTURE: the player drops their own piece on top of an opponent piece;
-    //     the displaced piece (= the opponent piece) is implicitly removed. The
-    //     opponent piece is identified by event.displacedPiece().
-    //   • REMOVE:       the player drags an opponent piece off the board explicitly,
-    //     as the first step of a capture-by-removal sequence. The opponent piece is
-    //     identified by event.piece(); displacedPiece is NONE for REMOVE events.
+    // • DRAG_CAPTURE: the player drops their own piece on top of an opponent piece;
+    // the displaced piece (= the opponent piece) is implicitly removed. The
+    // opponent piece is identified by event.displacedPiece().
+    // • REMOVE: the player drags an opponent piece off the board explicitly,
+    // as the first step of a capture-by-removal sequence. The opponent piece is
+    // identified by event.piece(); displacedPiece is NONE for REMOVE events.
     if (event.type() == io.github.dlbbld.otbchess.event.BoardEventType.DRAG_CAPTURE) {
       if (event.displacedPiece() != io.github.dlbbld.ashlarchess.board.enums.Piece.NONE
           && event.displacedPiece().getSide() != side) {
         removedSquaresThisTurn.add(event.targetSquare());
       }
     } else if (event.type() == io.github.dlbbld.otbchess.event.BoardEventType.REMOVE) {
-      if (event.piece() != io.github.dlbbld.ashlarchess.board.enums.Piece.NONE
-          && event.piece().getSide() != side) {
+      if (event.piece() != io.github.dlbbld.ashlarchess.board.enums.Piece.NONE && event.piece().getSide() != side) {
         removedSquaresThisTurn.add(event.square());
       }
     }
@@ -192,7 +193,7 @@ public class GameSession {
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
-    if (side != board.getHavingMove()) {
+    if (side != board.getSideToMove()) {
       return ArbiterResponse.incompleteMove("It is not your turn.");
     }
 
@@ -208,22 +209,21 @@ public class GameSession {
   }
 
   /**
-   * Triggered after each board event during play. If the current physical position corresponds
-   * to a legal move that immediately ends the game (checkmate, stalemate, dead position,
-   * fivefold repetition, 75-move rule), the move is accepted and the game is ended without
-   * waiting for a clock press. For any non-ending move, this returns empty and the player must
-   * still press the clock as usual.
+   * Triggered after each board event during play. If the current physical position corresponds to a legal move that
+   * immediately ends the game (checkmate, stalemate, dead position, fivefold repetition, 75-move rule), the move is
+   * accepted and the game is ended without waiting for a clock press. For any non-ending move, this returns empty and
+   * the player must still press the clock as usual.
    *
-   * <p>This must NOT have side effects on the illegal-move counter — intermediate positions
-   * during piece manipulation are not "moves" and must not be recorded as illegal. Only the
-   * clock press (or an offered draw, etc.) goes through the full {@link ArbiterEngine}
-   * evaluation that records illegal moves.
+   * <p>
+   * This must NOT have side effects on the illegal-move counter — intermediate positions during piece manipulation are
+   * not "moves" and must not be recorded as illegal. Only the clock press (or an offered draw, etc.) goes through the
+   * full {@link ArbiterEngine} evaluation that records illegal moves.
    */
   public synchronized Optional<ArbiterResponse> evaluateForAutoEnd(Side side, BitboardPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
       return Optional.empty();
     }
-    if (side != board.getHavingMove()) {
+    if (side != board.getSideToMove()) {
       return Optional.empty();
     }
     // Skip during the patient-loop recovery from a rejected draw claim — that path requires the
@@ -234,8 +234,8 @@ public class GameSession {
 
     // Position match — pure read, no side effects. Most intermediate positions during piece
     // manipulation will produce no match and we exit immediately.
-    final java.util.Set<io.github.dlbbld.ashlarchess.model.LegalMove> matchingMoves =
-        io.github.dlbbld.otbchess.core.PositionComparator.findMatchingMoves(board, afterPosition);
+    final java.util.Set<io.github.dlbbld.ashlarchess.model.LegalMove> matchingMoves = io.github.dlbbld.otbchess.core.PositionComparator
+        .findMatchingMoves(board, afterPosition);
     if (matchingMoves.isEmpty()) {
       return Optional.empty();
     }
@@ -251,11 +251,10 @@ public class GameSession {
 
     // Touch-move check (also pure read). If the matched move would violate touch-move, leave
     // detection to the clock press so the existing arbiter feedback flow handles it.
-    final java.util.Optional<io.github.dlbbld.otbchess.touchmove.TouchMoveObligation> obligation =
-        io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator.findObligation(currentSequence, board);
+    final java.util.Optional<io.github.dlbbld.otbchess.touchmove.TouchMoveObligation> obligation = io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator
+        .findObligation(currentSequence, board);
     if (obligation.isPresent()
-        && !io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator.satisfiesObligation(
-            obligation.get(), matchedMove)) {
+        && !io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
       return Optional.empty();
     }
 
@@ -329,15 +328,13 @@ public class GameSession {
 
   private ArbiterResponse evaluateMustExecuteMove(BitboardPosition afterPosition) {
     // Compute expected position after the specified move
-    final BitboardPosition expectedPosition = positionBeforeTurn.afterMove(
-        mustExecuteMove, board.getHavingMove());
+    final BitboardPosition expectedPosition = positionBeforeTurn.afterMove(mustExecuteMove, board.getSideToMove());
 
     if (expectedPosition.equals(afterPosition)) {
       // Correct — perform the move
       final MoveSpecification executedMove = mustExecuteMove;
       final io.github.dlbbld.ashlarchess.model.LegalMove matchedLegalMove = board.getLegalMoves().stream()
-          .filter(lm -> lm.moveSpecification().equals(executedMove))
-          .findFirst()
+          .filter(lm -> lm.moveSpecification().equals(executedMove)).findFirst()
           .orElseThrow(() -> new IllegalStateException("Specified move is not in the legal move set"));
       board.move(executedMove);
       mustExecuteMove = null;
@@ -355,23 +352,22 @@ public class GameSession {
 
     // Incorrect — instruct to revert
     clock.stopClock();
-    return ArbiterResponse.incompleteMove(
-        "The specified move, " + mustExecuteMoveSan
-            + ", was not executed. Please revert the position and play the specified move.");
+    return ArbiterResponse.incompleteMove("The specified move, " + mustExecuteMoveSan
+        + ", was not executed. Please revert the position and play the specified move.");
   }
 
   // ===== Draw offers =====
 
   /**
-   * Player offers a draw at the correct time (their turn, after making a move). The move is
-   * validated but NOT performed and the clock does NOT switch — the player still has to press
-   * the clock themselves to commit the move. This matches FIDE: the draw offer is communicated
-   * after the move is made and before the clock is pressed; the clock press is a separate act.
+   * Player offers a draw at the correct time (their turn, after making a move). The move is validated but NOT performed
+   * and the clock does NOT switch — the player still has to press the clock themselves to commit the move. This matches
+   * FIDE: the draw offer is communicated after the move is made and before the clock is pressed; the clock press is a
+   * separate act.
    *
-   * <p>Returns {@link ArbiterResponseType#MOVE_ACCEPTED} when the move is legal and the offer
-   * has been registered (server should then forward the offer to the opponent and tell the
-   * offering player to press the clock). Returns the appropriate intervention type if the
-   * move is invalid (in which case the offer is dropped without penalty).
+   * <p>
+   * Returns {@link ArbiterResponseType#MOVE_ACCEPTED} when the move is legal and the offer has been registered (server
+   * should then forward the offer to the opponent and tell the offering player to press the clock). Returns the
+   * appropriate intervention type if the move is invalid (in which case the offer is dropped without penalty).
    */
   public synchronized ArbiterResponse offerDrawCorrectTime(Side side, BitboardPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
@@ -407,9 +403,8 @@ public class GameSession {
   }
 
   /**
-   * Player offers a draw at the wrong time (not their turn, or no move made).
-   * The offer is still valid per FIDE 9.1.2.1 and forwarded to the opponent,
-   * but escalating penalties apply.
+   * Player offers a draw at the wrong time (not their turn, or no move made). The offer is still valid per FIDE 9.1.2.1
+   * and forwarded to the opponent, but escalating penalties apply.
    *
    * @return the arbiter message (may be null if no penalty), and whether game is lost
    */
@@ -418,7 +413,7 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
     }
 
-    final boolean offererHasMove = side == board.getHavingMove();
+    final boolean offererHasMove = side == board.getSideToMove();
     final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
     if (result.gameLost()) {
       endGame(new GameResult(GameResultType.DRAW_AGREEMENT, side.getOppositeSide(), result.arbiterMessage()));
@@ -427,10 +422,9 @@ public class GameSession {
   }
 
   /**
-   * Whether the on-move player has already made a legal release in this turn — i.e. a
-   * release that corresponds to (the start of) a legal move from the position before turn.
-   * Used by the server to detect Scenario 2 of the draw-offer flow: an offer arriving
-   * after the opponent has committed a move via FIDE 4.7 is rejected outright.
+   * Whether the on-move player has already made a legal release in this turn — i.e. a release that corresponds to (the
+   * start of) a legal move from the position before turn. Used by the server to detect Scenario 2 of the draw-offer
+   * flow: an offer arriving after the opponent has committed a move via FIDE 4.7 is rejected outright.
    */
   public synchronized boolean hasReleasedPieceCommitment() {
     return arbiter.hasReleasedPieceCommitment(board, currentSequence);
@@ -478,7 +472,7 @@ public class GameSession {
     if (state != GameState.IN_PROGRESS) {
       return DrawClaimResult.error("You cannot claim a draw now.");
     }
-    if (side != board.getHavingMove()) {
+    if (side != board.getSideToMove()) {
       // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is.
       return DrawClaimResult.error("You cannot claim a draw when not having the move.");
     }
@@ -487,9 +481,8 @@ public class GameSession {
       // been touched on this move. Any event in the current turn's action sequence
       // (CLICK, DRAG_*, REMOVE, RESTORE_*) counts as a touch — claims must be made
       // before starting to interact with pieces.
-      return DrawClaimResult.error(
-          "You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). "
-              + "Claims must be made before any piece interaction.");
+      return DrawClaimResult.error("You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). "
+          + "Claims must be made before any piece interaction.");
     }
     if (claimMadeThisTurn) {
       return DrawClaimResult.rejectedWithoutDrawOffer(
@@ -545,15 +538,15 @@ public class GameSession {
   /**
    * Player resigns.
    *
-   * <p>FIDE 5.1.2: a resignation is a loss unless the opponent could not checkmate by any
-   * series of legal moves, in which case it is a draw. {@link Adjudicator} applies that
-   * exception; we use the QUICK variant (the live-play path - bounded latency, drawing only
-   * when it can prove the opponent unwinnable) rather than the FULL analyzer, whose deep
+   * <p>
+   * FIDE 5.1.2: a resignation is a loss unless the opponent could not checkmate by any series of legal moves, in which
+   * case it is a draw. {@link Adjudicator} applies that exception; we use the QUICK variant (the live-play path -
+   * bounded latency, drawing only when it can prove the opponent unwinnable) rather than the FULL analyzer, whose deep
    * helpmate search can cost hundreds of ms and is not warranted for a button press.
    *
-   * <p>On a draw the player-facing message splits the two cases the adjudicator folds together:
-   * a material shortage versus a position unwinnable despite sufficient material (see
-   * {@link #drawReason(Side)}).
+   * <p>
+   * On a draw the player-facing message splits the two cases the adjudicator folds together: a material shortage versus
+   * a position unwinnable despite sufficient material (see {@link #drawReason(Side)}).
    */
   public synchronized GameResult resign(Side side) {
     final Side opponent = side.getOppositeSide();
@@ -578,11 +571,11 @@ public class GameSession {
   /**
    * Checks for flag fall. Should be called periodically.
    *
-   * <p>FIDE 6.9: a player who runs out of time loses unless the opponent could not checkmate
-   * by any series of legal moves, in which case it is a draw. {@link Adjudicator} applies that
-   * exception; we use the QUICK variant for the same live-play / latency reason as
-   * {@link #resign(Side)}. On a draw the message splits insufficient material from a position
-   * unwinnable despite sufficient material (see {@link #drawReason(Side)}).
+   * <p>
+   * FIDE 6.9: a player who runs out of time loses unless the opponent could not checkmate by any series of legal moves,
+   * in which case it is a draw. {@link Adjudicator} applies that exception; we use the QUICK variant for the same
+   * live-play / latency reason as {@link #resign(Side)}. On a draw the message splits insufficient material from a
+   * position unwinnable despite sufficient material (see {@link #drawReason(Side)}).
    */
   public synchronized Optional<GameResult> checkFlagFall() {
     if (state != GameState.IN_PROGRESS) {
@@ -617,25 +610,22 @@ public class GameSession {
   // ===== Automatic game endings =====
 
   /**
-   * Game-ending detection that runs after every accepted move and on every auto-end
-   * board event. Only fast checks are allowed here — never the full CUA
-   * (isDeadPositionFull / isUnwinnableFull). Insufficient material is detected via
-   * the cheap structural test on the board; positions that are dead by exhaustive
-   * search but not by insufficient material are not auto-ended (the players will end
-   * them via fivefold/75-move/stalemate or claim a draw).
+   * Game-ending detection that runs after every accepted move and on every auto-end board event. Only fast checks are
+   * allowed here — never the full CUA (isDeadPositionFull / isUnwinnableFull). Insufficient material is detected via
+   * the cheap structural test on the board; positions that are dead by exhaustive search but not by insufficient
+   * material are not auto-ended (the players will end them via fivefold/75-move/stalemate or claim a draw).
    */
   private Optional<GameResult> checkAutomaticEndings() {
     // 1. Checkmate
     if (board.isCheckmate()) {
-      final Side winner = board.getHavingMove().getOppositeSide();
-      return Optional.of(new GameResult(GameResultType.CHECKMATE, winner,
-          sideName(winner) + " won the game by checkmate."));
+      final Side winner = board.getSideToMove().getOppositeSide();
+      return Optional
+          .of(new GameResult(GameResultType.CHECKMATE, winner, sideName(winner) + " won the game by checkmate."));
     }
 
     // 2. Stalemate
     if (board.isStalemate()) {
-      return Optional.of(new GameResult(GameResultType.STALEMATE, Side.NONE,
-          "The game is drawn by stalemate."));
+      return Optional.of(new GameResult(GameResultType.STALEMATE, Side.NONE, "The game is drawn by stalemate."));
     }
 
     // 3. Insufficient material (FIDE 9.4 / 5.2.2). Fast structural check; no search.
@@ -646,14 +636,14 @@ public class GameSession {
 
     // 4. Fivefold repetition
     if (board.isFivefoldRepetition()) {
-      return Optional.of(new GameResult(GameResultType.FIVEFOLD_REPETITION, Side.NONE,
-          "The game is drawn by fivefold repetition."));
+      return Optional.of(
+          new GameResult(GameResultType.FIVEFOLD_REPETITION, Side.NONE, "The game is drawn by fivefold repetition."));
     }
 
     // 5. 75-move rule
     if (board.isSeventyFiveMove()) {
-      return Optional.of(new GameResult(GameResultType.SEVENTY_FIVE_MOVE, Side.NONE,
-          "The game is drawn by the 75-move rule."));
+      return Optional
+          .of(new GameResult(GameResultType.SEVENTY_FIVE_MOVE, Side.NONE, "The game is drawn by the 75-move rule."));
     }
 
     return Optional.empty();
@@ -662,7 +652,7 @@ public class GameSession {
   // ===== Helpers =====
 
   private void startNewTurn() {
-    this.currentSequence = new ActionSequence(board.getHavingMove());
+    this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
     this.restorationTargetPosition = positionBeforeTurn;
     this.removedSquaresThisTurn.clear();
@@ -682,34 +672,30 @@ public class GameSession {
   }
 
   /**
-   * Reason clause for a flag-fall / resignation that {@link Adjudicator} ruled a draw: the
-   * would-be winner cannot mate. The adjudicator folds two FIDE cases together; we split them
-   * for the player-facing message using the cheap structural material test - a material
-   * shortage (lone king, K+B, K+N, ...) versus a position that is unwinnable despite sufficient
-   * material (a blocked wall / fortress).
+   * Reason clause for a flag-fall / resignation that {@link Adjudicator} ruled a draw: the would-be winner cannot mate.
+   * The adjudicator folds two FIDE cases together; we split them for the player-facing message using the cheap
+   * structural material test - a material shortage (lone king, K+B, K+N, ...) versus a position that is unwinnable
+   * despite sufficient material (a blocked wall / fortress).
    *
    * @param opponent the would-be winner (the side that did not resign / flag)
    */
   private String drawReason(Side opponent) {
-    return board.isInsufficientMaterial(opponent)
-        ? sideName(opponent) + " has insufficient material to mate"
+    return board.isInsufficientMaterial(opponent) ? sideName(opponent) + " has insufficient material to mate"
         : sideName(opponent) + " has no potential mate";
   }
 
   /**
-   * Enters the "waiting for ready" state after an arbiter intervention.
-   * Both players must signal readiness before the game continues.
+   * Enters the "waiting for ready" state after an arbiter intervention. Both players must signal readiness before the
+   * game continues.
    *
-   * <p>The released-piece rule window is reset here because, after a recovery
-   * handshake, prior in-turn events should not retroactively bind the resumed
-   * play. In particular, a "legal-in-isolation" release that was actually
-   * invalid in context (e.g. a pawn drop that violates an active touch-move
-   * obligation on a different piece) must not be treated as a commitment after
-   * the recovery — otherwise the player can never satisfy the touch-move and
-   * the rule deadlocks. Known trade-off: a player who commits a legal release
-   * and then triggers an unrelated arbiter intervention (wrong-time draw,
-   * drawAcceptRejected, opponentClockPressed) before the clock press loses
-   * the FIDE 4.7 commitment after the handshake. Acceptable in practice.
+   * <p>
+   * The released-piece rule window is reset here because, after a recovery handshake, prior in-turn events should not
+   * retroactively bind the resumed play. In particular, a "legal-in-isolation" release that was actually invalid in
+   * context (e.g. a pawn drop that violates an active touch-move obligation on a different piece) must not be treated
+   * as a commitment after the recovery — otherwise the player can never satisfy the touch-move and the rule deadlocks.
+   * Known trade-off: a player who commits a legal release and then triggers an unrelated arbiter intervention
+   * (wrong-time draw, drawAcceptRejected, opponentClockPressed) before the clock press loses the FIDE 4.7 commitment
+   * after the handshake. Acceptable in practice.
    */
   public synchronized void enterWaitingForReady() {
     this.waitingForReady = true;
@@ -719,8 +705,8 @@ public class GameSession {
   }
 
   /**
-   * Enters the restoration state after an invalid move. Board events are then monitored
-   * until the physical board matches the position before the turn.
+   * Enters the restoration state after an invalid move. Board events are then monitored until the physical board
+   * matches the position before the turn.
    */
   public synchronized void enterWaitingForRestoration() {
     enterWaitingForRestoration(positionBeforeTurn);
@@ -758,7 +744,7 @@ public class GameSession {
   public synchronized void resumeAfterRestorationDelay() {
     if (state == GameState.IN_PROGRESS && restorationResumePending && !waitingForReady && !waitingForRestoration) {
       restorationResumePending = false;
-      clock.startClock(board.getHavingMove());
+      clock.startClock(board.getSideToMove());
     }
   }
 
@@ -774,12 +760,14 @@ public class GameSession {
     switch (side) {
       case WHITE -> whiteReady = true;
       case BLACK -> blackReady = true;
-      default -> { return false; }
+      default -> {
+        return false;
+      }
     }
     if (whiteReady && blackReady) {
       waitingForReady = false;
       if (state == GameState.IN_PROGRESS) {
-        clock.startClock(board.getHavingMove());
+        clock.startClock(board.getSideToMove());
       }
       return true;
     }
@@ -816,7 +804,7 @@ public class GameSession {
   // ===== PGN export =====
 
   public synchronized String exportPgn() {
-    return PgnCreate.createPgnString(board);
+    return PgnCreate.toPgnString(board);
   }
 
   // ===== Getters =====
@@ -840,7 +828,7 @@ public class GameSession {
   }
 
   public synchronized Side getHavingMove() {
-    return board.getHavingMove();
+    return board.getSideToMove();
   }
 
   public synchronized Board getBoard() {

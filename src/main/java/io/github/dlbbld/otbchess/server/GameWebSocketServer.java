@@ -14,8 +14,11 @@ import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
-import io.github.dlbbld.ashlarchess.board.Board;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
@@ -23,7 +26,6 @@ import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.event.BoardEvent;
-import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
 import io.github.dlbbld.otbchess.game.model.DrawClaimType;
 import io.github.dlbbld.otbchess.game.model.GameResult;
@@ -32,9 +34,6 @@ import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
 import io.github.dlbbld.otbchess.server.message.MessageConverter;
 import io.github.dlbbld.otbchess.server.model.GameRoom;
-
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 
 /**
  * WebSocket server for OTB Chess game communication.
@@ -124,9 +123,9 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   /**
-   * Blocks until {@link #onStart()} has fired (the server socket is bound and listening) or the
-   * timeout elapses. Lets the launcher expose the HTTP server only after the WebSocket endpoint is
-   * ready, so a client that loads the page can always open its WebSocket.
+   * Blocks until {@link #onStart()} has fired (the server socket is bound and listening) or the timeout elapses. Lets
+   * the launcher expose the HTTP server only after the WebSocket endpoint is ready, so a client that loads the page can
+   * always open its WebSocket.
    *
    * @return {@code true} if the server started within the timeout, {@code false} otherwise
    */
@@ -150,8 +149,8 @@ public class GameWebSocketServer extends WebSocketServer {
     // through Ashlar Chess so the player gets the chess library's specific reason. The
     // creator's side is overridden to the side-to-move from the FEN, so the creator can
     // play first regardless of which colour they originally selected on the start screen.
-    final String fenInput = (json.has("fen") && !json.get("fen").isJsonNull())
-        ? json.get("fen").getAsString().trim() : "";
+    final String fenInput = (json.has("fen") && !json.get("fen").isJsonNull()) ? json.get("fen").getAsString().trim()
+        : "";
 
     final Board startingBoard;
     final String creatorSide;
@@ -161,28 +160,22 @@ public class GameWebSocketServer extends WebSocketServer {
     } else {
       final Board parsed;
       try {
-        parsed = new Board(fenInput);
-      } catch (final io.github.dlbbld.ashlarchess.common.exceptions.FenAdvancedValidationException
-          | io.github.dlbbld.ashlarchess.common.exceptions.FenRawValidationException e) {
-        // Expected user error — surface the chess library's specific validation reason.
-        sendError(conn, "Invalid FEN: " + e.getMessage());
-        return;
+        parsed = Board.fromFenStrict(fenInput);
       } catch (final RuntimeException e) {
-        // Any other parsing failure: still treat as user error rather than internal,
-        // because the FEN string is user input.
+        // Any parse failure is treated as a user FEN error (the FEN string is user input),
+        // surfacing the chess library's specific validation reason rather than an internal error.
         sendError(conn, "Invalid FEN: " + e.getMessage());
         return;
       }
       startingBoard = parsed;
       // Side-to-move from the FEN wins. If the FEN has Black to move, the creator
       // (who joins first) plays Black; the second player gets White.
-      creatorSide = parsed.getHavingMove() == io.github.dlbbld.ashlarchess.board.enums.Side.WHITE ? "white" : "black";
+      creatorSide = parsed.getSideToMove() == io.github.dlbbld.ashlarchess.board.enums.Side.WHITE ? "white" : "black";
     }
 
     final String gameId = UUID.randomUUID().toString().substring(0, 8);
     final TimeControl timeControl = new TimeControl(initialTimeMs, incrementMs);
-    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore,
-        startingBoard);
+    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
 
     if ("white".equals(creatorSide)) {
       room.setWhitePlayer(conn);
@@ -198,13 +191,11 @@ public class GameWebSocketServer extends WebSocketServer {
     response.addProperty("type", "gameCreated");
     response.addProperty("gameId", gameId);
     response.addProperty("side", creatorSide);
-    response.add("board",
-        GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
-    response.addProperty("havingMove", startingBoard.getHavingMove().name().toLowerCase());
+    response.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
+    response.addProperty("havingMove", startingBoard.getSideToMove().name().toLowerCase());
     conn.send(GSON.toJson(response));
 
-    System.out.println("Game created: " + gameId + " by " + creatorSide
-        + (fenInput.isEmpty() ? "" : " (custom FEN)"));
+    System.out.println("Game created: " + gameId + " by " + creatorSide + (fenInput.isEmpty() ? "" : " (custom FEN)"));
   }
 
   private void handleJoinGame(WebSocket conn, JsonObject json) {
@@ -286,11 +277,8 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    final BoardEvent event = MessageConverter.toBoardEvent(
-        eventType,
-        eventData.get("square").getAsString(),
-        eventData.get("targetSquare").getAsString(),
-        eventData.get("piece").getAsString(),
+    final BoardEvent event = MessageConverter.toBoardEvent(eventType, eventData.get("square").getAsString(),
+        eventData.get("targetSquare").getAsString(), eventData.get("piece").getAsString(),
         eventData.get("displacedPiece").getAsString());
 
     if (room.getSession().isRestorationResumePending()) {
@@ -301,8 +289,8 @@ public class GameWebSocketServer extends WebSocketServer {
       forwardBoardEventToOpponent(room, side, eventData);
 
       if (json.has("boardState")) {
-        @SuppressWarnings("unchecked")
-        final Map<String, String> boardStateMap = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
+        @SuppressWarnings("unchecked") final Map<String, String> boardStateMap = GSON
+            .fromJson(json.getAsJsonObject("boardState"), Map.class);
         final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
         if (room.getSession().isRestoredPosition(afterPosition)) {
           completeRestoration(room);
@@ -324,19 +312,16 @@ public class GameWebSocketServer extends WebSocketServer {
 
     // The on-move player just performed a board event while a draw offer is pending against
     // them. Whether that invalidates the offer depends on how the offer was made:
-    //   - Correct-time offer (FIDE 9.1.2.1): even a TOUCH loses the right to accept, because
-    //     the recipient was waiting and any piece interaction commits them to a move.
-    //   - Wrong-time offer: the recipient was already mid-thinking when the offer arrived;
-    //     touching pieces while deciding is normal play. The offer is invalidated only when
-    //     the recipient has actually MADE THE MOVE — i.e. completed a legal release per
-    //     FIDE 4.7 (released-piece rule).
+    // - Correct-time offer (FIDE 9.1.2.1): even a TOUCH loses the right to accept, because
+    // the recipient was waiting and any piece interaction commits them to a move.
+    // - Wrong-time offer: the recipient was already mid-thinking when the offer arrived;
+    // touching pieces while deciding is normal play. The offer is invalidated only when
+    // the recipient has actually MADE THE MOVE — i.e. completed a legal release per
+    // FIDE 4.7 (released-piece rule).
     final var drawMgr = room.getSession().getDrawOfferManager();
-    if (drawMgr.isDrawOffered()
-        && drawMgr.getOfferingSide() != side
-        && !drawMgr.hasOpponentTouchedPiece()) {
+    if (drawMgr.isDrawOffered() && drawMgr.getOfferingSide() != side && !drawMgr.hasOpponentTouchedPiece()) {
 
-      final boolean correctTimeTouchInvalidation = drawMgr.wasOfferedAtCorrectTime()
-          && isTouchPieceEvent(event);
+      final boolean correctTimeTouchInvalidation = drawMgr.wasOfferedAtCorrectTime() && isTouchPieceEvent(event);
       final boolean wrongTimeReleaseInvalidation = !drawMgr.wasOfferedAtCorrectTime()
           && room.getSession().hasReleasedPieceCommitment();
 
@@ -344,15 +329,13 @@ public class GameWebSocketServer extends WebSocketServer {
         drawMgr.recordOpponentTouchedPiece();
         final JsonObject msg = new JsonObject();
         msg.addProperty("type", "drawOfferInvalidated");
-        msg.addProperty("message",
-            "The draw offer is no longer valid because you touched a piece.");
+        msg.addProperty("message", "The draw offer is no longer valid because you touched a piece.");
         conn.send(GSON.toJson(msg));
       } else if (wrongTimeReleaseInvalidation) {
         drawMgr.recordOpponentTouchedPiece();
         final JsonObject msg = new JsonObject();
         msg.addProperty("type", "drawOfferInvalidated");
-        msg.addProperty("message",
-            "The draw offer is no longer valid because you made the move.");
+        msg.addProperty("message", "The draw offer is no longer valid because you made the move.");
         conn.send(GSON.toJson(msg));
       }
     }
@@ -363,8 +346,8 @@ public class GameWebSocketServer extends WebSocketServer {
     // Auto-end on game-ending moves (checkmate, stalemate, dead position, fivefold, 75-move):
     // accept the move and end the game without waiting for a clock press.
     if (midPlayResponse.isEmpty() && json.has("boardState")) {
-      @SuppressWarnings("unchecked")
-      final Map<String, String> boardStateMap = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
+      @SuppressWarnings("unchecked") final Map<String, String> boardStateMap = GSON
+          .fromJson(json.getAsJsonObject("boardState"), Map.class);
       final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
       final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, afterPosition);
       if (autoEndResponse.isPresent()) {
@@ -383,8 +366,8 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Side side = room.getSide(conn);
 
-    @SuppressWarnings("unchecked")
-    final Map<String, String> boardState = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
+    @SuppressWarnings("unchecked") final Map<String, String> boardState = GSON
+        .fromJson(json.getAsJsonObject("boardState"), Map.class);
     final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardState);
 
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
@@ -403,8 +386,7 @@ public class GameWebSocketServer extends WebSocketServer {
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
-    } else if (response.type() == ArbiterResponseType.INCOMPLETE_MOVE
-        && side == room.getSession().getHavingMove()
+    } else if (response.type() == ArbiterResponseType.INCOMPLETE_MOVE && side == room.getSession().getHavingMove()
         && room.getSession().getMustExecuteMove() != null) {
       // A rejected claim's specified move was not carried out: offer a Revert to the start of the
       // turn. The move is still owed afterwards, so the player reverts and then plays it.
@@ -425,18 +407,18 @@ public class GameWebSocketServer extends WebSocketServer {
     // Parse the boardState (it's required for the correct-time validation path).
     BitboardPosition afterPosition = null;
     if (json.has("boardState")) {
-      @SuppressWarnings("unchecked")
-      final Map<String, String> boardState = GSON.fromJson(json.getAsJsonObject("boardState"), Map.class);
+      @SuppressWarnings("unchecked") final Map<String, String> boardState = GSON
+          .fromJson(json.getAsJsonObject("boardState"), Map.class);
       afterPosition = MessageConverter.toStaticPosition(boardState);
     }
 
     // Correct-time vs. wrong-time per FIDE 9.1.2.1:
-    //   Correct = the offering player has the move AND has actually made a move on the board
-    //             (the physical position differs from positionBeforeTurn). The offer is then
-    //             communicated, but the move is only committed when the player presses the clock.
-    //   Wrong   = anything else (not on move, or on move but no move attempted yet). The offer
-    //             is still valid and forwarded to the opponent, but with an escalating
-    //             procedural warning. The clock keeps running on whoever's turn it is.
+    // Correct = the offering player has the move AND has actually made a move on the board
+    // (the physical position differs from positionBeforeTurn). The offer is then
+    // communicated, but the move is only committed when the player presses the clock.
+    // Wrong = anything else (not on move, or on move but no move attempted yet). The offer
+    // is still valid and forwarded to the opponent, but with an escalating
+    // procedural warning. The clock keeps running on whoever's turn it is.
     final boolean hasMove = side == room.getSession().getHavingMove();
     final boolean moveAttempted = hasMove && afterPosition != null
         && !room.getSession().getPositionBeforeTurn().equals(afterPosition);
@@ -460,8 +442,7 @@ public class GameWebSocketServer extends WebSocketServer {
     checkGameEnded(room);
   }
 
-  private void handleCorrectTimeDrawOffer(GameRoom room, WebSocket conn, Side side,
-      BitboardPosition afterPosition) {
+  private void handleCorrectTimeDrawOffer(GameRoom room, WebSocket conn, Side side, BitboardPosition afterPosition) {
     final ArbiterResponse response = room.getSession().offerDrawCorrectTime(side, afterPosition);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
@@ -630,10 +611,10 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   /**
-   * Aborts a game that has not started yet (no opponent has joined). Like cancelling a Lichess
-   * challenge: the creator can throw the game away and start a new one while still alone in the
-   * room. Once the opponent has joined the game can only be ended by resignation / play, so an
-   * abort attempt then is rejected. Colour-agnostic, so it works for a Black creator too.
+   * Aborts a game that has not started yet (no opponent has joined). Like cancelling a Lichess challenge: the creator
+   * can throw the game away and start a new one while still alone in the room. Once the opponent has joined the game
+   * can only be ended by resignation / play, so an abort attempt then is rejected. Colour-agnostic, so it works for a
+   * Black creator too.
    */
   private void handleAbort(WebSocket conn) {
     final GameRoom room = getRoom(conn);
@@ -812,9 +793,9 @@ public class GameWebSocketServer extends WebSocketServer {
   // ===== Helper methods =====
 
   /**
-   * TESTING-ONLY: returns the most recently created game ID that is still joinable (room exists
-   * and not yet full), or null if no such game exists. Used by the lobby HTTP endpoint to pre-fill
-   * the join code in a second browser session. Remove once development is done.
+   * TESTING-ONLY: returns the most recently created game ID that is still joinable (room exists and not yet full), or
+   * null if no such game exists. Used by the lobby HTTP endpoint to pre-fill the join code in a second browser session.
+   * Remove once development is done.
    */
   public String getJoinableLastCreatedGameId() {
     final String id = lastCreatedGameId;
@@ -851,8 +832,8 @@ public class GameWebSocketServer extends WebSocketServer {
       // (calling getName() on them throws NonePointerException). Resolve the
       // king's actual from/to squares via CastlingUtility instead, and tag the
       // move so the client can recognise it.
-      if (CastlingUtility.calculateIsCastlingMove(spec)) {
-        final Side moveSide = move.havingMove();
+      if (CastlingUtility.isCastlingMove(spec)) {
+        final Side moveSide = move.movingSide();
         final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(moveSide, spec);
         final Square kingTo = CastlingUtility.calculateKingCastlingTo(moveSide, spec);
         moveData.addProperty("from", kingFrom.getName());
@@ -882,9 +863,11 @@ public class GameWebSocketServer extends WebSocketServer {
     }
   }
 
-  /** Whether this event represents the on-move player touching a piece on the board.
-      Side-area RESTORE events are excluded — they place a piece TO the board, not "touch"
-      a piece on it. Used to invalidate a pending draw offer per FIDE 9.1.2.1. */
+  /**
+   * Whether this event represents the on-move player touching a piece on the board. Side-area RESTORE events are
+   * excluded — they place a piece TO the board, not "touch" a piece on it. Used to invalidate a pending draw offer per
+   * FIDE 9.1.2.1.
+   */
   private static boolean isTouchPieceEvent(BoardEvent event) {
     return switch (event.type()) {
       case CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE -> true;
@@ -926,10 +909,8 @@ public class GameWebSocketServer extends WebSocketServer {
     // For draws by an explicit player action (resignation, flag-fall under the FIDE "opponent
     // cannot win" exception, or accepting a draw offer), tag who acted so the client can phrase
     // the message in the second person. Resignation / flag-fall additionally carry the draw reason.
-    if (result.winner() == Side.NONE
-        && (result.type() == GameResultType.RESIGNATION
-            || result.type() == GameResultType.FLAG_FALL
-            || result.type() == GameResultType.DRAW_AGREEMENT)) {
+    if (result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
+        || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
       msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());
     }
     if (result.winner() == Side.NONE
@@ -985,12 +966,10 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   /**
-   * Reports an unexpected server-side exception to the client without leaking the raw
-   * technical detail into the user-visible message area. The user sees a single friendly
-   * generic message; the technical detail (exception class + message + the calling context)
-   * goes into a `devDetail` field that the client renders in a collapsible developer pane
-   * at the bottom of the page. The full stack trace is also written to stderr so the
-   * developer can correlate.
+   * Reports an unexpected server-side exception to the client without leaking the raw technical detail into the
+   * user-visible message area. The user sees a single friendly generic message; the technical detail (exception class +
+   * message + the calling context) goes into a `devDetail` field that the client renders in a collapsible developer
+   * pane at the bottom of the page. The full stack trace is also written to stderr so the developer can correlate.
    */
   private void sendInternalError(WebSocket conn, Throwable e, String context) {
     System.err.println("[internal] " + context + ": " + e);

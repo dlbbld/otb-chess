@@ -13,10 +13,11 @@ import io.github.dlbbld.otbchess.event.BoardEventType;
 /**
  * Validates board events during play (before clock press).
  *
- * <p>Two mid-play interventions exist:
+ * <p>
+ * Two mid-play interventions exist:
  * <ol>
- *   <li>Moving an opponent piece → immediate arbiter intervention</li>
- *   <li>Invalid piece restoration from side area → immediate arbiter intervention</li>
+ * <li>Moving an opponent piece → immediate arbiter intervention</li>
+ * <li>Invalid piece restoration from side area → immediate arbiter intervention</li>
  * </ol>
  */
 public class MidPlayValidator {
@@ -43,28 +44,25 @@ public class MidPlayValidator {
   }
 
   /**
-   * Checks if the player is trying to move an opponent's piece <em>on the board</em>
-   * (which is never allowed, even as the start of a capture sequence). The arbiter
-   * intervenes immediately.
+   * Checks if the player is trying to move an opponent's piece <em>on the board</em> (which is never allowed, even as
+   * the start of a capture sequence). The arbiter intervenes immediately.
    *
-   * <p>What is allowed without intervention:
+   * <p>
+   * What is allowed without intervention:
    * <ul>
-   *   <li>{@link BoardEventType#CLICK} on an opponent piece — touch-move only, no
-   *       position change.</li>
-   *   <li>{@link BoardEventType#REMOVE} of an opponent piece — corresponds to the
-   *       physical capture sequence: lift the opponent piece off the board, then move
-   *       your own piece onto that square. The position-comparison at clock press
-   *       evaluates whether the resulting position matches a legal capture; if not,
-   *       the standard illegal-move flow handles it.</li>
-   *   <li>{@link BoardEventType#RESTORE_TO_EMPTY} / {@link BoardEventType#RESTORE_TO_OCCUPIED}
-   *       — handled by {@link #validateRestoration}; allows putting a piece back from
-   *       the side area.</li>
+   * <li>{@link BoardEventType#CLICK} on an opponent piece — touch-move only, no position change.</li>
+   * <li>{@link BoardEventType#REMOVE} of an opponent piece — corresponds to the physical capture sequence: lift the
+   * opponent piece off the board, then move your own piece onto that square. The position-comparison at clock press
+   * evaluates whether the resulting position matches a legal capture; if not, the standard illegal-move flow handles
+   * it.</li>
+   * <li>{@link BoardEventType#RESTORE_TO_EMPTY} / {@link BoardEventType#RESTORE_TO_OCCUPIED} — handled by
+   * {@link #validateRestoration}; allows putting a piece back from the side area.</li>
    * </ul>
    *
-   * <p>What is blocked: dragging an opponent piece from one square to another
-   * ({@link BoardEventType#DRAG_MOVE}, {@link BoardEventType#DRAG_CAPTURE}). That is
-   * never part of a legal sequence and the arbiter intervenes with a generic
-   * "you cannot move opponent pieces" message.
+   * <p>
+   * What is blocked: dragging an opponent piece from one square to another ({@link BoardEventType#DRAG_MOVE},
+   * {@link BoardEventType#DRAG_CAPTURE}). That is never part of a legal sequence and the arbiter intervenes with a
+   * generic "you cannot move opponent pieces" message.
    */
   private static Optional<ArbiterResponse> validateOpponentPiecePositionChange(BoardEvent event, Side sideToMove) {
     final Piece piece = event.piece();
@@ -89,11 +87,12 @@ public class MidPlayValidator {
   /**
    * Validates piece restoration from the side area.
    *
-   * <p>Rules:
+   * <p>
+   * Rules:
    * <ol>
-   *   <li>Own pieces cannot be restored to the board (exception: promotion piece placement)</li>
-   *   <li>Opponent pieces not removed during this turn cannot be restored</li>
-   *   <li>Opponent pieces removed during this turn can only be restored to their correct square</li>
+   * <li>Own pieces cannot be restored to the board (exception: promotion piece placement)</li>
+   * <li>Opponent pieces not removed during this turn cannot be restored</li>
+   * <li>Opponent pieces removed during this turn can only be restored to their correct square</li>
    * </ol>
    */
   private static Optional<ArbiterResponse> validateRestoration(BoardEvent event, Side sideToMove,
@@ -129,8 +128,8 @@ public class MidPlayValidator {
     // It was removed during this turn — check if it's being restored to its correct square
     final Piece originalPiece = positionBeforeTurn.get(targetSquare);
     if (originalPiece != piece) {
-      return Optional.of(ArbiterResponse.revertRestoration(
-          "Position change: You changed the position. There was never that piece on this square."
+      return Optional.of(ArbiterResponse
+          .revertRestoration("Position change: You changed the position. There was never that piece on this square."
               + " Please restore the position."));
     }
 

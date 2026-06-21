@@ -5,13 +5,14 @@ import io.github.dlbbld.ashlarchess.board.enums.Side;
 /**
  * Tracks illegal move count per player.
  *
- * <p>Per FIDE rules the default limit is 2 (first illegal move costs 2 minutes; the
- * second one ends the game). The limit is configurable per game so players can set
- * it to anything in 1..10 or to unlimited (no game-loss on illegal moves) at the
- * lobby. Each illegal move always adds {@link #getPenaltyTimeMs()} to the opponent's
- * clock regardless of the limit.
+ * <p>
+ * Per FIDE rules the default limit is 2 (first illegal move costs 2 minutes; the second one ends the game). The limit
+ * is configurable per game so players can set it to anything in 1..10 or to unlimited (no game-loss on illegal moves)
+ * at the lobby. Each illegal move always adds {@link #getPenaltyTimeMs()} to the opponent's clock regardless of the
+ * limit.
  *
- * <p>Touch-move violations do not count as illegal moves.
+ * <p>
+ * Touch-move violations do not count as illegal moves.
  */
 public class IllegalMoveTracker {
 

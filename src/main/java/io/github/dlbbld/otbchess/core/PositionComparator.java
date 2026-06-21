@@ -4,8 +4,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
-import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.model.LegalMove;
 
 public class PositionComparator {
@@ -17,8 +17,8 @@ public class PositionComparator {
     final BitboardPosition beforePosition = board.getBitboardPosition();
 
     for (final LegalMove legalMove : board.getLegalMoves()) {
-      final BitboardPosition positionAfterMove = beforePosition.afterMove(
-          legalMove.moveSpecification(), legalMove.havingMove());
+      final BitboardPosition positionAfterMove = beforePosition.afterMove(legalMove.moveSpecification(),
+          legalMove.movingSide());
       if (positionAfterMove.equals(afterPosition)) {
         matchingMoves.add(legalMove);
       }
