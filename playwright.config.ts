@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright E2E config for the Dumb Chessboard web app.
+ * Playwright E2E config for the OTB Chess web app.
  *
  * The app is a Java HTTP server (static files, :8080) + WebSocket game server (:8081).
  * `webServer` boots the runnable jar (built by the `build:server` npm script) before the suite
@@ -31,7 +31,7 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: {
-    command: 'java -jar target/dumb-chessboard.jar',
+    command: 'java -jar target/otb-chess.jar',
     url: 'http://localhost:8080',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
