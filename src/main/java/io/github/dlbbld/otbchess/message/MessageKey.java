@@ -8,6 +8,8 @@ public enum MessageKey {
   ARBITER_MOVE_ACCEPTED("arbiter.move_accepted", MessageSeverity.SUCCESS),
   ARBITER_TOUCH_MOVE_OWN_PLAYER("arbiter.touch_move.own.player", MessageSeverity.ERROR),
   ARBITER_TOUCH_MOVE_OWN_OPPONENT("arbiter.touch_move.own.opponent", MessageSeverity.ERROR),
+  ARBITER_TOUCH_MOVE_OWN_PRECEDED_PLAYER("arbiter.touch_move.own.preceded.player", MessageSeverity.ERROR),
+  ARBITER_TOUCH_MOVE_OWN_PRECEDED_OPPONENT("arbiter.touch_move.own.preceded.opponent", MessageSeverity.ERROR),
   ARBITER_TOUCH_MOVE_OPPONENT_PLAYER("arbiter.touch_move.opponent.player", MessageSeverity.ERROR),
   ARBITER_TOUCH_MOVE_OPPONENT_OPPONENT("arbiter.touch_move.opponent.opponent", MessageSeverity.ERROR),
   ARBITER_TOUCH_MOVE_CASTLING_PLAYER("arbiter.touch_move.castling.player", MessageSeverity.ERROR),

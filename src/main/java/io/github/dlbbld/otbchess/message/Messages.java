@@ -9,7 +9,11 @@ import java.util.Properties;
 
 public final class Messages {
 
-  private static final String RESOURCE = "messages/messages.properties";
+  // Absolute (leading-slash) resource path. Loaded via Class.getResourceAsStream so it resolves
+  // against this class's own module, which works on both the classpath and the module path.
+  // ClassLoader.getResourceAsStream would return null on the module path because resources in a
+  // named module are encapsulated from the classloader's view.
+  private static final String RESOURCE = "/messages/messages.properties";
   private static final Properties PROPERTIES = loadProperties();
 
   private Messages() {
@@ -25,8 +29,7 @@ public final class Messages {
 
   private static Properties loadProperties() {
     final Properties properties = new Properties();
-    final ClassLoader classLoader = Messages.class.getClassLoader();
-    try (var stream = classLoader.getResourceAsStream(RESOURCE)) {
+    try (var stream = Messages.class.getResourceAsStream(RESOURCE)) {
       if (stream == null) {
         throw new IllegalStateException("Missing message resource: " + RESOURCE);
       }

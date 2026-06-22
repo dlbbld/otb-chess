@@ -107,6 +107,25 @@ class TestTouchMoveEvaluator {
     assertTrue(obligation.isPresent());
     assertEquals(Square.G1, obligation.get().square());
     assertEquals(Piece.WHITE_KNIGHT, obligation.get().piece());
+    // The binding piece was reached only after touching the a1 rook (which has no legal moves), so
+    // it is flagged as not literally the first piece touched.
+    assertTrue(obligation.get().precededByUnmovableOwnTouch());
+  }
+
+  @Test
+  void testFirstTouchHasLegalMovesIsNotFlaggedAsPreceded() {
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // Knight g1 (has legal moves) is the very first piece touched, then knight b1 (also has moves).
+    sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.click(Square.B1, Piece.WHITE_KNIGHT, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(Square.G1, obligation.get().square());
+    assertFalse(obligation.get().precededByUnmovableOwnTouch());
   }
 
   @Test

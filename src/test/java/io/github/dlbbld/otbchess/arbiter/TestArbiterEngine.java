@@ -503,6 +503,33 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testTouchMoveViolationUsesPrecededMessageWhenEarlierTouchHadNoLegalMoves() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+
+    // Player touches the a1 rook (no legal moves in the start position), then the b1 knight (which
+    // does have legal moves), but plays e4. The binding piece is the knight on b1, reached only
+    // after an unmovable own-piece touch, so the "first touched piece that can move" message is used.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.A1, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.click(Square.B1, Piece.WHITE_KNIGHT, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 2));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
+    assertTrue(response.obligation().isPresent());
+    assertEquals(Square.B1, response.obligation().get().square());
+    assertTrue(response.obligation().get().precededByUnmovableOwnTouch());
+    assertEquals(MessageKey.ARBITER_TOUCH_MOVE_OWN_PRECEDED_PLAYER, response.playerMessageKey());
+    assertEquals(Messages.get(MessageKey.ARBITER_TOUCH_MOVE_OWN_PRECEDED_PLAYER, "knight", "b1"),
+        response.renderedPlayerMessage());
+  }
+
+  @Test
   void testTouchMoveViolationOpponentPiece() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();
