@@ -10,9 +10,8 @@ import { defineConfig, devices } from '@playwright/test';
  * server shuts down cleanly with the runner instead of lingering as an orphaned grandchild.
  *
  * Tests run SERIALLY (workers: 1) on purpose: the game server is stateful (shared game
- * rooms) and the /api/lastGameId endpoint is global, so parallel files could race. Each
- * test still creates its own game (isolated by id) and reads the game code from the DOM,
- * never from that global endpoint.
+ * rooms), so parallel files could race. Each test still creates its own game (isolated by
+ * id) and reads the game code from the DOM.
  */
 export default defineConfig({
   testDir: './tests/e2e',

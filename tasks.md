@@ -3,6 +3,11 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## Publication prep
+
+- [x] Remove the testing-only `/api/lastGameId` endpoint and lobby join-code prefill so multiple games can be created and joined independently on a public server.
+- [ ] Add privacy-conscious game logging for publication: enough to understand whether the app is used, without collecting unnecessary player data. Candidate fields: game start/end time, move count, result, and rule-violation counts.
+
 ## Current release — migrate to ashlar-chess 19.0.0
 
 Bump otb-chess from ashlar-chess **18.1.0 → 19.0.0**. Branch: `migrate-to-ashlar-chess-19.0.0`.

@@ -45,10 +45,6 @@ public class GameWebSocketServer extends WebSocketServer {
   private final Map<WebSocket, String> playerGameMap = new ConcurrentHashMap<>();
   private final ScheduledExecutorService clockExecutor = Executors.newScheduledThreadPool(2);
 
-  // TESTING-ONLY: most recently created game ID, exposed via /api/lastGameId so a second browser
-  // session can pre-fill the join field without manual copy/paste. Remove once development is done.
-  private volatile String lastCreatedGameId;
-
   public GameWebSocketServer(int port) {
     super(new InetSocketAddress(port));
     setTcpNoDelay(true); // Disable Nagle's algorithm for low-latency messaging
@@ -184,7 +180,6 @@ public class GameWebSocketServer extends WebSocketServer {
 
     gameRooms.put(gameId, room);
     playerGameMap.put(conn, gameId);
-    lastCreatedGameId = gameId; // TESTING-ONLY: see field comment
 
     final JsonObject response = new JsonObject();
     response.addProperty("type", "gameCreated");
@@ -790,23 +785,6 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   // ===== Helper methods =====
-
-  /**
-   * TESTING-ONLY: returns the most recently created game ID that is still joinable (room exists and not yet full), or
-   * null if no such game exists. Used by the lobby HTTP endpoint to pre-fill the join code in a second browser session.
-   * Remove once development is done.
-   */
-  public String getJoinableLastCreatedGameId() {
-    final String id = lastCreatedGameId;
-    if (id == null) {
-      return null;
-    }
-    final GameRoom room = gameRooms.get(id);
-    if (room == null || room.isFull()) {
-      return null;
-    }
-    return id;
-  }
 
   private GameRoom getRoom(WebSocket conn) {
     final String gameId = playerGameMap.get(conn);

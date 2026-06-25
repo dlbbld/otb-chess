@@ -42,21 +42,9 @@ public class OtbChessServer {
       }
       System.out.println("WebSocket server running at ws://localhost:" + WS_PORT);
 
-      // Start HTTP server for static files. The /api/lastGameId endpoint queries the WebSocket server.
+      // Start HTTP server for static files.
       final var httpServer = HttpServer.create(new InetSocketAddress(HTTP_PORT), 0);
       final var staticHandler = new StaticFileHandler(STATIC_DIR.toAbsolutePath());
-      // TESTING-ONLY: /api/lastGameId returns the most recently created joinable game ID so the
-      // lobby in a second browser session can pre-fill the join code. Remove once development is done.
-      httpServer.createContext("/api/lastGameId", exchange -> {
-        final String id = wsServer.getJoinableLastCreatedGameId();
-        final byte[] body = (id == null ? "" : id).getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
-        exchange.getResponseHeaders().set("Cache-Control", "no-store");
-        exchange.sendResponseHeaders(200, body.length);
-        try (var os = exchange.getResponseBody()) {
-          os.write(body);
-        }
-      });
       // Exposes the Maven project version embedded in the runnable JAR manifest, so static pages
       // can display the release without duplicating it in HTML or JavaScript.
       httpServer.createContext("/api/version", exchange -> {
