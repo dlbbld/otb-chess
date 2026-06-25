@@ -18,6 +18,9 @@ body {
   background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.12);
 }
 .lobby h1 { text-align: center; margin-bottom: 8px; color: #5d4037; }
+.app-version { color: #9a9189; font-size: 11px; line-height: 1; text-align: center; }
+.lobby .app-version { margin: -2px 0 14px; }
+.board-version { margin-top: 2px; }
 .lobby > p { text-align: center; color: #777; margin-bottom: 24px; }
 .lobby-section { margin-bottom: 24px; padding: 16px; background: #f5f0eb; border-radius: 8px; }
 .lobby-section h2 { font-size: 16px; margin-bottom: 12px; color: #5d4037; }

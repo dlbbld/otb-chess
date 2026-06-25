@@ -79,6 +79,7 @@
 							<mainClass>io.github.dlbbld.otbchess.server.OtbChessServer</mainClass>
 							<addClasspath>true</addClasspath>
 							<classpathPrefix>lib/</classpathPrefix>
+							<addDefaultImplementationEntries>true</addDefaultImplementationEntries>
 						</manifest>
 					</archive>
 				</configuration>
