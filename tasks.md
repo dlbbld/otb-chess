@@ -21,7 +21,7 @@ portability path, not the initial runtime.
 - [x] `/api/health` endpoint (liveness + WebSocket-listening check) for the uptime/container probe. Returns `200 {"status":"ok","websocket":true}` when the WS port is bound, `503 {"status":"degraded",...}` otherwise (via `GameWebSocketServer.isListening()`).
 - [x] Make the `/ws` contract explicit: client connects to `/ws`, Caddy proxies `/ws*` → :8081; smoke test added at `tools/smoke-ws.mjs` (opens `<base>/ws`, creates a game, asserts `gameCreated`). **Decision:** the server-side path assertion was left *lenient* (the Java WebSocket server accepts any path) so the `:8081` direct-dev fallback keeps working; tighten to require `/ws` only if/when the fallback is dropped.
 - [x] Caddy reverse proxy: one local origin serving static (→8080) and `/ws` (→8081); dev/prod parity verified locally. Config at `Caddyfile` (listen `OTB_CADDY_LISTEN`, default `:9000`; `auto_https off` since TLS terminates at Cloudflare). Verified: `/`, `/api/health`, `/api/version`, static assets all 200 through Caddy, `/ws` returns 101, and a full `createGame`→`gameCreated` round-trip succeeds through the proxy.
-- [ ] Dockerfile as the portability/VPS artifact (build and keep it; the iMac runtime stays native `launchd`).
+- [x] Dockerfile as the portability/VPS artifact (build and keep it; the iMac runtime stays native `launchd`). Multi-stage (Maven build → JRE), env-configurable, `OTB_BIND_HOST=0.0.0.0` for containers, HEALTHCHECK on `/api/health`; `.dockerignore` added. **Not build-tested locally** (Docker is not installed on the iMac — this is the VPS path).
 
 ### Phase 2 — hardening gate (before turning Cloudflare Access off to open public)
 - [ ] Join-code hardening: widen the code (≥12 chars / secure-random base32) and add a collision guard (`putIfAbsent`) on creation. Current: `UUID.randomUUID().toString().substring(0, 8)` = 32 bits, plain `put`.
@@ -37,7 +37,7 @@ portability path, not the initial runtime.
 ### Go-live setup (host + edge)
 - [ ] Add a domain to Cloudflare (free plan) for the named tunnel.
 - [ ] `cloudflared` named tunnel → Caddy single origin (ingress config).
-- [ ] `launchd` services on the iMac (app jar, Caddy, `cloudflared`): start on boot, KeepAlive; disable sleep/App Nap (`pmset`) so it serves unattended.
+- [ ] `launchd` services on the iMac (app jar, Caddy, `cloudflared`): start on boot, KeepAlive; disable sleep/App Nap (`pmset`) so it serves unattended. **Ready:** plists at `deploy/launchd/`, installer `deploy/install-launchd.sh`, docs `deploy/README.md`. App plist verified under launchd (boot launch + KeepAlive respawn confirmed). **Remaining:** run `sudo deploy/install-launchd.sh` (needs your password) + `pmset` no-sleep; cloudflared daemon waits on the tunnel config.
 - [ ] Cloudflare Access (invited emails) for the private beta; WAF + rate-limit rules at the edge.
 
 ## iMac host setup (publish-server-beta)

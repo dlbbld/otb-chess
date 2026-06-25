@@ -1,0 +1,12 @@
+# Build artifacts and local tooling — rebuilt inside the image.
+target/
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+.git/
+.claude/
+deploy/
+tests/
+*.log

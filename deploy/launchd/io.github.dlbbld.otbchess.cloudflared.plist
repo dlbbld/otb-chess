@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  OTB Chess — Cloudflare Tunnel (cloudflared). Connects the named tunnel outbound to Cloudflare
+  (no inbound ports) and forwards public traffic to the local Caddy origin (localhost:9000).
+
+  TEMPLATE: this needs the named tunnel + credentials created during go-live, i.e.
+    cloudflared tunnel login
+    cloudflared tunnel create otb-chess
+    ~/.cloudflared/config.yml  (ingress -> http://localhost:9000)
+  See deploy/README.md. Alternatively use `cloudflared service install`, which writes its own
+  LaunchDaemon; this plist is the explicit hand-managed equivalent.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.github.dlbbld.otbchess.cloudflared</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/chess-server/.local/bin/cloudflared</string>
+        <string>tunnel</string>
+        <string>--no-autoupdate</string>
+        <string>--config</string>
+        <string>/Users/chess-server/.cloudflared/config.yml</string>
+        <string>run</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/chess-server</string>
+        <key>TUNNEL_ORIGIN_CERT</key>
+        <string>/Users/chess-server/.cloudflared/cert.pem</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>UserName</key>
+    <string>chess-server</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/chess-server/Library/Logs/otb-chess/cloudflared.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/chess-server/Library/Logs/otb-chess/cloudflared.log</string>
+</dict>
+</plist>
