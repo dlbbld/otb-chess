@@ -23,6 +23,9 @@ class Game {
     this.gameId = params.get('gameId');
     this.side = params.get('side');
     const isCreator = params.get('creator') === 'true';
+    // Whether THIS client created the game (and waited) vs joined it. Fixed for the page's lifetime;
+    // drives the "who joined" half of the game-start message (see gameStartedMessage).
+    this.isCreator = isCreator;
 
     if (!isCreator && !this.gameId) {
       this.showArbiterMessage('No game ID specified. Go back to the lobby.');
@@ -188,7 +191,7 @@ class Game {
       this.isMyTurn = havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.updateButtons();
-      this.showArbiterMessage('Game started! ' + (this.isMyTurn ? 'Your turn.' : "Opponent's turn."));
+      this.showArbiterMessage(Game.gameStartedMessage(this.isCreator, this.isMyTurn));
       this.clearArbiterButtons();
     });
 
@@ -896,6 +899,24 @@ class Game {
     document.getElementById('claimThreefoldWithMoveBtn').disabled = !claimsAllowed;
     document.getElementById('claimFiftyMoveOnBoardBtn').disabled = !claimsAllowed;
     document.getElementById('claimFiftyMoveWithMoveBtn').disabled = !claimsAllowed;
+  }
+
+  /**
+   * Builds the game-start arbiter message from two INDEPENDENT facts:
+   *   - isCreator:    the creator opened the game and waited, so their *opponent* is the one who
+   *                   joined; the joiner is the one who joined.
+   *   - hasFirstMove: only the side to move has a running clock at the start of the game.
+   * These coincide in a standard creator-plays-White game, but NOT when the creator chose Black or a
+   * custom FEN starts with Black to move -- so each clause is keyed to its own fact, never to colour.
+   * Pure (no DOM / no `this`) so the four creator/joiner x first-move combinations are exhaustively
+   * testable; the four cases are pinned in tests/e2e/game-start-message.spec.ts.
+   */
+  static gameStartedMessage(isCreator, hasFirstMove) {
+    const joined = isCreator ? 'your opponent joined the game' : 'you joined the game';
+    const clock = hasFirstMove
+      ? 'Your clock has been started - your turn.'
+      : "Opponent's clock has been started - opponent's turn.";
+    return `Game started - ${joined}. ${clock}`;
   }
 
   showArbiterMessage(message, style) {

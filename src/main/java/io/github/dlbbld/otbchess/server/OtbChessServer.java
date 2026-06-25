@@ -57,6 +57,17 @@ public class OtbChessServer {
           os.write(body);
         }
       });
+      // Exposes the Maven project version embedded in the runnable JAR manifest, so static pages
+      // can display the release without duplicating it in HTML or JavaScript.
+      httpServer.createContext("/api/version", exchange -> {
+        final byte[] body = appVersionJson();
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(200, body.length);
+        try (var os = exchange.getResponseBody()) {
+          os.write(body);
+        }
+      });
       // Validates a starting FEN before the lobby navigates to the board, so an invalid FEN keeps
       // the player on the start screen with the reason instead of stranding them on a dead board.
       // Returns {"valid":true} or {"valid":false,"message":"Invalid FEN: ..."} from Ashlar Chess.
@@ -111,6 +122,17 @@ public class OtbChessServer {
       }
     }
     return GSON.toJson(obj).getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static byte[] appVersionJson() {
+    final JsonObject obj = new JsonObject();
+    obj.addProperty("version", appVersion());
+    return GSON.toJson(obj).getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static String appVersion() {
+    final String version = OtbChessServer.class.getPackage().getImplementationVersion();
+    return version == null || version.isBlank() ? "development" : version;
   }
 
   private static String queryParam(String rawQuery, String key) {

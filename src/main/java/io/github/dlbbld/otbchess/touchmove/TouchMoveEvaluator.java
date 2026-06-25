@@ -11,9 +11,7 @@ import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.PieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
-import io.github.dlbbld.ashlarchess.board.enums.SquareUtility;
-import io.github.dlbbld.ashlarchess.model.LegalMove;
-import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
+import io.github.dlbbld.ashlarchess.board.LegalMove;
 import io.github.dlbbld.otbchess.castling.CastlingAttemptDetector;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
@@ -122,12 +120,11 @@ public class TouchMoveEvaluator {
    */
   private static Optional<TouchMoveObligation> findCastlingObligation(List<BoardEvent> events, Side sideToMove,
       Set<LegalMove> legalMoves) {
-    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(sideToMove,
-        new io.github.dlbbld.ashlarchess.common.model.MoveSpecification(CastlingMove.KING_SIDE));
+    final Square kingFrom = CastlingMove.KING_SIDE.kingFromSquare(sideToMove);
     final Piece kingPiece = Piece.of(sideToMove, PieceType.KING);
     final Piece rookPiece = Piece.of(sideToMove, PieceType.ROOK);
-    final Square kingSideRook = SquareUtility.calculateKingSideRookOriginalSquare(sideToMove);
-    final Square queenSideRook = SquareUtility.calculateQueenSideRookOriginalSquare(sideToMove);
+    final Square kingSideRook = CastlingMove.KING_SIDE.rookFromSquare(sideToMove);
+    final Square queenSideRook = CastlingMove.QUEEN_SIDE.rookFromSquare(sideToMove);
 
     boolean kingTouched = false;
     for (final BoardEvent event : events) {
@@ -179,7 +176,7 @@ public class TouchMoveEvaluator {
       if (legalMove.movingSide() != sideToMove) {
         continue;
       }
-      if (CastlingUtility.isCastlingMove(legalMove.moveSpecification())
+      if (legalMove.moveSpecification().isCastling()
           && legalMove.moveSpecification().castlingMove() == side) {
         return true;
       }
@@ -294,9 +291,8 @@ public class TouchMoveEvaluator {
         return true;
       }
       // Castling: MoveSpecification has fromSquare = NONE, but the king originates from a specific square
-      if (CastlingUtility.isCastlingMove(legalMove.moveSpecification())) {
-        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.movingSide(),
-            legalMove.moveSpecification());
+      if (legalMove.moveSpecification().isCastling()) {
+        final Square kingFrom = legalMove.moveSpecification().castlingMove().kingFromSquare(legalMove.movingSide());
         if (kingFrom == square) {
           return true;
         }
@@ -332,9 +328,8 @@ public class TouchMoveEvaluator {
           yield true;
         }
         // Castling: king originates from the obligation square
-        if (CastlingUtility.isCastlingMove(legalMove.moveSpecification())) {
-          final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(legalMove.movingSide(),
-              legalMove.moveSpecification());
+        if (legalMove.moveSpecification().isCastling()) {
+          final Square kingFrom = legalMove.moveSpecification().castlingMove().kingFromSquare(legalMove.movingSide());
           yield kingFrom == obligation.square();
         }
         yield false;
@@ -350,7 +345,7 @@ public class TouchMoveEvaluator {
               && legalMove.capturedPiece() != Piece.NONE;
       case CASTLING ->
           // Must castle on the touched rook's side. Only the matching castling move satisfies it.
-          CastlingUtility.isCastlingMove(legalMove.moveSpecification())
+          legalMove.moveSpecification().isCastling()
               && legalMove.moveSpecification().castlingMove() == obligation.castlingMove();
     };
   }

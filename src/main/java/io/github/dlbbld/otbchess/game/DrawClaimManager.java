@@ -1,7 +1,7 @@
 package io.github.dlbbld.otbchess.game;
 
 import io.github.dlbbld.ashlarchess.board.Board;
-import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.ashlarchess.san.LenientSanParser;
 import io.github.dlbbld.ashlarchess.san.LenientSanParserValidationException;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;

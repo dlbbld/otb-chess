@@ -2,7 +2,7 @@ package io.github.dlbbld.otbchess.game.model;
 
 import java.util.Optional;
 
-import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 
 /**
  * @param accepted            whether the draw claim was accepted

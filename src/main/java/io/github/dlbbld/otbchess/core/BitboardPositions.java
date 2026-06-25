@@ -6,7 +6,7 @@ import java.util.List;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
-import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
+import io.github.dlbbld.otbchess.core.UpdateSquare;
 
 /**
  * Derives a {@link BitboardPosition} by overlaying explicit square-to-piece updates onto a base position.
