@@ -31,7 +31,9 @@ portability path, not the initial runtime.
 - [ ] Edge rate limiting (Cloudflare): `/ws` connection-attempt churn and obviously abusive HTTP paths.
 - [ ] CORS cleanup: remove `Access-Control-Allow-Origin: *` from `StaticFileHandler` (unneeded for a same-origin app), alongside the `Origin` validation — or fold into the Phase 1 single-origin work.
 - [ ] Resource bounds: reap abandoned/never-joined rooms and cap concurrent games (unbounded in-memory state on a home box).
-- [ ] Privacy logging: minimal per-game usage record (start/end time, move count, result, illegal-move/draw-claim counts; no names, emails, IPs, or full move list) with fixed retention (~90 days). Write `PRIVACY.md` documenting **app-collected** data separately from **Cloudflare Access** data (Cloudflare processes invited emails + access logs during the gated beta).
+- [ ] Usage logging (minimal): log **only** two events — a game being **created** and a game being **joined**. Nothing else: no move counts, results, rule-violation counts, board/PGN state, names, emails, or IPs. Purpose is solely to tell whether the app is used at all. Retention 30 days, then purge.
+  - [ ] Write the policy in `PRIVACY.md` — app-collected data documented separately from **Cloudflare Access** data (Cloudflare processes invited emails + access logs during the gated beta).
+  - [ ] Implement on the server: one log line per event (timestamp + event type; game id only if needed to pair create ↔ join) and a 30-day purge.
 - [ ] Access + WebSocket end-to-end smoke test (release gate): load the page through Access, create a game, join from a second browser/account, keep a WebSocket open, and play moves.
 
 ### Go-live setup (host + edge)
