@@ -47,8 +47,8 @@ public class GameWebSocketServer extends WebSocketServer {
   private final Map<WebSocket, String> playerGameMap = new ConcurrentHashMap<>();
   private final ScheduledExecutorService clockExecutor = Executors.newScheduledThreadPool(2);
 
-  public GameWebSocketServer(int port) {
-    super(new InetSocketAddress(port));
+  public GameWebSocketServer(String host, int port) {
+    super(new InetSocketAddress(host, port));
     setTcpNoDelay(true); // Disable Nagle's algorithm for low-latency messaging
   }
 
@@ -128,6 +128,16 @@ public class GameWebSocketServer extends WebSocketServer {
    */
   public boolean awaitStarted(long timeout, TimeUnit unit) throws InterruptedException {
     return startedLatch.await(timeout, unit);
+  }
+
+  /**
+   * Non-blocking liveness check used by the HTTP {@code /api/health} probe: reports whether {@link #onStart()} has fired,
+   * i.e. the server socket is bound and accepting WebSocket connections.
+   *
+   * @return {@code true} once the WebSocket server is listening
+   */
+  public boolean isListening() {
+    return startedLatch.getCount() == 0;
   }
 
   // ===== Message handlers =====

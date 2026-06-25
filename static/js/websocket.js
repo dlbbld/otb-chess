@@ -1,4 +1,21 @@
-const WS_URL = 'ws://localhost:8081';
+// Derive the WebSocket URL from the page origin so a single build works everywhere:
+// - Behind the Caddy/Cloudflare single origin the page is HTTPS and the WebSocket is a
+//   same-origin `wss://<host>/ws` that Caddy proxies to the Java WebSocket server.
+// - In local dev served directly by the Java HTTP server on :8080 there is no proxy, so
+//   fall back to the WebSocket server on :8081 of the same host.
+// `wss` is chosen whenever the page itself is HTTPS, so the WebSocket is never downgraded
+// to plaintext on a secure page (browsers block that as mixed content anyway).
+function resolveWsUrl() {
+  const loc = window.location;
+  const scheme = loc.protocol === 'https:' ? 'wss' : 'ws';
+  if (loc.port === '8080') {
+    // Direct dev mode: page came straight from the Java HTTP server, no proxy in front.
+    return `${scheme}://${loc.hostname}:8081`;
+  }
+  // Single-origin mode (Caddy/Cloudflare): same host, dedicated `/ws` path.
+  return `${scheme}://${loc.host}/ws`;
+}
+const WS_URL = resolveWsUrl();
 
 class GameWebSocket {
   constructor() {

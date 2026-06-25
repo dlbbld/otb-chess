@@ -27,26 +27,45 @@ import io.github.dlbbld.ashlarchess.board.Board;
  */
 public class OtbChessServer {
 
-  private static final int HTTP_PORT = 8080;
-  private static final int WS_PORT = 8081;
-  private static final Path STATIC_DIR = Path.of("static");
-
   public static void main(String[] args) throws IOException, InterruptedException {
+    // 12-factor config: bind host and ports come from the environment so the same artifact runs
+    // unchanged in local dev and behind the proxy/tunnel. The default bind host is 127.0.0.1
+    // (loopback only) so the app is reachable solely through Caddy/Cloudflare and never directly
+    // from the network. Set OTB_BIND_HOST=0.0.0.0 to expose it on all interfaces.
+    final String bindHost = envStr("OTB_BIND_HOST", "127.0.0.1");
+    final int httpPort = envInt("OTB_HTTP_PORT", 8080);
+    final int wsPort = envInt("OTB_WS_PORT", 8081);
+    final Path staticDir = Path.of(envStr("OTB_STATIC_DIR", "static"));
+
     // Start the WebSocket server first and wait until it is actually listening. The HTTP server
     // (below) is exposed only afterwards, so that once the page is reachable over HTTP the browser
     // can always open its WebSocket. This removes a startup race where a client could load the page
-    // before :8081 was bound (the client has no WebSocket-reconnect path).
-    final var wsServer = new GameWebSocketServer(WS_PORT);
+    // before the WebSocket port was bound (the client has no WebSocket-reconnect path).
+    final var wsServer = new GameWebSocketServer(bindHost, wsPort);
     wsServer.start();
     try {
       if (!wsServer.awaitStarted(10, TimeUnit.SECONDS)) {
         throw new IOException("WebSocket server did not start within 10 seconds");
       }
-      System.out.println("WebSocket server running at ws://localhost:" + WS_PORT);
+      System.out.println("WebSocket server running at ws://" + bindHost + ":" + wsPort);
 
       // Start HTTP server for static files.
-      final var httpServer = HttpServer.create(new InetSocketAddress(HTTP_PORT), 0);
-      final var staticHandler = new StaticFileHandler(STATIC_DIR.toAbsolutePath());
+      final var httpServer = HttpServer.create(new InetSocketAddress(bindHost, httpPort), 0);
+      final var staticHandler = new StaticFileHandler(staticDir.toAbsolutePath());
+      // Liveness/readiness probe for the uptime monitor and the Cloudflare tunnel. Reports the app
+      // is up and whether the WebSocket endpoint is actually listening (both must be true for the
+      // game to work). Returns 200 with {"status":"ok","websocket":true} when healthy, 503 when the
+      // WebSocket port is not (yet) bound.
+      httpServer.createContext("/api/health", exchange -> {
+        final boolean wsReady = wsServer.isListening();
+        final byte[] body = healthJson(wsReady);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(wsReady ? 200 : 503, body.length);
+        try (var os = exchange.getResponseBody()) {
+          os.write(body);
+        }
+      });
       // Exposes the Maven project version embedded in the runnable JAR manifest, so static pages
       // can display the release without duplicating it in HTML or JavaScript.
       httpServer.createContext("/api/version", exchange -> {
@@ -73,7 +92,7 @@ public class OtbChessServer {
       httpServer.createContext("/", staticHandler::handle);
       httpServer.setExecutor(null);
       httpServer.start();
-      System.out.println("HTTP server running at http://localhost:" + HTTP_PORT);
+      System.out.println("HTTP server running at http://" + bindHost + ":" + httpPort);
     } catch (IOException | InterruptedException | RuntimeException e) {
       // Startup failed after the WebSocket server began listening (e.g. the HTTP port is taken).
       // Stop it so the JVM can exit instead of lingering on :8081 (its selector thread is non-daemon).
@@ -87,7 +106,33 @@ public class OtbChessServer {
 
     System.out.println();
     System.out.println("OTB Chess is ready!");
-    System.out.println("Open http://localhost:" + HTTP_PORT + " in your browser to start.");
+    System.out.println("Open http://" + ("0.0.0.0".equals(bindHost) ? "localhost" : bindHost) + ":" + httpPort
+        + " in your browser to start.");
+  }
+
+  private static int envInt(String name, int defaultValue) {
+    final String raw = System.getenv(name);
+    if (raw == null || raw.isBlank()) {
+      return defaultValue;
+    }
+    try {
+      return Integer.parseInt(raw.trim());
+    } catch (final NumberFormatException e) {
+      System.err.println("Invalid integer for " + name + "='" + raw + "', using default " + defaultValue);
+      return defaultValue;
+    }
+  }
+
+  private static String envStr(String name, String defaultValue) {
+    final String raw = System.getenv(name);
+    return (raw == null || raw.isBlank()) ? defaultValue : raw.trim();
+  }
+
+  private static byte[] healthJson(boolean wsListening) {
+    final JsonObject obj = new JsonObject();
+    obj.addProperty("status", wsListening ? "ok" : "degraded");
+    obj.addProperty("websocket", wsListening);
+    return GSON.toJson(obj).getBytes(StandardCharsets.UTF_8);
   }
 
   private static final Gson GSON = new Gson();
