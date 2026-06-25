@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Daniel Baechli
+// SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.arbiter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

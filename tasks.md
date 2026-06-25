@@ -7,6 +7,7 @@ release's tasks until it ships.
 
 - [x] Remove the testing-only `/api/lastGameId` endpoint and lobby join-code prefill so multiple games can be created and joined independently on a public server.
 - [ ] Add privacy-conscious game logging for publication: enough to understand whether the app is used, without collecting unnecessary player data. Candidate fields: game start/end time, move count, result, and rule-violation counts.
+- [x] Open-source licensing: GPL-3.0-only `LICENSE`, two-line SPDX headers on every Java file via `tools/java-license-headers.ps1` (`-Check`/`-Fix`, ported from ashlar-chess), enforced in the build by `TestLicenseHeaders`. License + ashlar-chess attribution declared in `pom.xml` and `README.md`. Copyright year 2026 (project inception). Headers cover Java only (TS/JS excluded, as in ashlar-chess).
 
 ## Current release — migrate to ashlar-chess 19.0.0
 
