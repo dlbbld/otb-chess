@@ -10,7 +10,7 @@ import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
-import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
+import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.ashlarchess.pgn.PgnCreate;
 import io.github.dlbbld.otbchess.arbiter.ArbiterEngine;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
@@ -234,12 +234,12 @@ public class GameSession {
 
     // Position match — pure read, no side effects. Most intermediate positions during piece
     // manipulation will produce no match and we exit immediately.
-    final java.util.Set<io.github.dlbbld.ashlarchess.model.LegalMove> matchingMoves = io.github.dlbbld.otbchess.core.PositionComparator
+    final java.util.Set<io.github.dlbbld.ashlarchess.board.LegalMove> matchingMoves = io.github.dlbbld.otbchess.core.PositionComparator
         .findMatchingMoves(board, afterPosition);
     if (matchingMoves.isEmpty()) {
       return Optional.empty();
     }
-    final io.github.dlbbld.ashlarchess.model.LegalMove matchedMove = matchingMoves.iterator().next();
+    final io.github.dlbbld.ashlarchess.board.LegalMove matchedMove = matchingMoves.iterator().next();
 
     // Released-piece guard (FIDE 4.7): if the player has already committed a release in this
     // turn and the current physical position is NOT one of the committed move's allowed final
@@ -333,7 +333,7 @@ public class GameSession {
     if (expectedPosition.equals(afterPosition)) {
       // Correct — perform the move
       final MoveSpecification executedMove = mustExecuteMove;
-      final io.github.dlbbld.ashlarchess.model.LegalMove matchedLegalMove = board.getLegalMoves().stream()
+      final io.github.dlbbld.ashlarchess.board.LegalMove matchedLegalMove = board.getLegalMoves().stream()
           .filter(lm -> lm.moveSpecification().equals(executedMove)).findFirst()
           .orElseThrow(() -> new IllegalStateException("Specified move is not in the legal move set"));
       board.move(executedMove);

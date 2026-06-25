@@ -14,11 +14,10 @@ import io.github.dlbbld.ashlarchess.board.enums.PieceType;
 import io.github.dlbbld.ashlarchess.board.enums.PromotionPieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
-import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
-import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
-import io.github.dlbbld.ashlarchess.exceptions.InvalidMoveException;
-import io.github.dlbbld.ashlarchess.model.LegalMove;
-import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
+import io.github.dlbbld.otbchess.core.UpdateSquare;
+import io.github.dlbbld.ashlarchess.board.MoveSpecification;
+import io.github.dlbbld.ashlarchess.board.InvalidMoveException;
+import io.github.dlbbld.ashlarchess.board.LegalMove;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse.IllegalMoveDetail;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse.ReleasedPieceContext;
 import io.github.dlbbld.otbchess.castling.CastlingAttemptDetector;
@@ -165,7 +164,7 @@ public class ArbiterEngine {
       if (committedMoves.isEmpty()) {
         return false;
       }
-      return committedMoves.stream().allMatch(m -> CastlingUtility.isCastlingMove(m.moveSpecification()));
+      return committedMoves.stream().allMatch(m -> m.moveSpecification().isCastling());
     }
 
     /** The unique castling move the player is committed to, when {@link #isCastlingOnlyCommitment()}. */
@@ -230,10 +229,10 @@ public class ArbiterEngine {
 
   private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove) {
     final MoveSpecification spec = legalMove.moveSpecification();
-    if (CastlingUtility.isCastlingMove(spec)) {
+    if (spec.isCastling()) {
       return event.piece() == Piece.of(havingMove, PieceType.KING)
-          && event.square() == CastlingUtility.calculateKingCastlingFrom(havingMove, spec)
-          && event.targetSquare() == CastlingUtility.calculateKingCastlingTo(havingMove, spec);
+          && event.square() == spec.castlingMove().kingFromSquare(havingMove)
+          && event.targetSquare() == spec.castlingMove().kingToSquare(havingMove);
     }
     if (spec.promotionPieceType() != PromotionPieceType.NONE) {
       // A promotion is released only when the PROMOTED piece (e.g. a queen from the side area) is
@@ -371,11 +370,10 @@ public class ArbiterEngine {
     if (attempt.kingReleaseSquare() == Square.NONE) {
       return false;
     }
-    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getSideToMove(),
-        attempt.moveSpecification());
+    final Square kingFrom = attempt.moveSpecification().castlingMove().kingFromSquare(board.getSideToMove());
     final Piece kingPiece = Piece.of(board.getSideToMove(), PieceType.KING);
     for (final LegalMove legalMove : board.getLegalMoves()) {
-      if (!CastlingUtility.isCastlingMove(legalMove.moveSpecification()) && legalMove.movingPiece() == kingPiece
+      if (!legalMove.moveSpecification().isCastling() && legalMove.movingPiece() == kingPiece
           && legalMove.moveSpecification().fromSquare() == kingFrom
           && legalMove.moveSpecification().toSquare() == attempt.kingReleaseSquare()) {
         return true;
@@ -415,8 +413,8 @@ public class ArbiterEngine {
     }
 
     final MoveSpecification moveSpecification = createMoveSpecification(moveEvent);
-    return Optional.of(new AttemptedMove(moveSpecification, CastlingUtility.isCastlingMove(moveSpecification),
-        CastlingUtility.isCastlingMove(moveSpecification) ? moveEvent.targetSquare() : Square.NONE));
+    return Optional.of(new AttemptedMove(moveSpecification, moveSpecification.isCastling(),
+        moveSpecification.isCastling() ? moveEvent.targetSquare() : Square.NONE));
   }
 
   private static MoveSpecification createMoveSpecification(BoardEvent event) {
@@ -462,8 +460,7 @@ public class ArbiterEngine {
     }
 
     final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
-    final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(board.getSideToMove(),
-        attemptedMove.moveSpecification());
+    final Square kingFrom = attemptedMove.moveSpecification().castlingMove().kingFromSquare(board.getSideToMove());
     final Piece kingPiece = Piece.of(board.getSideToMove(), PieceType.KING);
 
     if (obligation.isPresent()) {

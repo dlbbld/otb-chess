@@ -18,18 +18,7 @@
 		<dependency>
 			<groupId>io.github.dlbbld</groupId>
 			<artifactId>ashlar-chess</artifactId>
-			<version>19.1.0</version>
-		</dependency>
-		<!-- Direct dependency only because ashlar-chess's public API returns Guava types
-		     (e.g. Board.getLegalMoves() -> ImmutableList, Square.REAL). As an automatic module
-		     ashlar-chess cannot `requires transitive com.google.common`, so this explicit module
-		     must read Guava itself (see module-info.java `requires com.google.common`). Remove this
-		     dependency and the requires once ashlar-chess stops leaking Guava (or declares it
-		     transitively). Version pinned to match the transitive version ashlar-chess resolves. -->
-		<dependency>
-			<groupId>com.google.guava</groupId>
-			<artifactId>guava</artifactId>
-			<version>33.5.0-jre</version>
+			<version>20.0.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.java-websocket</groupId>

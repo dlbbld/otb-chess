@@ -7,7 +7,7 @@ import java.util.Map;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
-import io.github.dlbbld.ashlarchess.board.model.UpdateSquare;
+import io.github.dlbbld.otbchess.core.UpdateSquare;
 import io.github.dlbbld.otbchess.core.BitboardPositions;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 import io.github.dlbbld.otbchess.event.BoardEventType;

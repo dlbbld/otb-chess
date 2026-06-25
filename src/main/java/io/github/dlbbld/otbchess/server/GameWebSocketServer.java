@@ -21,8 +21,7 @@ import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
-import io.github.dlbbld.ashlarchess.common.model.MoveSpecification;
-import io.github.dlbbld.ashlarchess.moves.CastlingUtility;
+import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.event.BoardEvent;
@@ -830,12 +829,12 @@ public class GameWebSocketServer extends WebSocketServer {
       final JsonObject moveData = new JsonObject();
       // For castling, MoveSpecification's fromSquare/toSquare are Square.NONE
       // (calling getName() on them throws NonePointerException). Resolve the
-      // king's actual from/to squares via CastlingUtility instead, and tag the
+      // king's actual from/to squares via the CastlingMove geometry accessors instead, and tag the
       // move so the client can recognise it.
-      if (CastlingUtility.isCastlingMove(spec)) {
+      if (spec.isCastling()) {
         final Side moveSide = move.movingSide();
-        final Square kingFrom = CastlingUtility.calculateKingCastlingFrom(moveSide, spec);
-        final Square kingTo = CastlingUtility.calculateKingCastlingTo(moveSide, spec);
+        final Square kingFrom = spec.castlingMove().kingFromSquare(moveSide);
+        final Square kingTo = spec.castlingMove().kingToSquare(moveSide);
         moveData.addProperty("from", kingFrom.getName());
         moveData.addProperty("to", kingTo.getName());
         moveData.addProperty("castling", spec.castlingMove().name());
