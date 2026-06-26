@@ -22,6 +22,11 @@
 }
 
 {$OTB_CADDY_LISTEN::9000} {
+	# Listen on loopback only: the public edge is Cloudflare; cloudflared dials this locally.
+	# A port-only site address (default :9000) matches any Host, so the tunnel's forwarded
+	# Host (play.otb-chess.app) is served here without per-hostname config.
+	bind 127.0.0.1
+
 	# WebSocket endpoint -> Java WebSocket server. reverse_proxy forwards the Upgrade/Connection
 	# headers automatically, so this completes the ws/wss handshake transparently.
 	@ws path /ws /ws/*

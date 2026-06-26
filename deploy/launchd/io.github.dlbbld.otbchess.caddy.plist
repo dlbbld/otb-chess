@@ -25,9 +25,10 @@
 
     <key>EnvironmentVariables</key>
     <dict>
-        <!-- Loopback only: the public edge is Cloudflare, cloudflared dials this locally. -->
+        <!-- Port-only listener (matches any Host) bound to loopback in the Caddyfile; the public
+             edge is Cloudflare and cloudflared dials this locally. -->
         <key>OTB_CADDY_LISTEN</key>
-        <string>localhost:9000</string>
+        <string>:9000</string>
         <key>OTB_HTTP_PORT</key>
         <string>8080</string>
         <key>OTB_WS_PORT</key>

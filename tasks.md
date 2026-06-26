@@ -35,8 +35,8 @@ portability path, not the initial runtime.
 - [ ] Access + WebSocket end-to-end smoke test (release gate): load the page through Access, create a game, join from a second browser/account, keep a WebSocket open, and play moves.
 
 ### Go-live setup (host + edge)
-- [ ] Add a domain to Cloudflare (free plan) for the named tunnel.
-- [ ] `cloudflared` named tunnel → Caddy single origin (ingress config).
+- [x] Add a domain to Cloudflare (free plan) for the named tunnel. Domain `otb-chess.app`; public hostname `play.otb-chess.app` (CNAME → tunnel, created via `cloudflared tunnel route dns`).
+- [x] `cloudflared` named tunnel → Caddy single origin (ingress config). Tunnel `otb-chess` (id `5843474d-…`), `~/.cloudflared/config.yml` ingress `play.otb-chess.app` → `http://127.0.0.1:9000`. **Verified end-to-end over the public URL**: `/`, `/api/health`, `/api/version` = 200, and a full `createGame→gameCreated` over `wss://play.otb-chess.app/ws`. Caddy bound loopback-only on `:9000` (port-only listener matches the tunnel-forwarded Host).
 - [ ] `launchd` services on the iMac (app jar, Caddy, `cloudflared`): start on boot, KeepAlive; disable sleep/App Nap (`pmset`) so it serves unattended. **Ready:** plists at `deploy/launchd/`, installer `deploy/install-launchd.sh`, docs `deploy/README.md`. App plist verified under launchd (boot launch + KeepAlive respawn confirmed). **Remaining:** run `sudo deploy/install-launchd.sh` (needs your password) + `pmset` no-sleep; cloudflared daemon waits on the tunnel config.
 - [ ] Cloudflare Access (invited emails) for the private beta; WAF + rate-limit rules at the edge.
 
