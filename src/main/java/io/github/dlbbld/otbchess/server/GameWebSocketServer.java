@@ -800,18 +800,21 @@ public class GameWebSocketServer extends WebSocketServer {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "positionRestored");
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(restorePosition)));
+    msg.addProperty("autoResumePending", room.getSession().isAutoResumeAfterRestore());
     if (releasedMoveIsFinal) {
       // The released piece committed the move (FIDE 4.7): nothing more to play, just press the clock.
+      // This guidance is ONLY for the player on move (the committer); the opponent just sees the restore.
+      final Side mover = room.getSession().getHavingMove();
+      msg.addProperty("message", "Position restored.");
+      room.sendToSide(mover.getOppositeSide(), GSON.toJson(msg));
       msg.addProperty("message", "Position restored — your move is final. Press the clock to continue.");
-      msg.addProperty("autoResumePending", room.getSession().isAutoResumeAfterRestore());
-    } else if (room.getSession().isAutoResumeAfterRestore()) {
-      msg.addProperty("message", "Position restored. Restarting the clock shortly. Please be ready.");
-      msg.addProperty("autoResumePending", true);
+      room.sendToSide(mover, GSON.toJson(msg));
     } else {
-      msg.addProperty("message", "Position restored. Are you ready to continue?");
-      msg.addProperty("autoResumePending", false);
+      msg.addProperty("message", room.getSession().isAutoResumeAfterRestore()
+          ? "Position restored. Restarting the clock shortly. Please be ready."
+          : "Position restored. Are you ready to continue?");
+      room.sendToBoth(GSON.toJson(msg));
     }
-    room.sendToBoth(GSON.toJson(msg));
 
     if (room.getSession().isAutoResumeAfterRestore()) {
       clockExecutor.schedule(() -> resumeAfterRestorationDelay(room), 1500, TimeUnit.MILLISECONDS);
@@ -830,11 +833,18 @@ public class GameWebSocketServer extends WebSocketServer {
     room.getSession().resumeAfterRestorationDelay();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameResumed");
-    msg.addProperty("message", releasedMoveIsFinal
-        ? "Clock restarted. Your move is final — press the clock to continue."
-        : "Clock restarted. Game continues.");
     msg.addProperty("havingMove", room.getSession().getHavingMove().name().toLowerCase());
-    room.sendToBoth(GSON.toJson(msg));
+    if (releasedMoveIsFinal) {
+      // "Your move is final" is only for the committer (the side to move); the opponent just waits.
+      final Side mover = room.getSession().getHavingMove();
+      msg.addProperty("message", "Clock restarted. Game continues.");
+      room.sendToSide(mover.getOppositeSide(), GSON.toJson(msg));
+      msg.addProperty("message", "Clock restarted. Your move is final — press the clock to continue.");
+      room.sendToSide(mover, GSON.toJson(msg));
+    } else {
+      msg.addProperty("message", "Clock restarted. Game continues.");
+      room.sendToBoth(GSON.toJson(msg));
+    }
     sendClockUpdate(room);
   }
 

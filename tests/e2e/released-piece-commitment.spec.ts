@@ -43,6 +43,10 @@ test('released-piece commitment survives repeated reverts; only the committed mo
   await expect(white.locator('#arbiterMessage')).toContainText(/your move is final/i);
   await expect(white.locator('#arbiterMessage')).toContainText(/press the clock/i);
   await expectRestoredAndResumed(white);
+  // Regression: the "your move is final" guidance is for the committer only — the OPPONENT (Black)
+  // must NOT see it; Black just sees the game continue.
+  await expect(black.locator('#arbiterMessage')).toContainText(/continues/i);
+  await expect(black.locator('#arbiterMessage')).not.toContainText(/your move is final/i);
 
   // --- Cycle 2: undo a4-a2 again, play b2-b3 again, press -> STILL a released-piece violation ---
   await dragPiece(white, 'a4', 'a2');
