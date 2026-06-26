@@ -46,6 +46,10 @@ public class StaticFileHandler {
     final String contentType = guessContentType(filePath.toString());
 
     exchange.getResponseHeaders().set("Content-Type", contentType);
+    // Don't let the CDN/browser cache the app shell: Cloudflare caches static .js/.css/.html by
+    // default, which silently serves stale game logic after a deploy. The assets are small and the
+    // beta changes often, so always revalidate against the origin.
+    exchange.getResponseHeaders().set("Cache-Control", "no-store");
     // No CORS header: the app is same-origin (served and consumed under one Cloudflare/Caddy
     // origin), so a wildcard Access-Control-Allow-Origin would only widen exposure for no benefit.
     exchange.sendResponseHeaders(200, bytes.length);
