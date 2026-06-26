@@ -30,6 +30,10 @@ Nothing else is recorded. The app does not log or store:
 
 These usage entries are kept for **30 days** and then deleted.
 
-## Cloudflare Access (invite-only beta)
+## Hosting (Cloudflare)
 
-During the invite-only beta the site sits behind Cloudflare Access. To admit invited people, Cloudflare processes their email identity and keeps its own access logs, governed by Cloudflare's terms and retention — not by this policy. The OTB Chess application does not read or store those identities; the usage logging described above is the only data the app itself collects.
+The site is public and served through Cloudflare. As the network provider in front of the app,
+Cloudflare processes standard request metadata (such as IP addresses) to deliver traffic and protect
+the service, under Cloudflare's own terms and retention — not this policy. The OTB Chess application
+itself does not read or store that metadata; the usage logging described above is the only data the
+app collects.
