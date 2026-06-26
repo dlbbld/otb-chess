@@ -28,6 +28,11 @@ public class GameRoom {
   private WebSocket blackPlayer;
   private ScheduledFuture<?> clockTickFuture;
 
+  // Per-side secret reconnect tokens. A player whose socket drops re-attaches by presenting its
+  // token (not the guessable join code), so a third party who knows the join code can't hijack a seat.
+  private String whiteToken;
+  private String blackToken;
+
   public GameRoom(String gameId, TimeControl timeControl) {
     this(gameId, timeControl, io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true);
   }
@@ -104,6 +109,37 @@ public class GameRoom {
       return Side.BLACK;
     }
     return Side.NONE;
+  }
+
+  public void setToken(Side side, String token) {
+    if (side == Side.WHITE) {
+      this.whiteToken = token;
+    } else if (side == Side.BLACK) {
+      this.blackToken = token;
+    }
+  }
+
+  /** @return the side that owns this reconnect token, or {@link Side#NONE} if it matches neither. */
+  public Side sideForToken(String token) {
+    if (token == null) {
+      return Side.NONE;
+    }
+    if (token.equals(whiteToken)) {
+      return Side.WHITE;
+    }
+    if (token.equals(blackToken)) {
+      return Side.BLACK;
+    }
+    return Side.NONE;
+  }
+
+  /** Re-attaches a (reconnected) socket to a side, replacing the dropped one. */
+  public void setSocket(Side side, WebSocket conn) {
+    if (side == Side.WHITE) {
+      this.whitePlayer = conn;
+    } else if (side == Side.BLACK) {
+      this.blackPlayer = conn;
+    }
   }
 
   public void sendToBoth(String message) {

@@ -54,6 +54,8 @@ public class GameWebSocketServer extends WebSocketServer {
   private static final SecureRandom RANDOM = new SecureRandom();
   private static final char[] BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".toCharArray();
   private static final int JOIN_CODE_LENGTH = 12;
+  // Reconnect tokens are longer (~100 bits) since they authorise re-attaching to a seat.
+  private static final int SESSION_TOKEN_LENGTH = 20;
 
   private final Map<String, GameRoom> gameRooms = new ConcurrentHashMap<>();
   private final Map<WebSocket, String> playerGameMap = new ConcurrentHashMap<>();
@@ -64,6 +66,10 @@ public class GameWebSocketServer extends WebSocketServer {
   private final long roomTtlMs = OtbChessServer.envLong("OTB_ROOM_TTL_MS", TimeUnit.MINUTES.toMillis(30));
   private final int maxMessageChars = OtbChessServer.envInt("OTB_MAX_MSG_CHARS", 65536);
   private final int maxViolationsPerConn = OtbChessServer.envInt("OTB_MAX_VIOLATIONS", 30);
+  // How long to wait after a socket drops before telling the opponent "disconnected" — gives the
+  // player a window to reconnect (idle drop / network blip) without flapping the game.
+  private final long disconnectGraceMs = OtbChessServer.envLong("OTB_DISCONNECT_GRACE_MS",
+      TimeUnit.SECONDS.toMillis(12));
   private final Set<String> allowedOrigins = parseAllowedOrigins();
   private final UsageLog usageLog = UsageLog.fromConfig(OtbChessServer.envStr("OTB_USAGE_LOG", "logs/usage.log"),
       OtbChessServer.envInt("OTB_USAGE_RETENTION_DAYS", 30));
@@ -94,19 +100,28 @@ public class GameWebSocketServer extends WebSocketServer {
   public void onClose(WebSocket conn, int code, String reason, boolean remote) {
     System.out.println("Connection closed: " + conn.getRemoteSocketAddress());
     final String gameId = playerGameMap.remove(conn);
-    if (gameId != null) {
-      final GameRoom room = gameRooms.get(gameId);
-      if (room != null) {
-        final Side side = room.getSide(conn);
-        if (side != Side.NONE) {
-          // Notify opponent
-          final JsonObject msg = new JsonObject();
-          msg.addProperty("type", "opponentDisconnected");
-          msg.addProperty("message", "Your opponent has disconnected.");
-          room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
-        }
-      }
+    if (gameId == null) {
+      return;
     }
+    final GameRoom room = gameRooms.get(gameId);
+    if (room == null) {
+      return;
+    }
+    final Side side = room.getSide(conn);
+    if (side == Side.NONE) {
+      return;
+    }
+    // The player may reconnect (idle drop / blip). Defer the "opponent disconnected" notice; if a
+    // resume swaps in a new socket for this side within the grace window, the seat no longer points
+    // at this (closed) conn and we stay quiet.
+    maintenance.schedule(() -> {
+      if (room.getSocket(side) == conn) {
+        final JsonObject msg = new JsonObject();
+        msg.addProperty("type", "opponentDisconnected");
+        msg.addProperty("message", "Your opponent has disconnected.");
+        room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
+      }
+    }, disconnectGraceMs, TimeUnit.MILLISECONDS);
   }
 
   @Override
@@ -149,6 +164,8 @@ public class GameWebSocketServer extends WebSocketServer {
         case "restorePosition" -> handleRestorePosition(conn);
         case "readyToContinue" -> handleReadyToContinue(conn);
         case "opponentClockPressed" -> handleOpponentClockPressed(conn);
+        case "keepalive" -> handleKeepalive(conn);
+        case "resume" -> handleResume(conn, json);
         default -> {
           sendError(conn, "Unknown message type: " + type);
           recordViolation(conn);
@@ -278,10 +295,16 @@ public class GameWebSocketServer extends WebSocketServer {
     playerGameMap.put(conn, gameId);
     usageLog.record(UsageLog.EVENT_CREATE, gameId);
 
+    // Reconnect token for this seat, so a dropped socket can re-attach (see handleResume).
+    final Side creatorSideEnum = "white".equals(creatorSide) ? Side.WHITE : Side.BLACK;
+    final String token = generateSessionToken();
+    room.setToken(creatorSideEnum, token);
+
     final JsonObject response = new JsonObject();
     response.addProperty("type", "gameCreated");
     response.addProperty("gameId", gameId);
     response.addProperty("side", creatorSide);
+    response.addProperty("token", token);
     response.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
     response.addProperty("havingMove", startingBoard.getSideToMove().name().toLowerCase());
     conn.send(GSON.toJson(response));
@@ -321,6 +344,10 @@ public class GameWebSocketServer extends WebSocketServer {
     playerGameMap.put(conn, gameId);
     usageLog.record(UsageLog.EVENT_JOIN, gameId);
 
+    // Reconnect token for the joiner's seat (see handleResume).
+    final String token = generateSessionToken();
+    room.setToken("white".equals(side) ? Side.WHITE : Side.BLACK, token);
+
     // Send join confirmation to the joining player. Send the actual starting board
     // (not the hard-coded initial position) so a custom-FEN game shows the right
     // pieces in the joiner's first render.
@@ -330,6 +357,7 @@ public class GameWebSocketServer extends WebSocketServer {
     joinResponse.addProperty("type", "gameJoined");
     joinResponse.addProperty("gameId", gameId);
     joinResponse.addProperty("side", side);
+    joinResponse.addProperty("token", token);
     joinResponse.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingPosition)));
     joinResponse.addProperty("havingMove", havingMove.name().toLowerCase());
     conn.send(GSON.toJson(joinResponse));
@@ -889,6 +917,62 @@ public class GameWebSocketServer extends WebSocketServer {
     room.sendToSide(side.getOppositeSide(), GSON.toJson(forwardMsg));
   }
 
+  private void handleKeepalive(WebSocket conn) {
+    // App-level heartbeat: keeps the WebSocket from being idled out by Cloudflare while a creator
+    // waits for an opponent. Reply so traffic flows both ways; never counts as a violation.
+    if (conn.isOpen()) {
+      final JsonObject pong = new JsonObject();
+      pong.addProperty("type", "pong");
+      conn.send(GSON.toJson(pong));
+    }
+  }
+
+  /**
+   * Re-attaches a reconnecting player to its seat and resends the authoritative game state. The client presents the
+   * secret token it received on create/join (not the guessable join code), so a third party can't seize a seat.
+   */
+  private void handleResume(WebSocket conn, JsonObject json) {
+    final String gameId = optString(json, "gameId");
+    final String token = optString(json, "token");
+    if (gameId == null || token == null) {
+      sendError(conn, "resume requires gameId and token.");
+      recordViolation(conn);
+      return;
+    }
+    final GameRoom room = gameRooms.get(gameId);
+    final Side side = (room == null) ? Side.NONE : room.sideForToken(token);
+    if (room == null || side == Side.NONE) {
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "resumeFailed");
+      msg.addProperty("message", "This game is no longer available.");
+      conn.send(GSON.toJson(msg));
+      return;
+    }
+
+    // Swap the dropped socket for the new one and resend current state.
+    room.setSocket(side, conn);
+    playerGameMap.put(conn, gameId);
+
+    final var session = room.getSession();
+    final var clock = session.getClock();
+    final JsonObject clockData = new JsonObject();
+    clockData.addProperty("whiteTimeMs", clock.getRemainingTimeMs(Side.WHITE));
+    clockData.addProperty("blackTimeMs", clock.getRemainingTimeMs(Side.BLACK));
+    clockData.addProperty("running", clock.getRunningFor().name().toLowerCase());
+
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "resync");
+    msg.addProperty("gameId", gameId);
+    msg.addProperty("side", side.name().toLowerCase());
+    msg.addProperty("state", session.getState().name());
+    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition())));
+    msg.addProperty("havingMove", session.getHavingMove().name().toLowerCase());
+    msg.add("clock", clockData);
+    conn.send(GSON.toJson(msg));
+
+    System.out.println("Resumed " + side.name().toLowerCase() + " in game " + gameId);
+  }
+
   // ===== Helper methods =====
 
   /** Per-connection state for app-level abuse throttling (carried via {@link WebSocket#getAttachment()}). */
@@ -965,6 +1049,15 @@ public class GameWebSocketServer extends WebSocketServer {
   /** Generates a fresh {@value #JOIN_CODE_LENGTH}-character base32 join code from the CSPRNG. */
   static String generateJoinCode() {
     final char[] chars = new char[JOIN_CODE_LENGTH];
+    for (int i = 0; i < chars.length; i++) {
+      chars[i] = BASE32[RANDOM.nextInt(BASE32.length)];
+    }
+    return new String(chars);
+  }
+
+  /** Generates a fresh {@value #SESSION_TOKEN_LENGTH}-character base32 reconnect token from the CSPRNG. */
+  private static String generateSessionToken() {
+    final char[] chars = new char[SESSION_TOKEN_LENGTH];
     for (int i = 0; i < chars.length; i++) {
       chars[i] = BASE32[RANDOM.nextInt(BASE32.length)];
     }

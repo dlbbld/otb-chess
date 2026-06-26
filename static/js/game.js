@@ -38,6 +38,9 @@ class Game {
     );
     this.board.onEvent((event) => this.onBoardEvent(event));
 
+    // Surface reconnection to the player; the resync handler clears it once state is restored.
+    this.ws.onReconnecting = () => this.showArbiterMessage('Connection lost — reconnecting…');
+
     await this.ws.connect();
     this.setupMessageHandlers();
 
@@ -193,6 +196,44 @@ class Game {
       this.updateButtons();
       this.showArbiterMessage(Game.gameStartedMessage(this.isCreator, this.isMyTurn));
       this.clearArbiterButtons();
+    });
+
+    // Reconnect: the server resent the authoritative state after our socket dropped and re-attached.
+    // Rebuild the board/clock/turn from it so the game continues instead of staying frozen.
+    this.ws.on('resync', (data) => {
+      this.gameId = data.gameId;
+      this.side = data.side;
+      if (this.side === 'black' && !this.board.flipped) {
+        this.board.flip();
+      }
+      this.board.setPosition(data.board);
+      this.board.renderAll();
+      this.updateClockLabels();
+      this.setupExtraQueens();
+
+      const started = data.state !== 'WAITING_FOR_PLAYERS';
+      if (started) {
+        this.gameActive = data.state !== 'ENDED';
+        document.getElementById('abortBtn').style.display = 'none';
+        document.getElementById('resignBtn').style.display = '';
+        this.isMyTurn = data.havingMove === this.side;
+        // Only let the player move when the game is actually in progress.
+        this.board.setEnabled(this.isMyTurn && data.state === 'IN_PROGRESS');
+        this.updateButtons();
+      } else {
+        // Still waiting for an opponent — keep the abort affordance.
+        document.getElementById('abortBtn').style.display = '';
+        document.getElementById('resignBtn').style.display = 'none';
+      }
+      if (data.clock) {
+        this.updateClocks(data.clock);
+      }
+      this.showArbiterMessage(started ? 'Reconnected.' : 'Reconnected. Waiting for opponent…');
+    });
+
+    // Reconnect token no longer valid (game ended/expired): stop retrying and tell the player.
+    this.ws.on('resumeFailed', (data) => {
+      this.showArbiterMessage(data.message || 'This game is no longer available.');
     });
 
     // After OUR move is accepted by the server
