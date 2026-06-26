@@ -10,6 +10,24 @@ discipline, draw claims, and more. Two players, one game code, real-time over We
 
 Create a game, share the code with your opponent, and play.
 
+### Try it solo — play both sides yourself
+
+You can be both players on one computer. Open the **first** player in a normal window, create a
+game, and copy the code. Then open the **second** player in a **private / incognito window** (a
+separate session, so it doesn't share the first player's game) and join with the code.
+
+Open a private window:
+
+| Browser | Menu | Shortcut (Mac / Windows·Linux) |
+| --- | --- | --- |
+| **Chrome** | ⋮ → *New Incognito Window* | ⌘⇧N / Ctrl+Shift+N |
+| **Edge** | ⋯ → *New InPrivate window* | ⌘⇧N / Ctrl+Shift+N |
+| **Firefox** | ☰ → *New Private Window* | ⌘⇧P / Ctrl+Shift+P |
+| **Safari** (Mac) | *File → New Private Window* | ⌘⇧N |
+
+> Tip: two *normal* tabs in the same browser share one session, so they'd act as the **same**
+> player. Use a private window (or a different browser) for the second player.
+
 ## How it works
 
 - **Java** application server: an HTTP server for the static web app and a WebSocket server for
