@@ -187,10 +187,17 @@ test('fivefold repetition auto-draws and is announced like checkmate/stalemate',
     { p: white, from: 'f3', to: 'g1' },
     { p: black, from: 'f6', to: 'g8' },
   ];
-  for (let c = 0; c < 4; c++) {
-    for (const m of cycle) {
-      await dragPiece(m.p, m.from, m.to);
-      await pressClock(m.p);
+  const plies = [];
+  for (let c = 0; c < 4; c++) plies.push(...cycle);
+  for (let i = 0; i < plies.length; i++) {
+    const m = plies[i];
+    await dragPiece(m.p, m.from, m.to);
+    await pressClock(m.p);
+    // Wait for each move to be confirmed (turn switches) before the next ply, so the rapid sequence
+    // doesn't race ahead of the server round-trip over a high-latency link. The final ply triggers
+    // the fivefold auto-draw (no "Move accepted"), so skip the wait there.
+    if (i < plies.length - 1) {
+      await expect(m.p.locator('#arbiterMessage')).toContainText('Move accepted', { timeout: 15_000 });
     }
   }
 
