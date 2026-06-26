@@ -44,7 +44,17 @@ class Game {
     await this.ws.connect();
     this.setupMessageHandlers();
 
-    if (isCreator) {
+    // A saved session means this is a refresh of an existing game: resume the SAME game (and code)
+    // rather than creating/joining a new one. The lobby clears it for a deliberate new game, and we
+    // clear it on abort / game end.
+    const saved = Game.loadSession();
+    if (saved && saved.gameId && saved.token) {
+      this.isCreator = saved.isCreator;
+      this.side = saved.side || this.side;
+      this.ws.sessionToken = saved.token;
+      this.ws.sessionGameId = saved.gameId;
+      this.ws.send({ type: 'resume', gameId: saved.gameId, token: saved.token });
+    } else if (isCreator) {
       const initialTimeMs = parseInt(params.get('time') || '1800000');
       const incrementMs = parseInt(params.get('inc') || '0');
       // maxIllegal: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
@@ -60,6 +70,60 @@ class Game {
     this.setupButtons();
     this.setupClockButtons();
     this.setupDevConsoleControls();
+  }
+
+  // === Stable-session persistence (survives a full page refresh) ===
+  // Saved per-tab so refreshing resumes the SAME game (same join code) via the server `resume`
+  // path, instead of creating a brand-new game with a new code. Cleared on abort / game end, and
+  // by the lobby when the user deliberately creates or joins a new game.
+
+  static loadSession() {
+    try {
+      const raw = sessionStorage.getItem('otbSession');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static saveSession(session) {
+    try {
+      sessionStorage.setItem('otbSession', JSON.stringify(session));
+    } catch (e) {
+      /* sessionStorage unavailable (private mode quota etc.) — resume just won't survive refresh */
+    }
+  }
+
+  static clearSession() {
+    try {
+      sessionStorage.removeItem('otbSession');
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // Renders the "Share this code" panel with a copy button. Used both on game creation and when a
+  // refreshed creator resumes a game that is still waiting for an opponent.
+  renderShareCode(gameId) {
+    const codeContainer = document.createElement('div');
+    codeContainer.className = 'game-code-display';
+    const codeLabel = document.createElement('span');
+    codeLabel.textContent = 'Share this code: ';
+    const codeValue = document.createElement('span');
+    codeValue.className = 'game-code-value';
+    codeValue.textContent = gameId;
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'action-btn';
+    copyBtn.textContent = 'Copy code';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(gameId);
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => { copyBtn.textContent = 'Copy code'; }, 2000);
+    });
+    codeContainer.appendChild(codeLabel);
+    codeContainer.appendChild(codeValue);
+    document.getElementById('arbiterButtons').appendChild(codeContainer);
+    document.getElementById('arbiterButtons').appendChild(copyBtn);
   }
 
   // === Clock buttons ===
@@ -149,25 +213,9 @@ class Game {
       // not resign. The two swap once the game starts.
       document.getElementById('abortBtn').style.display = '';
       document.getElementById('resignBtn').style.display = 'none';
-      const codeContainer = document.createElement('div');
-      codeContainer.className = 'game-code-display';
-      const codeLabel = document.createElement('span');
-      codeLabel.textContent = 'Share this code: ';
-      const codeValue = document.createElement('span');
-      codeValue.className = 'game-code-value';
-      codeValue.textContent = data.gameId;
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'action-btn';
-      copyBtn.textContent = 'Copy code';
-      copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(data.gameId);
-        copyBtn.textContent = 'Copied!';
-        setTimeout(() => { copyBtn.textContent = 'Copy code'; }, 2000);
-      });
-      codeContainer.appendChild(codeLabel);
-      codeContainer.appendChild(codeValue);
-      document.getElementById('arbiterButtons').appendChild(codeContainer);
-      document.getElementById('arbiterButtons').appendChild(copyBtn);
+      // Persist so a page refresh resumes THIS game (same code) instead of creating a new one.
+      Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: true });
+      this.renderShareCode(data.gameId);
     });
 
     this.ws.on('gameJoined', (data) => {
@@ -180,6 +228,8 @@ class Game {
       this.board.renderAll();
       this.updateClockLabels();
       this.setupExtraQueens();
+      // Persist so a refresh resumes this joined game rather than re-joining (which would fail).
+      Game.saveSession({ gameId: data.gameId, token: data.token, side: data.side, isCreator: false });
       this.showArbiterMessage('Joined game. Waiting to start...');
     });
 
@@ -224,6 +274,11 @@ class Game {
         // Still waiting for an opponent — keep the abort affordance.
         document.getElementById('abortBtn').style.display = '';
         document.getElementById('resignBtn').style.display = 'none';
+        // Refreshed creator: re-show the (unchanged) shareable code.
+        if (this.isCreator) {
+          this.clearArbiterButtons();
+          this.renderShareCode(this.gameId);
+        }
       }
       if (data.clock) {
         this.updateClocks(data.clock);
@@ -231,9 +286,12 @@ class Game {
       this.showArbiterMessage(started ? 'Reconnected.' : 'Reconnected. Waiting for opponent…');
     });
 
-    // Reconnect token no longer valid (game ended/expired): stop retrying and tell the player.
+    // Reconnect token no longer valid (game ended/expired/server restart): drop the saved session
+    // so a refresh won't loop trying to resume a dead game, and return to the lobby.
     this.ws.on('resumeFailed', (data) => {
-      this.showArbiterMessage(data.message || 'This game is no longer available.');
+      Game.clearSession();
+      this.showArbiterMessage((data.message || 'This game is no longer available.') + ' Returning to lobby…');
+      setTimeout(() => { window.location.href = '/'; }, 2500);
     });
 
     // After OUR move is accepted by the server
@@ -443,6 +501,8 @@ class Game {
 
     this.ws.on('gameEnded', (data) => {
       this.gameActive = false;
+      // Game over: drop the saved session so a refresh doesn't resume a finished game.
+      Game.clearSession();
       this.board.setEnabled(false);
       this.updateButtons();
       // Game has ended — drop the PAUSE overlay because no further clockUpdate
@@ -497,7 +557,9 @@ class Game {
     });
 
     this.ws.on('gameAborted', () => {
-      // Challenge cancelled before it started — back to the lobby to create a new one.
+      // Challenge cancelled before it started — drop the saved session and go back to the lobby to
+      // create a new one (which will then get a fresh code).
+      Game.clearSession();
       window.location.href = '/';
     });
 

@@ -153,6 +153,9 @@
       if (fen) {
         url += '&fen=' + encodeURIComponent(fen);
       }
+      // Deliberate new game: drop any saved session so the board page creates fresh (new code)
+      // instead of resuming a previous game.
+      try { sessionStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
       window.location.href = url;
     });
 
@@ -163,6 +166,8 @@
         document.getElementById('gameCodeInput').style.borderColor = '#c0392b';
         return;
       }
+      // Deliberate new join: drop any saved session so the board page joins fresh.
+      try { sessionStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
       window.location.href = '/game.html?gameId=' + gameId;
     }
 
