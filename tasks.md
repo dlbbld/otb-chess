@@ -24,17 +24,17 @@ portability path, not the initial runtime.
 - [x] Dockerfile as the portability/VPS artifact (build and keep it; the iMac runtime stays native `launchd`). Multi-stage (Maven build → JRE), env-configurable, `OTB_BIND_HOST=0.0.0.0` for containers, HEALTHCHECK on `/api/health`; `.dockerignore` added. **Not build-tested locally** (Docker is not installed on the iMac — this is the VPS path).
 
 ### Phase 2 — hardening gate (before turning Cloudflare Access off to open public)
-- [ ] Join-code hardening: widen the code (≥12 chars / secure-random base32) and add a collision guard (`putIfAbsent`) on creation. Current: `UUID.randomUUID().toString().substring(0, 8)` = 32 bits, plain `put`.
-- [ ] WebSocket `Origin` check (anti-CSWSH): allowlist = {production host, beta host, localhost/dev}. Decide missing-`Origin` handling — browsers send it on the WS handshake; non-browser clients (tools, smoke tests) may not, so reject on mismatch and decide the policy for absent.
-- [ ] WebSocket input validation: guard malformed frames (missing/wrong-type fields, oversized payloads). E.g. `handleJoinGame` NPEs on a missing `gameId`.
-- [ ] App-level rate limiting: throttle failed `joinGame` attempts and malformed frames — Cloudflare cannot inspect post-upgrade WebSocket frames.
-- [ ] Edge rate limiting (Cloudflare): `/ws` connection-attempt churn and obviously abusive HTTP paths.
-- [ ] CORS cleanup: remove `Access-Control-Allow-Origin: *` from `StaticFileHandler` (unneeded for a same-origin app), alongside the `Origin` validation — or fold into the Phase 1 single-origin work.
-- [ ] Resource bounds: reap abandoned/never-joined rooms and cap concurrent games (unbounded in-memory state on a home box).
-- [ ] Usage logging (minimal): log **only** two events — a game being **created** and a game being **joined**. Nothing else: no move counts, results, rule-violation counts, board/PGN state, names, emails, or IPs. Purpose: tell whether the app is used at all, and whether a created game got a second player. Retention 30 days, then purge.
+- [x] Join-code hardening: 12-char secure-random base32 codes (~60 bits) via `SecureRandom`, collision-guarded with `putIfAbsent` (regenerate on clash); creator's side set on the room before it's visible so a racing joiner can't steal the colour. (was `UUID…substring(0,8)` = 32 bits, plain `put`.) Unit-tested in `TestServerHardening`.
+- [x] WebSocket `Origin` check (anti-CSWSH): allowlist = `https://play.otb-chess.app` (default) + `OTB_WS_ALLOWED_ORIGINS` + loopback (any scheme/port) for dev. **Decision on absent `Origin`:** allow it (non-browser tools/smoke tests omit it; browsers always send it, so a *mismatch* is the attack signal). Disallowed handshakes closed with policy code. Unit-tested.
+- [x] WebSocket input validation: guard malformed frames — oversized payload cap (`OTB_MAX_MSG_CHARS`, 64 KB), invalid JSON, missing/non-primitive `type`, and `createGame`/`joinGame` required-field + range checks; clean error replies instead of NPEs (verified `handleJoinGame` no longer NPEs on a missing `gameId`).
+- [x] App-level rate limiting: per-connection violation counter (via `WebSocket` attachment); connection closed after `OTB_MAX_VIOLATIONS` (default 30) malformed/invalid requests, incl. join-code misses (throttles scanning) — covers what Cloudflare can't (post-upgrade frames).
+- [ ] Edge rate limiting (Cloudflare): `/ws` connection-attempt churn and obviously abusive HTTP paths. **(Needs the Cloudflare dashboard — WAF/Rate-limiting rules.)**
+- [x] CORS cleanup: removed `Access-Control-Allow-Origin: *` from `StaticFileHandler` (same-origin app).
+- [x] Resource bounds: cap concurrent games (`OTB_MAX_GAMES`, default 1000) and reap rooms created-but-never-joined past `OTB_ROOM_TTL_MS` (default 30 min) via a daemon maintenance scheduler.
+- [x] Usage logging (minimal): log **only** two events — a game being **created** and a game being **joined**. Nothing else: no move counts, results, rule-violation counts, board/PGN state, names, emails, or IPs.
   - [x] Write the policy in `PRIVACY.md` — app-collected data documented separately from **Cloudflare Access** data (Cloudflare processes invited emails + access logs during the gated beta).
-  - [ ] Implement on the server: one log line per event (timestamp + event type + game id, to pair create ↔ join) and a 30-day purge.
-- [ ] Access + WebSocket end-to-end smoke test (release gate): load the page through Access, create a game, join from a second browser/account, keep a WebSocket open, and play moves.
+  - [x] Implement on the server: `UsageLog` writes `<ISO-8601>\t<event>\t<gameId>` per create/join, 30-day purge on a daily schedule (`OTB_USAGE_LOG`, `OTB_USAGE_RETENTION_DAYS`). Verified create↔join pair on one game id; best-effort (I/O errors never break gameplay).
+- [ ] Access + WebSocket end-to-end smoke test (release gate): load the page through Access, create a game, join from a second browser/account, keep a WebSocket open, and play moves. **(Needs your browser + email OTP login — I can't complete the human Access login.)**
 
 ### Go-live setup (host + edge)
 - [x] Add a domain to Cloudflare (free plan) for the named tunnel. Domain `otb-chess.app`; public hostname `play.otb-chess.app` (CNAME → tunnel, created via `cloudflared tunnel route dns`).

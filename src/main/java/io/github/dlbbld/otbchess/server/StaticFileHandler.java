@@ -46,7 +46,8 @@ public class StaticFileHandler {
     final String contentType = guessContentType(filePath.toString());
 
     exchange.getResponseHeaders().set("Content-Type", contentType);
-    exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+    // No CORS header: the app is same-origin (served and consumed under one Cloudflare/Caddy
+    // origin), so a wildcard Access-Control-Allow-Origin would only widen exposure for no benefit.
     exchange.sendResponseHeaders(200, bytes.length);
     try (var os = exchange.getResponseBody()) {
       os.write(bytes);

@@ -3,16 +3,22 @@
 package io.github.dlbbld.otbchess.server;
 
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.security.SecureRandom;
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import org.java_websocket.WebSocket;
+import org.java_websocket.framing.CloseFrame;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
@@ -43,9 +49,26 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private static final Gson GSON = new Gson();
 
+  // Join codes: 12 base32 chars (~60 bits) from a CSPRNG. Wide enough that the codes can't be
+  // guessed/enumerated, replacing the old 32-bit UUID prefix.
+  private static final SecureRandom RANDOM = new SecureRandom();
+  private static final char[] BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".toCharArray();
+  private static final int JOIN_CODE_LENGTH = 12;
+
   private final Map<String, GameRoom> gameRooms = new ConcurrentHashMap<>();
   private final Map<WebSocket, String> playerGameMap = new ConcurrentHashMap<>();
   private final ScheduledExecutorService clockExecutor = Executors.newScheduledThreadPool(2);
+
+  // --- Phase 2 hardening config (12-factor; overridable via environment) ---
+  private final int maxConcurrentGames = OtbChessServer.envInt("OTB_MAX_GAMES", 1000);
+  private final long roomTtlMs = OtbChessServer.envLong("OTB_ROOM_TTL_MS", TimeUnit.MINUTES.toMillis(30));
+  private final int maxMessageChars = OtbChessServer.envInt("OTB_MAX_MSG_CHARS", 65536);
+  private final int maxViolationsPerConn = OtbChessServer.envInt("OTB_MAX_VIOLATIONS", 30);
+  private final Set<String> allowedOrigins = parseAllowedOrigins();
+  private final UsageLog usageLog = UsageLog.fromConfig(OtbChessServer.envStr("OTB_USAGE_LOG", "logs/usage.log"),
+      OtbChessServer.envInt("OTB_USAGE_RETENTION_DAYS", 30));
+  // Daemon so it never keeps the JVM alive (e.g. on a failed startup that stops the server).
+  private final ScheduledExecutorService maintenance = Executors.newSingleThreadScheduledExecutor(daemon("otb-maint"));
 
   public GameWebSocketServer(String host, int port) {
     super(new InetSocketAddress(host, port));
@@ -54,6 +77,16 @@ public class GameWebSocketServer extends WebSocketServer {
 
   @Override
   public void onOpen(WebSocket conn, ClientHandshake handshake) {
+    // Anti-CSWSH: reject WebSocket handshakes whose Origin isn't allowlisted. A missing Origin is
+    // allowed (non-browser clients / smoke tests don't send one); browsers always do, so a mismatch
+    // means a cross-site page is trying to drive this socket.
+    final String origin = handshake.hasFieldValue("Origin") ? handshake.getFieldValue("Origin") : null;
+    if (!isOriginAllowed(origin, allowedOrigins)) {
+      System.out.println("Rejected WebSocket: disallowed Origin '" + origin + "' from " + conn.getRemoteSocketAddress());
+      conn.close(CloseFrame.POLICY_VALIDATION, "Origin not allowed");
+      return;
+    }
+    conn.setAttachment(new ConnectionState());
     System.out.println("New connection: " + conn.getRemoteSocketAddress());
   }
 
@@ -78,10 +111,29 @@ public class GameWebSocketServer extends WebSocketServer {
 
   @Override
   public void onMessage(WebSocket conn, String message) {
-    try {
-      final JsonObject json = GSON.fromJson(message, JsonObject.class);
-      final String type = json.get("type").getAsString();
+    // Bound the payload first so an oversized frame can't drive allocation before we even parse it.
+    if (message != null && message.length() > maxMessageChars) {
+      sendError(conn, "Message too large.");
+      recordViolation(conn);
+      return;
+    }
 
+    final JsonObject json;
+    try {
+      json = GSON.fromJson(message, JsonObject.class);
+    } catch (final RuntimeException e) {
+      sendError(conn, "Malformed message: invalid JSON.");
+      recordViolation(conn);
+      return;
+    }
+    if (json == null || !json.has("type") || !json.get("type").isJsonPrimitive()) {
+      sendError(conn, "Malformed message: missing 'type'.");
+      recordViolation(conn);
+      return;
+    }
+    final String type = json.get("type").getAsString();
+
+    try {
       switch (type) {
         case "createGame" -> handleCreateGame(conn, json);
         case "joinGame" -> handleJoinGame(conn, json);
@@ -97,7 +149,10 @@ public class GameWebSocketServer extends WebSocketServer {
         case "restorePosition" -> handleRestorePosition(conn);
         case "readyToContinue" -> handleReadyToContinue(conn);
         case "opponentClockPressed" -> handleOpponentClockPressed(conn);
-        default -> sendError(conn, "Unknown message type: " + type);
+        default -> {
+          sendError(conn, "Unknown message type: " + type);
+          recordViolation(conn);
+        }
       }
     } catch (final Exception e) {
       sendInternalError(conn, e, "onMessage");
@@ -117,6 +172,9 @@ public class GameWebSocketServer extends WebSocketServer {
   public void onStart() {
     startedLatch.countDown();
     System.out.println("WebSocket server started on port " + getPort());
+    // Maintenance: reap rooms created but never joined, and purge usage-log entries past retention.
+    maintenance.scheduleAtFixedRate(this::reapAbandonedRooms, 5, 5, TimeUnit.MINUTES);
+    maintenance.scheduleAtFixedRate(usageLog::purgeExpired, 0, 6, TimeUnit.HOURS);
   }
 
   /**
@@ -143,14 +201,36 @@ public class GameWebSocketServer extends WebSocketServer {
   // ===== Message handlers =====
 
   private void handleCreateGame(WebSocket conn, JsonObject json) {
-    final long initialTimeMs = json.get("initialTimeMs").getAsLong();
-    final long incrementMs = json.get("incrementMs").getAsLong();
-    final String requestedSide = json.get("side").getAsString();
+    // Resource bound: cap the number of live rooms so a home box can't be exhausted.
+    if (gameRooms.size() >= maxConcurrentGames) {
+      sendError(conn, "The server is at capacity. Please try again shortly.");
+      return;
+    }
+
+    // Validate required fields rather than NPE'ing on missing/wrong-typed input.
+    final Long initialTimeBoxed = optLong(json, "initialTimeMs");
+    final Long incrementBoxed = optLong(json, "incrementMs");
+    final String requestedSide = optString(json, "side");
+    if (initialTimeBoxed == null || incrementBoxed == null || requestedSide == null) {
+      sendError(conn, "createGame requires initialTimeMs, incrementMs, and side.");
+      recordViolation(conn);
+      return;
+    }
+    final long initialTimeMs = initialTimeBoxed;
+    final long incrementMs = incrementBoxed;
+    // Sane bounds: positive base time up to 24h, non-negative increment up to 1h.
+    if (initialTimeMs <= 0 || initialTimeMs > TimeUnit.HOURS.toMillis(24) || incrementMs < 0
+        || incrementMs > TimeUnit.HOURS.toMillis(1)) {
+      sendError(conn, "createGame time control is out of range.");
+      recordViolation(conn);
+      return;
+    }
     // maxIllegalMoves: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
-    final int maxIllegalMoves = json.has("maxIllegalMoves") ? json.get("maxIllegalMoves").getAsInt()
+    final int maxIllegalMoves = (json.has("maxIllegalMoves") && json.get("maxIllegalMoves").isJsonPrimitive())
+        ? json.get("maxIllegalMoves").getAsInt()
         : io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES;
-    final boolean autoResumeAfterRestore = !json.has("autoResumeAfterRestore")
-        || json.get("autoResumeAfterRestore").getAsBoolean();
+    final boolean autoResumeAfterRestore = !(json.has("autoResumeAfterRestore")
+        && json.get("autoResumeAfterRestore").isJsonPrimitive()) || json.get("autoResumeAfterRestore").getAsBoolean();
 
     // Optional FEN — when supplied, the game starts from that position. Validation goes
     // through Ashlar Chess so the player gets the chess library's specific reason. The
@@ -180,18 +260,23 @@ public class GameWebSocketServer extends WebSocketServer {
       creatorSide = parsed.getSideToMove() == io.github.dlbbld.ashlarchess.board.enums.Side.WHITE ? "white" : "black";
     }
 
-    final String gameId = UUID.randomUUID().toString().substring(0, 8);
     final TimeControl timeControl = new TimeControl(initialTimeMs, incrementMs);
-    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
-
-    if ("white".equals(creatorSide)) {
-      room.setWhitePlayer(conn);
-    } else {
-      room.setBlackPlayer(conn);
-    }
-
-    gameRooms.put(gameId, room);
+    // Allocate a unique join code. The creator's side is set on the room *before* it becomes
+    // visible in the map, so a racing joiner can never claim the creator's colour. putIfAbsent
+    // guards against the (astronomically unlikely) code collision.
+    String gameId;
+    GameRoom room;
+    do {
+      gameId = generateJoinCode();
+      room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
+      if ("white".equals(creatorSide)) {
+        room.setWhitePlayer(conn);
+      } else {
+        room.setBlackPlayer(conn);
+      }
+    } while (gameRooms.putIfAbsent(gameId, room) != null);
     playerGameMap.put(conn, gameId);
+    usageLog.record(UsageLog.EVENT_CREATE, gameId);
 
     final JsonObject response = new JsonObject();
     response.addProperty("type", "gameCreated");
@@ -205,11 +290,18 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void handleJoinGame(WebSocket conn, JsonObject json) {
-    final String gameId = json.get("gameId").getAsString();
+    final String gameId = optString(json, "gameId");
+    if (gameId == null || gameId.isBlank()) {
+      sendError(conn, "joinGame requires a gameId.");
+      recordViolation(conn);
+      return;
+    }
     final GameRoom room = gameRooms.get(gameId);
 
     if (room == null) {
+      // Count misses toward the violation budget so join-code scanning gets throttled.
       sendError(conn, "Game not found: " + gameId);
+      recordViolation(conn);
       return;
     }
     if (room.isFull()) {
@@ -227,6 +319,7 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     playerGameMap.put(conn, gameId);
+    usageLog.record(UsageLog.EVENT_JOIN, gameId);
 
     // Send join confirmation to the joining player. Send the actual starting board
     // (not the hard-coded initial position) so a custom-FEN game shows the right
@@ -797,6 +890,126 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   // ===== Helper methods =====
+
+  /** Per-connection state for app-level abuse throttling (carried via {@link WebSocket#getAttachment()}). */
+  private static final class ConnectionState {
+    private int violations;
+  }
+
+  /**
+   * Records one invalid/malformed request against the connection and closes it once it exceeds the per-connection
+   * violation budget — app-level rate limiting that Cloudflare cannot do (it can't inspect post-upgrade frames).
+   *
+   * @return {@code true} if the connection was closed
+   */
+  private boolean recordViolation(WebSocket conn) {
+    if (!(conn.getAttachment() instanceof ConnectionState state)) {
+      return false;
+    }
+    if (++state.violations > maxViolationsPerConn) {
+      System.out.println(
+          "Closing connection " + conn.getRemoteSocketAddress() + " after " + state.violations + " invalid requests");
+      conn.close(CloseFrame.POLICY_VALIDATION, "Too many invalid requests");
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether a WebSocket {@code Origin} is permitted. A missing/blank Origin is allowed (non-browser clients omit it);
+   * loopback hosts are always allowed for local dev; otherwise the lowercased origin must be in the allowlist.
+   */
+  static boolean isOriginAllowed(String origin, Set<String> allowedExact) {
+    if (origin == null || origin.isBlank()) {
+      return true;
+    }
+    final String normalized = origin.trim().toLowerCase(Locale.ROOT);
+    try {
+      final String host = URI.create(normalized).getHost();
+      if ("localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host)) {
+        return true;
+      }
+    } catch (final RuntimeException ignored) {
+      // Unparseable Origin: fall through to exact match (fails closed unless explicitly allowlisted).
+    }
+    return allowedExact.contains(normalized);
+  }
+
+  private static Set<String> parseAllowedOrigins() {
+    final Set<String> set = new HashSet<>();
+    set.add("https://play.otb-chess.app"); // production beta host (loopback handled separately)
+    for (final String o : OtbChessServer.envStr("OTB_WS_ALLOWED_ORIGINS", "").split(",")) {
+      final String trimmed = o.trim().toLowerCase(Locale.ROOT);
+      if (!trimmed.isEmpty()) {
+        set.add(trimmed);
+      }
+    }
+    return set;
+  }
+
+  private static String optString(JsonObject json, String key) {
+    return (json.has(key) && json.get(key).isJsonPrimitive()) ? json.get(key).getAsString() : null;
+  }
+
+  private static Long optLong(JsonObject json, String key) {
+    if (!json.has(key) || !json.get(key).isJsonPrimitive()) {
+      return null;
+    }
+    try {
+      return json.get(key).getAsLong();
+    } catch (final NumberFormatException e) {
+      return null;
+    }
+  }
+
+  /** Generates a fresh {@value #JOIN_CODE_LENGTH}-character base32 join code from the CSPRNG. */
+  static String generateJoinCode() {
+    final char[] chars = new char[JOIN_CODE_LENGTH];
+    for (int i = 0; i < chars.length; i++) {
+      chars[i] = BASE32[RANDOM.nextInt(BASE32.length)];
+    }
+    return new String(chars);
+  }
+
+  private static ThreadFactory daemon(String name) {
+    return runnable -> {
+      final Thread thread = new Thread(runnable, name);
+      thread.setDaemon(true);
+      return thread;
+    };
+  }
+
+  /**
+   * Removes rooms that were created but never joined and have outlived {@link #roomTtlMs} — otherwise a creator who
+   * walks away leaves a room (and its session/clock state) parked in memory forever on a home box.
+   */
+  private void reapAbandonedRooms() {
+    try {
+      final long now = System.currentTimeMillis();
+      for (final var entry : gameRooms.entrySet()) {
+        final GameRoom room = entry.getValue();
+        final boolean waiting = room.getSession().getState() == GameState.WAITING_FOR_PLAYERS;
+        if (!waiting || now - room.getCreatedAtMs() <= roomTtlMs) {
+          continue;
+        }
+        gameRooms.remove(entry.getKey());
+        room.stopClockTicker();
+        final WebSocket creator = room.getWhitePlayer() != null ? room.getWhitePlayer() : room.getBlackPlayer();
+        if (creator != null) {
+          playerGameMap.remove(creator);
+          if (creator.isOpen()) {
+            final JsonObject msg = new JsonObject();
+            msg.addProperty("type", "gameAborted");
+            msg.addProperty("message", "Game expired (no opponent joined).");
+            creator.send(GSON.toJson(msg));
+          }
+        }
+        System.out.println("Reaped abandoned game: " + entry.getKey());
+      }
+    } catch (final Exception e) {
+      System.err.println("[maintenance] reapAbandonedRooms: " + e);
+    }
+  }
 
   private GameRoom getRoom(WebSocket conn) {
     final String gameId = playerGameMap.get(conn);

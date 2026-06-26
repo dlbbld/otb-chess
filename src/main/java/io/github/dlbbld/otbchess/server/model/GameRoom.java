@@ -21,6 +21,8 @@ public class GameRoom {
   private final String gameId;
   private final GameSession session;
   private final TimeControl timeControl;
+  // Wall-clock creation time, used to reap rooms that were created but never joined.
+  private final long createdAtMs = System.currentTimeMillis();
 
   private WebSocket whitePlayer;
   private WebSocket blackPlayer;
@@ -51,6 +53,11 @@ public class GameRoom {
 
   public String getGameId() {
     return gameId;
+  }
+
+  /** @return wall-clock time (ms since epoch) when this room was created. */
+  public long getCreatedAtMs() {
+    return createdAtMs;
   }
 
   public GameSession getSession() {

@@ -110,7 +110,8 @@ public class OtbChessServer {
         + " in your browser to start.");
   }
 
-  private static int envInt(String name, int defaultValue) {
+  // Package-private so the WebSocket server can read its own 12-factor config (ports, limits, etc.).
+  static int envInt(String name, int defaultValue) {
     final String raw = System.getenv(name);
     if (raw == null || raw.isBlank()) {
       return defaultValue;
@@ -123,7 +124,20 @@ public class OtbChessServer {
     }
   }
 
-  private static String envStr(String name, String defaultValue) {
+  static long envLong(String name, long defaultValue) {
+    final String raw = System.getenv(name);
+    if (raw == null || raw.isBlank()) {
+      return defaultValue;
+    }
+    try {
+      return Long.parseLong(raw.trim());
+    } catch (final NumberFormatException e) {
+      System.err.println("Invalid long for " + name + "='" + raw + "', using default " + defaultValue);
+      return defaultValue;
+    }
+  }
+
+  static String envStr(String name, String defaultValue) {
     final String raw = System.getenv(name);
     return (raw == null || raw.isBlank()) ? defaultValue : raw.trim();
   }
