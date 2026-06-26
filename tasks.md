@@ -11,6 +11,11 @@ Architecture (reviewed): iMac running native `launchd` services → Cloudflare T
 Private beta gated by Cloudflare Access. A Linux VPS with a Dockerfile is the later
 portability path, not the initial runtime.
 
+**Status (2026-06-26): LIVE & PUBLIC** at https://play.otb-chess.app — Cloudflare Access removed
+(open to everyone), edge rate-limit at 10,000 req/10s per IP. Full manual setup recorded in
+[`SETUP.md`](SETUP.md). **Open item:** reboot survival is configured (launchd RunAtLoad + pmset) but
+**not yet verified** with an actual reboot (see SETUP.md §11).
+
 ### Done
 - [x] Remove the testing-only `/api/lastGameId` endpoint and lobby join-code prefill (`fdf067b`).
 - [x] Open-source licensing: GPL-3.0-only `LICENSE`, two-line SPDX headers on every Java file via `tools/java-license-headers.ps1` (`-Check`/`-Fix`, ported from ashlar-chess), enforced by `TestLicenseHeaders`; `.gitattributes` pins LF; license + ashlar-chess attribution in `pom.xml`/`README.md`; copyright 2026; Java-only headers (`dcb2d79`).
@@ -28,7 +33,7 @@ portability path, not the initial runtime.
 - [x] WebSocket `Origin` check (anti-CSWSH): allowlist = `https://play.otb-chess.app` (default) + `OTB_WS_ALLOWED_ORIGINS` + loopback (any scheme/port) for dev. **Decision on absent `Origin`:** allow it (non-browser tools/smoke tests omit it; browsers always send it, so a *mismatch* is the attack signal). Disallowed handshakes closed with policy code. Unit-tested.
 - [x] WebSocket input validation: guard malformed frames — oversized payload cap (`OTB_MAX_MSG_CHARS`, 64 KB), invalid JSON, missing/non-primitive `type`, and `createGame`/`joinGame` required-field + range checks; clean error replies instead of NPEs (verified `handleJoinGame` no longer NPEs on a missing `gameId`).
 - [x] App-level rate limiting: per-connection violation counter (via `WebSocket` attachment); connection closed after `OTB_MAX_VIOLATIONS` (default 30) malformed/invalid requests, incl. join-code misses (throttles scanning) — covers what Cloudflare can't (post-upgrade frames).
-- [x] Edge rate limiting (Cloudflare): free-plan rate-limiting rule `per-ip-flood` on zone `otb-chess.app` — match `URI Path starts with /` (free plan exposes no Hostname field), 100 requests / 10s per IP, action Block for 10s. **Verified**: normal traffic passes (302), a 150-request burst trips 429s, and the block auto-clears after the window. (Covers `/ws` churn + abusive paths via the single allowed free rule.)
+- [x] Edge rate limiting (Cloudflare): free-plan rate-limiting rule `per-ip-flood` on zone `otb-chess.app` — match `URI Path starts with /` (free plan exposes no Hostname field), **10,000 requests / 10s** per IP, action Block for 10s. (Initially 100/10s and verified tripping 429s on a burst; raised to 10,000 so legitimate bursts / full e2e runs from one IP aren't throttled.) Covers `/ws` churn + abusive paths via the single allowed free rule.
 - [x] CORS cleanup: removed `Access-Control-Allow-Origin: *` from `StaticFileHandler` (same-origin app).
 - [x] Resource bounds: cap concurrent games (`OTB_MAX_GAMES`, default 1000) and reap rooms created-but-never-joined past `OTB_ROOM_TTL_MS` (default 30 min) via a daemon maintenance scheduler.
 - [x] Usage logging (minimal): log **only** two events — a game being **created** and a game being **joined**. Nothing else: no move counts, results, rule-violation counts, board/PGN state, names, emails, or IPs.
