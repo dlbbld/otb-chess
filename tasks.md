@@ -13,10 +13,9 @@ portability path, not the initial runtime.
 
 **Status (2026-06-26): LIVE & PUBLIC** at https://play.otb-chess.app — Cloudflare Access removed
 (open to everyone), edge rate-limit at 10,000 req/10s per IP. Full manual setup recorded in
-[`SETUP.md`](SETUP.md). **Reboot survival:** tested — daemons recover and the tunnel reconnects, but
-only **after the FileVault password is entered at the console** (encrypted Data volume blocks boot-time
-daemons → Cloudflare Error 1033 until unlock). Fully unattended reboot requires disabling FileVault
-(security trade-off). See SETUP.md §11.
+[`SETUP.md`](SETUP.md). **Reboot survival: VERIFIED unattended** — FileVault disabled (disk stays
+hardware-encrypted at rest, auto-unlocks at boot), and an unattended `sudo reboot` (no login) brought
+the site back within ~10 s with nobody logged in. See SETUP.md §11.
 
 ### Done
 - [x] Remove the testing-only `/api/lastGameId` endpoint and lobby join-code prefill (`fdf067b`).

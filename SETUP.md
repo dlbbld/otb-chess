@@ -160,10 +160,23 @@ launchctl print system/io.github.dlbbld.otbchess.app | grep state
 curl -s http://localhost:8080/api/health
 ```
 
-## 11. Reboot survival — VERIFIED, with a FileVault caveat
+## 11. Reboot survival — VERIFIED (unattended, FileVault disabled)
 
-Tested with a real `sudo reboot` (2026-06-26). Result: the daemons **do** come back and the tunnel
-reconnects — **but only after the FileVault password is entered at the console.**
+**Final state:** FileVault was **disabled** (`sudo fdesetup disable`; the SSD stays hardware-encrypted
+at rest on Apple Silicon, it just auto-unlocks at boot). An unattended `sudo reboot` was then tested
+**without logging in**: the site came up on its own — the tunnel connected within ~10 s of boot and
+`https://play.otb-chess.app` was reachable from another device with nobody logged into the iMac.
+(Bonus: Jump Desktop remote access also reconnects at boot now, for the same reason.)
+
+> Note: FileVault is whole-disk, so disabling it applies to **all** accounts on this Mac (incl. the
+> other user). Account login passwords are unaffected. Re-enable with `sudo fdesetup enable` if you
+> later prefer at-boot encryption over unattended reboots.
+
+### History (the FileVault caveat, now resolved)
+
+Before disabling FileVault, a reboot left the daemons **down until the FileVault password was entered
+at the console** (the encrypted Data volume — jar, `Caddyfile`, `~/.cloudflared` — was unreadable at
+boot), surfacing as Cloudflare **Error 1033** until login. Disabling FileVault removed that gate.
 
 **Why:** this Mac has **FileVault on**, so the APFS **Data volume** (which holds the jar, `Caddyfile`,
 and `~/.cloudflared`) stays encrypted at boot until the FileVault password is entered. Until then
