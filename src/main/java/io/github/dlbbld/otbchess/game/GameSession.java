@@ -83,6 +83,10 @@ public class GameSession {
   private boolean waitingForRestoration;
   private boolean restorationResumePending;
   private BitboardPosition restorationTargetPosition;
+  // True when the current restoration was caused by a released-piece (FIDE 4.7) violation. While set,
+  // completeRestoration() preserves the released-piece rule window so the committed move stays final
+  // across revert cycles until the player actually plays it. Cleared on a new turn / other violations.
+  private boolean restorationFromReleasedPiece;
 
   public GameSession(TimeControl timeControl) {
     this(timeControl, io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES);
@@ -306,6 +310,7 @@ public class GameSession {
         // Add penalty time to opponent
         clock.addPenaltyTime(side.getOppositeSide(), arbiter.getIllegalMoveTracker().getPenaltyTimeMs());
         clock.stopClock();
+        restorationFromReleasedPiece = false;
       }
       case ILLEGAL_MOVE_GAME_LOST -> {
         endGame(new GameResult(GameResultType.ILLEGAL_MOVE_GAME_LOST, side.getOppositeSide(),
@@ -313,9 +318,12 @@ public class GameSession {
       }
       case TOUCH_MOVE_VIOLATION -> {
         clock.stopClock();
+        restorationFromReleasedPiece = false;
       }
       case RELEASED_PIECE_VIOLATION -> {
         clock.stopClock();
+        // Latch the commitment so the upcoming restoration keeps the released move final (FIDE 4.7).
+        restorationFromReleasedPiece = true;
       }
       case INCOMPLETE_MOVE -> {
         // Nothing to do
@@ -661,6 +669,7 @@ public class GameSession {
     this.mustExecuteMove = null;
     this.mustExecuteMoveSan = null;
     this.claimMadeThisTurn = false;
+    this.restorationFromReleasedPiece = false;
   }
 
   private void endGame(GameResult gameResult) {
@@ -728,15 +737,21 @@ public class GameSession {
    */
   public synchronized void completeRestoration() {
     this.waitingForRestoration = false;
-    currentSequence.resetReleasedPieceRule();
+    // Preserve the FIDE 4.7 released-piece commitment when THIS restoration was caused by a
+    // released-piece violation: the committed move must stay final across revert cycles until the
+    // player actually plays it and presses the clock. Illegal/touch-move restorations still reset
+    // the rule window (see enterWaitingForReady's rationale) to avoid deadlocks.
+    if (!restorationFromReleasedPiece) {
+      currentSequence.resetReleasedPieceRule();
+    }
+    this.whiteReady = false;
+    this.blackReady = false;
     if (autoResumeAfterRestore) {
       this.restorationResumePending = true;
       this.waitingForReady = false;
-      this.whiteReady = false;
-      this.blackReady = false;
     } else {
       this.restorationResumePending = false;
-      enterWaitingForReady();
+      this.waitingForReady = true;
     }
   }
 
@@ -801,6 +816,15 @@ public class GameSession {
 
   public synchronized boolean isAutoResumeAfterRestore() {
     return autoResumeAfterRestore;
+  }
+
+  /**
+   * @return whether the current (latched) restoration is the result of a released-piece commitment (FIDE 4.7) — the
+   *         player's move is final and they only need to press the clock. Lets the server phrase the restore/resume
+   *         messages so the player doesn't think they still have to move.
+   */
+  public synchronized boolean isRestorationFromReleasedPiece() {
+    return restorationFromReleasedPiece;
   }
 
   // ===== PGN export =====

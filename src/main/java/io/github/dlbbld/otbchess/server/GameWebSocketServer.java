@@ -793,12 +793,18 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void completeRestoration(GameRoom room, BitboardPosition restorePosition) {
+    // Capture before completeRestoration() in case the latch is ever cleared there in future.
+    final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
     room.getSession().completeRestoration();
 
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "positionRestored");
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(restorePosition)));
-    if (room.getSession().isAutoResumeAfterRestore()) {
+    if (releasedMoveIsFinal) {
+      // The released piece committed the move (FIDE 4.7): nothing more to play, just press the clock.
+      msg.addProperty("message", "Position restored — your move is final. Press the clock to continue.");
+      msg.addProperty("autoResumePending", room.getSession().isAutoResumeAfterRestore());
+    } else if (room.getSession().isAutoResumeAfterRestore()) {
       msg.addProperty("message", "Position restored. Restarting the clock shortly. Please be ready.");
       msg.addProperty("autoResumePending", true);
     } else {
@@ -820,10 +826,13 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void resumeAfterRestorationDelay(GameRoom room) {
+    final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
     room.getSession().resumeAfterRestorationDelay();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameResumed");
-    msg.addProperty("message", "Clock restarted. Game continues.");
+    msg.addProperty("message", releasedMoveIsFinal
+        ? "Clock restarted. Your move is final — press the clock to continue."
+        : "Clock restarted. Game continues.");
     msg.addProperty("havingMove", room.getSession().getHavingMove().name().toLowerCase());
     room.sendToBoth(GSON.toJson(msg));
     sendClockUpdate(room);
