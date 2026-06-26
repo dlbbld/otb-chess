@@ -1,5 +1,8 @@
 # OTB Chess
 
+**OTB** stands for **over the board** — chess played on a physical board with a real arbiter, as
+opposed to a computer playing the moves for you.
+
 Play over-the-board–style chess online, with a real **arbiter** that enforces the FIDE rules a
 physical game relies on: touch-move, the released-piece rule (4.7), illegal-move handling, clock
 discipline, draw claims, and more. Two players, one game code, real-time over WebSocket.
