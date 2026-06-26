@@ -12,21 +12,10 @@ Create a game, share the code with your opponent, and play.
 
 ### Try it solo — play both sides yourself
 
-You can be both players on one computer. Open the **first** player in a normal window, create a
-game, and copy the code. Then open the **second** player in a **private / incognito window** (a
-separate session, so it doesn't share the first player's game) and join with the code.
-
-Open a private window:
-
-| Browser | Menu | Shortcut (Mac / Windows·Linux) |
-| --- | --- | --- |
-| **Chrome** | ⋮ → *New Incognito Window* | ⌘⇧N / Ctrl+Shift+N |
-| **Edge** | ⋯ → *New InPrivate window* | ⌘⇧N / Ctrl+Shift+N |
-| **Firefox** | ☰ → *New Private Window* | ⌘⇧P / Ctrl+Shift+P |
-| **Safari** (Mac) | *File → New Private Window* | ⌘⇧N |
-
-> Tip: two *normal* tabs in the same browser share one session, so they'd act as the **same**
-> player. Use a private window (or a different browser) for the second player.
+You can be both players on one computer: create the game in a normal window, then join with the code
+from a **private/incognito window** (or a different browser). A private window is a separate session,
+so it acts as the second player — two normal tabs in the same browser would share one session and act
+as the same player.
 
 ## How it works
 
