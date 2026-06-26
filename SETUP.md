@@ -160,22 +160,39 @@ launchctl print system/io.github.dlbbld.otbchess.app | grep state
 curl -s http://localhost:8080/api/health
 ```
 
-## 11. Reboot survival — ⚠️ NOT YET VERIFIED
+## 11. Reboot survival — VERIFIED, with a FileVault caveat
 
-The LaunchDaemons (`RunAtLoad`) and `pmset` are *configured* to bring everything back after a reboot,
-but **a real reboot has not been tested**. To verify (one-time, causes downtime):
+Tested with a real `sudo reboot` (2026-06-26). Result: the daemons **do** come back and the tunnel
+reconnects — **but only after the FileVault password is entered at the console.**
+
+**Why:** this Mac has **FileVault on**, so the APFS **Data volume** (which holds the jar, `Caddyfile`,
+and `~/.cloudflared`) stays encrypted at boot until the FileVault password is entered. Until then
+**no LaunchDaemon can run**, so `play.otb-chess.app` returns Cloudflare **Error 1033** (tunnel
+unresolvable). Observed: boot at 21:28, tunnel down at 21:31, all three daemons started ~21:32 the
+instant the disk was unlocked at login — then everything worked with no further action. (Relocating
+the files wouldn't help: the whole Data volume is encrypted until unlock.)
+
+So:
+- **Planned reboot:** fine — enter the FileVault password once at the console and the server fully
+  self-recovers (no other steps).
+- **Unattended reboot (power outage, nobody at the keyboard):** the server will stay **down** until
+  someone unlocks the disk.
+
+**To make reboots fully unattended**, disable FileVault (security trade-off — the whole disk,
+including any personal files on this Mac, is then unencrypted at rest):
 
 ```bash
-sudo reboot
-# after it boots (LaunchDaemons start without anyone logging in):
-launchctl print system/io.github.dlbbld.otbchess.app | grep state      # running
-launchctl print system/io.github.dlbbld.otbchess.cloudflared | grep state
-curl -s http://localhost:8080/api/health                                # {"status":"ok",...}
-curl -s -o /dev/null -w '%{http_code}\n' https://play.otb-chess.app/    # 200
+sudo fdesetup disable
 ```
 
-If a daemon doesn't come back, check its log under `~/Library/Logs/otb-chess/` and re-run the
-installer (§10).
+Decide based on whether unattended uptime or at-rest encryption matters more for this machine.
+
+Verify after any reboot (once unlocked):
+```bash
+launchctl print system/io.github.dlbbld.otbchess.cloudflared | grep state   # running
+curl -s http://localhost:8080/api/health                                    # {"status":"ok",...}
+curl -s -o /dev/null -w '%{http_code}\n' https://play.otb-chess.app/        # 200
+```
 
 ## 12. Deploying updates
 
