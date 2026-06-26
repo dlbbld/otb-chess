@@ -73,13 +73,15 @@ class Game {
   }
 
   // === Stable-session persistence (survives a full page refresh) ===
-  // Saved per-tab so refreshing resumes the SAME game (same join code) via the server `resume`
-  // path, instead of creating a brand-new game with a new code. Cleared on abort / game end, and
-  // by the lobby when the user deliberately creates or joins a new game.
+  // Stored in localStorage (not sessionStorage) because Cloudflare Access bounces each navigation
+  // through a cross-origin redirect, which can drop sessionStorage. localStorage survives it, so a
+  // refresh resumes the SAME game (same join code) via the server `resume` path instead of creating
+  // a new one. Cleared on abort / game end, and by the lobby when the user deliberately starts a
+  // new game or join.
 
   static loadSession() {
     try {
-      const raw = sessionStorage.getItem('otbSession');
+      const raw = localStorage.getItem('otbSession');
       return raw ? JSON.parse(raw) : null;
     } catch (e) {
       return null;
@@ -88,15 +90,15 @@ class Game {
 
   static saveSession(session) {
     try {
-      sessionStorage.setItem('otbSession', JSON.stringify(session));
+      localStorage.setItem('otbSession', JSON.stringify(session));
     } catch (e) {
-      /* sessionStorage unavailable (private mode quota etc.) — resume just won't survive refresh */
+      /* localStorage unavailable (private mode quota etc.) — resume just won't survive refresh */
     }
   }
 
   static clearSession() {
     try {
-      sessionStorage.removeItem('otbSession');
+      localStorage.removeItem('otbSession');
     } catch (e) {
       /* ignore */
     }

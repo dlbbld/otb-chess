@@ -155,7 +155,7 @@
       }
       // Deliberate new game: drop any saved session so the board page creates fresh (new code)
       // instead of resuming a previous game.
-      try { sessionStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
+      try { localStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
       window.location.href = url;
     });
 
@@ -167,7 +167,7 @@
         return;
       }
       // Deliberate new join: drop any saved session so the board page joins fresh.
-      try { sessionStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
+      try { localStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
       window.location.href = '/game.html?gameId=' + gameId;
     }
 
