@@ -61,10 +61,15 @@ public launch. Released as **v0.1.1** (still beta).
 
 ## Backlog (not scheduled)
 
-- [ ] **User-friendly message when opening/joining a game that is not active.** When a player opens a
+- [x] **User-friendly message when opening/joining a game that is not active.** When a player opens a
   game that is no longer playable — game ended, code not found, expired/reaped, or the server
-  restarted — the UI currently shows a technical error instead of a clear, friendly message. Replace
-  it with a user-friendly message (and ideally a path back to the lobby). Not in the current release.
+  restarted — the UI showed a technical error. Now replaced with a calm, friendly message plus a
+  **Back to lobby** button. Server (`handleJoinGame`) sends a dedicated `joinFailed` message with a
+  reason (`not_found` / `ended` / `full`) instead of a raw `error`; the not-found case still counts
+  toward the scan-throttle budget. Client (`game.js`) routes `joinFailed`, `resumeFailed`, and the
+  no-game-code case through one `showGameUnavailable(message)` helper (clears the saved session,
+  shows the message, renders the Back-to-lobby button). e2e coverage added in `lobby.spec.ts`
+  (not-found, full, ended, no-id — all assert the message + the way back).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

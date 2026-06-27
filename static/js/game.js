@@ -28,7 +28,7 @@ class Game {
     this.isCreator = isCreator;
 
     if (!isCreator && !this.gameId) {
-      this.showArbiterMessage('No game ID specified. Go back to the lobby.');
+      this.showGameUnavailable('No game code was provided.');
       return;
     }
 
@@ -289,11 +289,15 @@ class Game {
     });
 
     // Reconnect token no longer valid (game ended/expired/server restart): drop the saved session
-    // so a refresh won't loop trying to resume a dead game, and return to the lobby.
+    // so a refresh won't loop trying to resume a dead game, and offer a path back to the lobby.
     this.ws.on('resumeFailed', (data) => {
-      Game.clearSession();
-      this.showArbiterMessage((data.message || 'This game is no longer available.') + ' Returning to lobby…');
-      setTimeout(() => { window.location.href = '/'; }, 2500);
+      this.showGameUnavailable(data.message || 'This game is no longer available.');
+    });
+
+    // Tried to join a game with no free seat (not found, already full, or already ended). Same
+    // friendly treatment as a failed resume: a clear message and a way back to the lobby.
+    this.ws.on('joinFailed', (data) => {
+      this.showGameUnavailable(data.message || 'This game is no longer available.');
     });
 
     // After OUR move is accepted by the server
@@ -1029,6 +1033,18 @@ class Game {
     el.textContent = message;
     el.className = 'arbiter-message';
     if (style) el.classList.add(style);
+  }
+
+  // Shown when there is no active game to open for this id — a code that wasn't found, expired,
+  // was already full, the game already ended, or a stale resume token. Replaces the old raw
+  // technical error with a calm message and an explicit path back to the lobby. The saved session
+  // is dropped so a refresh doesn't loop trying to reopen a game that no longer exists.
+  showGameUnavailable(message) {
+    Game.clearSession();
+    this.gameActive = false;
+    this.showArbiterMessage(message);
+    this.clearArbiterButtons();
+    this.showArbiterButton('Back to lobby', () => { window.location.href = '/'; });
   }
 
   showArbiterButton(label, callback) {

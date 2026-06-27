@@ -1,14 +1,27 @@
 import { test, expect } from '@playwright/test';
-import { createGame, joinGame, expectGameStarted } from './helpers/app';
+import {
+  createGame,
+  joinGame,
+  expectGameStarted,
+  startTwoPlayerGame,
+  resign,
+  expectGameResult,
+} from './helpers/app';
 
-test('opening the game page without a game id shows guidance', async ({ page }) => {
+test('opening the game page without a game id shows guidance and a way back', async ({ page }) => {
   await page.goto('/game.html');
-  await expect(page.locator('#arbiterMessage')).toContainText('No game ID');
+  await expect(page.locator('#arbiterMessage')).toContainText('No game code was provided');
+  await expect(page.locator('#arbiterButtons')).toContainText('Back to lobby');
 });
 
-test('joining a non-existent game shows a "not found" error', async ({ page }) => {
+test('joining a non-existent game shows a friendly message and a way back', async ({ page }) => {
   await page.goto('/game.html?gameId=does-not-exist-xyz');
-  await expect(page.locator('#arbiterMessage')).toContainText('Game not found');
+  await expect(page.locator('#arbiterMessage')).toContainText("wasn't found");
+  // A clear path back to the lobby, not a stuck board with a raw error.
+  const backBtn = page.locator('#arbiterButtons').getByText('Back to lobby');
+  await expect(backBtn).toBeVisible();
+  await backBtn.click();
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test('a third player cannot join a full game', async ({ browser }) => {
@@ -25,11 +38,29 @@ test('a third player cannot join a full game', async ({ browser }) => {
     await expectGameStarted(p1); // the two seats are taken
 
     await joinGame(p3, gameId);
-    await expect(p3.locator('#arbiterMessage')).toContainText('already full');
+    await expect(p3.locator('#arbiterMessage')).toContainText('already has two players');
+    await expect(p3.locator('#arbiterButtons')).toContainText('Back to lobby');
   } finally {
     await c1.close();
     await c2.close();
     await c3.close();
+  }
+});
+
+test('joining a game that has already ended shows a friendly message and a way back', async ({ browser }) => {
+  const game = await startTwoPlayerGame(browser);
+  const third = await browser.newContext();
+  try {
+    await resign(game.creator);
+    await expectGameResult(game.joiner, '0-1'); // creator (White) resigned
+
+    const p = await third.newPage();
+    await joinGame(p, game.gameId);
+    await expect(p.locator('#arbiterMessage')).toContainText('already ended');
+    await expect(p.locator('#arbiterButtons')).toContainText('Back to lobby');
+  } finally {
+    await Promise.all(game.contexts.map((c) => c.close()));
+    await third.close();
   }
 });
 

@@ -322,13 +322,20 @@ public class GameWebSocketServer extends WebSocketServer {
     final GameRoom room = gameRooms.get(gameId);
 
     if (room == null) {
-      // Count misses toward the violation budget so join-code scanning gets throttled.
-      sendError(conn, "Game not found: " + gameId);
+      // No active game for this code (typo / expired / reaped / server restarted). Send a friendly
+      // `joinFailed` so the client can offer a path back to the lobby instead of a raw error. Still
+      // count the miss toward the violation budget so join-code scanning gets throttled.
+      sendJoinFailed(conn, "not_found",
+          "This game code wasn't found. It may have expired, ended, or been entered incorrectly.");
       recordViolation(conn);
       return;
     }
     if (room.isFull()) {
-      sendError(conn, "Game is already full.");
+      // The room is still in memory but has no free seat. Distinguish an already-finished game from
+      // one with two live players so the message is accurate.
+      final boolean ended = room.getSession().getState() == GameState.ENDED;
+      sendJoinFailed(conn, ended ? "ended" : "full",
+          ended ? "This game has already ended." : "This game already has two players.");
       return;
     }
 
@@ -986,7 +993,7 @@ public class GameWebSocketServer extends WebSocketServer {
     if (room == null || side == Side.NONE) {
       final JsonObject msg = new JsonObject();
       msg.addProperty("type", "resumeFailed");
-      msg.addProperty("message", "This game is no longer available.");
+      msg.addProperty("message", "This game is no longer available — it may have ended or expired.");
       conn.send(GSON.toJson(msg));
       return;
     }
@@ -1336,6 +1343,21 @@ public class GameWebSocketServer extends WebSocketServer {
   private void sendError(WebSocket conn, String message) {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "error");
+    msg.addProperty("message", message);
+    if (conn != null && conn.isOpen()) {
+      conn.send(GSON.toJson(msg));
+    }
+  }
+
+  /**
+   * Tells the joining client that there is no active game to join for the given code (not found,
+   * already full, or already ended). Distinct from {@link #sendError} so the client can render a
+   * calm, friendly message with a path back to the lobby rather than a red technical error.
+   */
+  private void sendJoinFailed(WebSocket conn, String reason, String message) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "joinFailed");
+    msg.addProperty("reason", reason);
     msg.addProperty("message", message);
     if (conn != null && conn.isOpen()) {
       conn.send(GSON.toJson(msg));
