@@ -32,7 +32,7 @@ See the [Manual](MANUAL.md) for how to create, join, and play a game.
 
 ## Run locally
 
-Requires a JDK (21+) and Maven.
+Requires a JDK (17+) and Maven.
 
 ```bash
 mvn -DskipTests package

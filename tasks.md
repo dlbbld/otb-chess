@@ -51,7 +51,7 @@ public launch. Released as **v0.1.1** (still beta).
 - [x] Cloudflare Access (invited emails) for the private beta. Self-hosted app `OTB Chess Beta` on `play.otb-chess.app`, Allow policy `Beta testers` (Emails: otbchessmail@gmail.com), email one-time-PIN login (team `noisy-field-e40c.cloudflareaccess.com`). **Verified**: unauthenticated `/` and `/api/health` → 302 to the Access login, and `wss /ws` is blocked. *Remaining (Phase 2 / edge):* WAF + rate-limit rules.
 
 ## iMac host setup (publish-server-beta)
-- Toolchain present on the iMac: Git, Temurin JDK 21, Maven 3.9, Node 25 (built-in `WebSocket`).
+- Toolchain present on the iMac: Git, Temurin JDK 17, Maven 3.9, Node 25 (built-in `WebSocket`).
 - Homebrew on this Mac belongs to another user account, so per-user CLIs are installed to `~/.local/bin` (on `PATH` via `~/.zprofile`): `gh` (GitHub CLI, authed as `dlbbld`), `caddy` v2.11.
 - Run the app alone (loopback): `java -jar target/otb-chess.jar` → http://127.0.0.1:8080 (WS on :8081). Helper scripts: `otb-start` / `otb-stop`.
 - Run the single origin locally (dev/prod parity): start the app, then `caddy run --config Caddyfile` from the repo root → http://localhost:9000 (proxies static→8080, `/ws`→8081).

@@ -14,7 +14,7 @@ All three processes run as **LaunchDaemons** (start at boot, restart on crash). 
 Caddy need no Cloudflare account; `cloudflared` is wired up during go-live.
 
 ## Prerequisites (already installed on this iMac)
-- Temurin JDK 21 — `/Library/Java/JavaVirtualMachines/temurin-21.jdk`
+- Temurin JDK 17 — `/Library/Java/JavaVirtualMachines/temurin-17.jdk`
 - `caddy`, `cloudflared` in `~/.local/bin`
 - Built jar: from the repo root run `mvn -DskipTests package` → `target/otb-chess.jar`
 

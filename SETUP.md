@@ -18,7 +18,7 @@ domain `otb-chess.app`, GitHub: `dlbbld`.
 
 ## 1. Prerequisites already on the machine
 
-Git, Temurin **JDK 21**, **Maven 3.9**, **Node** (for the Playwright e2e). Verify:
+Git, Temurin **JDK 17**, **Maven 3.9**, **Node** (for the Playwright e2e). Verify:
 
 ```bash
 git --version; java -version; mvn -v | head -1; node -v

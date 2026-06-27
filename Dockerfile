@@ -9,7 +9,7 @@
 # (see Caddyfile) the same way the iMac does.
 
 # --- build stage ---
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /build
 # Resolve dependencies in their own layer so source-only changes don't re-download them.
 COPY pom.xml .
@@ -18,7 +18,7 @@ COPY src ./src
 RUN mvn -B -DskipTests package
 
 # --- runtime stage ---
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:17-jre
 # curl is used by the container HEALTHCHECK below.
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
