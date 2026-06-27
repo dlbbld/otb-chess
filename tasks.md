@@ -8,14 +8,14 @@ release's tasks until it ships.
 Architecture (reviewed): iMac running native `launchd` services → Cloudflare Tunnel
 (`cloudflared`, no inbound ports — fits the guest network) → Caddy single public origin
 (static + `/ws`) → Java app (HTTP 8080 + WebSocket 8081 in one JVM, in-memory state).
-Originally a private beta gated by Cloudflare Access; **now public** (Access removed). A Linux VPS
-with a Dockerfile is the later portability path, not the initial runtime.
+A Linux VPS with a Dockerfile is the later portability path, not the initial runtime.
 
-**Status (2026-06-26): LIVE & PUBLIC** at https://play.otb-chess.app — Cloudflare Access removed
-(open to everyone), edge rate-limit at 10,000 req/10s per IP. Full manual setup recorded in
-[`SETUP.md`](SETUP.md). **Reboot survival: VERIFIED unattended** — FileVault disabled (disk stays
-hardware-encrypted at rest, auto-unlocks at boot), and an unattended `sudo reboot` (no login) brought
-the site back within ~10 s with nobody logged in. See SETUP.md §11.
+**Status (2026-06-27): public release on hold.** The full server stack is built, deployed, hardened,
+and verified (incl. unattended reboot — see [`SETUP.md`](SETUP.md) §11), and it was briefly opened to
+the public. Decision: **hold the public launch** until several known gameplay flaws are fixed and the
+game is properly play-tested, so the first impression is strong. Re-gate the deployment with
+Cloudflare Access (or take it down) in the meantime; a privacy policy will be re-added before any
+public launch. Released as **v0.1.1** (still beta).
 
 ### Done
 - [x] Remove the testing-only `/api/lastGameId` endpoint and lobby join-code prefill (`fdf067b`).
@@ -38,7 +38,7 @@ the site back within ~10 s with nobody logged in. See SETUP.md §11.
 - [x] CORS cleanup: removed `Access-Control-Allow-Origin: *` from `StaticFileHandler` (same-origin app).
 - [x] Resource bounds: cap concurrent games (`OTB_MAX_GAMES`, default 1000) and reap rooms created-but-never-joined past `OTB_ROOM_TTL_MS` (default 30 min) via a daemon maintenance scheduler.
 - [x] Usage logging (minimal): log **only** two events — a game being **created** and a game being **joined**. Nothing else: no move counts, results, rule-violation counts, board/PGN state, names, emails, or IPs.
-  - [x] Write the policy in `PRIVACY.md` — app-collected data documented separately from **Cloudflare Access** data (Cloudflare processes invited emails + access logs during the gated beta).
+  - [x] Privacy policy was written (`PRIVACY.md`) then **removed for now** while the public launch is on hold; to be re-added before going public.
   - [x] Implement on the server: `UsageLog` writes `<ISO-8601>\t<event>\t<gameId>` per create/join, 30-day purge on a daily schedule (`OTB_USAGE_LOG`, `OTB_USAGE_RETENTION_DAYS`). Verified create↔join pair on one game id; best-effort (I/O errors never break gameplay).
 - [x] WebSocket resilience / reconnect (fixes "first game froze, clock didn't start"): a waiting creator's socket was idled out by Cloudflare and the client had no reconnect, so `gameStarted` went to a dead socket. Fix: app-level heartbeat (`keepalive`/`pong`, 25 s) to prevent the idle drop; client auto-reconnect (exponential backoff) that re-attaches via a secret per-seat token → server `resume` → `resync` (board/turn/clocks/state); plus a disconnect grace period (`OTB_DISCONNECT_GRACE_MS`, 12 s) before the opponent is told "disconnected". Verified locally: drop-while-waiting (resumed socket then receives `gameStarted`) and mid-game drop (resync returns `IN_PROGRESS` + correct turn/clock/board).
 - [x] Stable join code across refresh (high priority): refreshing the create page no longer mints a new code (which orphaned the shared code on slow connections). The per-tab session (gameId + secret token) is persisted, so a refresh *resumes* the same game via the server `resume` path; a new game comes only from the lobby (which clears the saved session) or after Abort. The refreshed creator re-sees the same code. Verified: resume returns the identical code; client wiring in `game.js`/`index.html` reuses the reconnect infrastructure (no server change).

@@ -29,7 +29,7 @@
         <string>8080</string>
         <key>OTB_WS_PORT</key>
         <string>8081</string>
-        <!-- Minimal usage log (create/join only; see PRIVACY.md), kept with the other logs. -->
+        <!-- Minimal usage log (create/join events only; no personal data), kept with the other logs. -->
         <key>OTB_USAGE_LOG</key>
         <string>/Users/chess-server/Library/Logs/otb-chess/usage.log</string>
     </dict>

@@ -3,22 +3,15 @@
 **OTB** stands for **over the board** — chess played on a physical board with a real arbiter, as
 opposed to a computer playing the moves for you.
 
-Play over-the-board–style chess online, with a real **arbiter** that enforces the FIDE rules a
-physical game relies on: touch-move, the released-piece rule (4.7), illegal-move handling, clock
-discipline, draw claims, and more. Two players, one game code, real-time over WebSocket.
+An online, real-time implementation of over-the-board chess with a real **arbiter** that enforces the
+FIDE rules a physical game relies on: touch-move, the released-piece rule (4.7), illegal-move
+handling, clock discipline, draw claims, and more. Two players, one game code, over WebSocket.
 
-## ▶️ Play
+## Status
 
-**https://play.otb-chess.app**
-
-Create a game, share the code with your opponent, and play.
-
-### Try it solo — play both sides yourself
-
-You can be both players on one computer: create the game in a normal window, then join with the code
-from a **private/incognito window** (or a different browser). A private window is a separate session,
-so it acts as the second player — two normal tabs in the same browser would share one session and act
-as the same player.
+🚧 **In active development — not yet publicly released.** The server is built and runs, but several
+gameplay issues are still being worked through; a public launch will follow once they're resolved.
+See the [Manual](MANUAL.md) for how to create, join, and play a game.
 
 ## Documentation
 
@@ -31,8 +24,9 @@ as the same player.
 - **Java** application server: an HTTP server for the static web app and a WebSocket server for
   real-time game communication, in one JVM with in-memory game state.
 - **[Caddy](https://caddyserver.com/)** fronts the app as a single origin (static + `/ws`).
-- **[Cloudflare Tunnel](https://www.cloudflare.com/products/tunnel/)** (`cloudflared`) exposes that
-  origin publicly with no inbound ports, with TLS and rate-limiting at the edge.
+- **[Cloudflare Tunnel](https://www.cloudflare.com/products/tunnel/)** (`cloudflared`) can expose that
+  origin with no inbound ports (TLS + rate-limiting at the edge); the in-development deployment is
+  access-gated.
 - Chess move legality and position logic come from
   **[ashlar-chess](https://github.com/dlbbld/ashlar-chess)**.
 
@@ -57,10 +51,6 @@ portability/VPS container image is provided by the [`Dockerfile`](Dockerfile).
 mvn test                 # JUnit unit tests
 npm install && npx playwright test   # Playwright end-to-end tests (tests/e2e)
 ```
-
-## Privacy
-
-The app records only minimal, anonymous usage (game create/join events); see [`PRIVACY.md`](PRIVACY.md).
 
 ## License
 

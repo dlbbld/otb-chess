@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Minimal, privacy-preserving usage log (see {@code PRIVACY.md}).
+ * Minimal, privacy-preserving usage log: records only game create/join events (no personal data).
  *
  * <p>
  * Records exactly two event types — a game being <em>created</em> and a game being <em>joined</em> — as one line each:
