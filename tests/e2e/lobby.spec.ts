@@ -17,9 +17,14 @@ test('opening the game page without a game id shows guidance and a way back', as
 test('joining a non-existent game shows a friendly message and a way back', async ({ page }) => {
   await page.goto('/game.html?gameId=does-not-exist-xyz');
   await expect(page.locator('#arbiterMessage')).toContainText("wasn't found");
+  // Every game control is dead — only the way back is actionable.
+  await expect(page.locator('#exportPgnBtn')).toBeDisabled();
+  await expect(page.locator('#flipBoardBtn')).toBeDisabled();
+  await expect(page.locator('#resignBtn')).toBeDisabled();
   // A clear path back to the lobby, not a stuck board with a raw error.
   const backBtn = page.locator('#arbiterButtons').getByText('Back to lobby');
   await expect(backBtn).toBeVisible();
+  await expect(backBtn).toBeEnabled();
   await backBtn.click();
   await expect(page).toHaveURL(/\/$/);
 });

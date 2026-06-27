@@ -1042,6 +1042,11 @@ class Game {
   showGameUnavailable(message) {
     Game.clearSession();
     this.gameActive = false;
+    // Nothing on this page is actionable except the way back. Disable every game control (Display
+    // PGN, Flip Board, etc. aren't covered by updateButtons) and freeze the board. The Back-to-lobby
+    // button is added AFTER this, so it stays enabled.
+    document.querySelectorAll('.game-layout button').forEach((btn) => { btn.disabled = true; });
+    if (this.board) this.board.setEnabled(false);
     this.showArbiterMessage(message);
     this.clearArbiterButtons();
     this.showArbiterButton('Back to lobby', () => { window.location.href = '/'; });
