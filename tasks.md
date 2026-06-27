@@ -59,6 +59,13 @@ public launch. Released as **v0.1.1** (still beta).
 - Deploying updates: static (HTML/JS/CSS) is served with `Cache-Control: no-store` and read from disk per request, so client changes go live on a normal browser refresh. Java changes need `mvn -DskipTests package` + `sudo launchctl kickstart -k system/io.github.dlbbld.otbchess.app`. **One-time gotcha (resolved):** Cloudflare had edge-cached the old `game.js` (origin sent no cache headers), silently serving stale client code after deploys; fixed by the `no-store` header + a one-off Cloudflare **Purge Everything**. If a deploy ever looks stale again, verify the origin with a `?v=` cache-buster, then purge.
 - Remaining for go-live (needs the Cloudflare account + a domain): `cloudflared` named tunnel → Caddy origin; add domain to Cloudflare; `launchd` plists for app + Caddy + cloudflared (KeepAlive, disable sleep/App Nap); Cloudflare Access for the invited-email beta. Optional Phase 1 leftover: Dockerfile (VPS portability path).
 
+## Backlog (not scheduled)
+
+- [ ] **User-friendly message when opening/joining a game that is not active.** When a player opens a
+  game that is no longer playable — game ended, code not found, expired/reaped, or the server
+  restarted — the UI currently shows a technical error instead of a clear, friendly message. Replace
+  it with a user-friendly message (and ideally a path back to the lobby). Not in the current release.
+
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.
 - Don't regress the recent UX: end-of-game / draw messages are personalised per player ("you" vs "your opponent") from `gameEnded` (`mover`/`actor`/`drawReason`). Principle: minimal info during play, clear "who did what" on results.
