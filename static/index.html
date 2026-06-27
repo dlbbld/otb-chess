@@ -153,6 +153,9 @@
       if (fen) {
         url += '&fen=' + encodeURIComponent(fen);
       }
+      // Deliberate new game: drop any saved session so the board page creates fresh (new code)
+      // instead of resuming a previous game.
+      try { localStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
       window.location.href = url;
     });
 
@@ -163,6 +166,8 @@
         document.getElementById('gameCodeInput').style.borderColor = '#c0392b';
         return;
       }
+      // Deliberate new join: drop any saved session so the board page joins fresh.
+      try { localStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
       window.location.href = '/game.html?gameId=' + gameId;
     }
 
@@ -170,19 +175,6 @@
     document.getElementById('gameCodeInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') joinGame();
     });
-
-    // TESTING-ONLY: fetch the most recently created joinable game ID from the server so a second
-    // browser session can join without copy/paste. Remove once development is done.
-    fetch('/api/lastGameId', { cache: 'no-store' })
-      .then(r => r.ok ? r.text() : '')
-      .then(id => {
-        const trimmed = (id || '').trim();
-        if (trimmed) {
-          document.getElementById('gameCodeInput').value = trimmed;
-        }
-      })
-      .catch(() => { /* ignore — endpoint is testing convenience only */ });
-
   </script>
   <script src="js/app-version.js"></script>
 </body>

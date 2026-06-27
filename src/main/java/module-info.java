@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Daniel Baechli
+// SPDX-License-Identifier: GPL-3.0-only
 /**
  * OTB Chess -- over-the-board chess arbiter server.
  *

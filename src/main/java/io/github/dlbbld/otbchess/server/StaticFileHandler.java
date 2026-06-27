@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Daniel Baechli
+// SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.server;
 
 import java.io.IOException;
@@ -44,7 +46,12 @@ public class StaticFileHandler {
     final String contentType = guessContentType(filePath.toString());
 
     exchange.getResponseHeaders().set("Content-Type", contentType);
-    exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+    // Don't let the CDN/browser cache the app shell: Cloudflare caches static .js/.css/.html by
+    // default, which silently serves stale game logic after a deploy. The assets are small and the
+    // beta changes often, so always revalidate against the origin.
+    exchange.getResponseHeaders().set("Cache-Control", "no-store");
+    // No CORS header: the app is same-origin (served and consumed under one Cloudflare/Caddy
+    // origin), so a wildcard Access-Control-Allow-Origin would only widen exposure for no benefit.
     exchange.sendResponseHeaders(200, bytes.length);
     try (var os = exchange.getResponseBody()) {
       os.write(bytes);

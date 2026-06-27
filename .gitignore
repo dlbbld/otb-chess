@@ -1,5 +1,6 @@
 /target/
 /.claude/
+/logs/
 
 # E2E (Playwright / Node)
 /node_modules/

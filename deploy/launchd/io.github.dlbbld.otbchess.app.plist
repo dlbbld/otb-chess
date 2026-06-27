@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  OTB Chess — Java app (HTTP 8080 + WebSocket 8081, loopback only).
+  LaunchDaemon: starts at boot, restarts on crash, runs as chess-server.
+  Install: see deploy/README.md. Paths are absolute (launchd has no PATH/login env).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.github.dlbbld.otbchess.app</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java</string>
+        <string>-jar</string>
+        <string>/Users/chess-server/Claude/otb-chess/target/otb-chess.jar</string>
+    </array>
+
+    <!-- The app resolves the static/ directory relative to its working directory. -->
+    <key>WorkingDirectory</key>
+    <string>/Users/chess-server/Claude/otb-chess</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OTB_BIND_HOST</key>
+        <string>127.0.0.1</string>
+        <key>OTB_HTTP_PORT</key>
+        <string>8080</string>
+        <key>OTB_WS_PORT</key>
+        <string>8081</string>
+        <!-- Minimal usage log (create/join events only; no personal data), kept with the other logs. -->
+        <key>OTB_USAGE_LOG</key>
+        <string>/Users/chess-server/Library/Logs/otb-chess/usage.log</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Run as the user (not root) but still start at boot. -->
+    <key>UserName</key>
+    <string>chess-server</string>
+
+    <!-- Real-time game: ask for the interactive scheduling tier (avoids background throttling). -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/chess-server/Library/Logs/otb-chess/app.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/chess-server/Library/Logs/otb-chess/app.log</string>
+</dict>
+</plist>

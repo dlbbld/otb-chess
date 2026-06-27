@@ -45,9 +45,9 @@ tests/e2e/
 
 ## Notes
 
-- Tests run **serially** (`workers: 1`): the game server is stateful and `/api/lastGameId`
-  is global. Each test creates its own game and reads the code from the DOM
-  (`.game-code-value`), so games stay isolated.
+- Tests run **serially** (`workers: 1`): the game server is stateful (shared game rooms).
+  Each test creates its own game and reads the code from the DOM (`.game-code-value`), so
+  games stay isolated.
 - The board is a custom mouse-drag widget, so `dragPiece` drives real `page.mouse` events.
 - Use a **custom FEN** (`createGame({ fen })`) to start rule scenarios one move away from the
   thing under test — short scenarios are fast and stable.

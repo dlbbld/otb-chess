@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  OTB Chess — Caddy single origin. Serves static (->8080) and /ws (->8081); listens on
+  localhost:9000 so only cloudflared (same host) can reach it. TLS terminates at Cloudflare.
+  LaunchDaemon: starts at boot, restarts on crash, runs as chess-server.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.github.dlbbld.otbchess.caddy</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/chess-server/.local/bin/caddy</string>
+        <string>run</string>
+        <string>--config</string>
+        <string>/Users/chess-server/Claude/otb-chess/Caddyfile</string>
+        <string>--adapter</string>
+        <string>caddyfile</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/chess-server/Claude/otb-chess</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Port-only listener (matches any Host) bound to loopback in the Caddyfile; the public
+             edge is Cloudflare and cloudflared dials this locally. -->
+        <key>OTB_CADDY_LISTEN</key>
+        <string>:9000</string>
+        <key>OTB_HTTP_PORT</key>
+        <string>8080</string>
+        <key>OTB_WS_PORT</key>
+        <string>8081</string>
+        <key>HOME</key>
+        <string>/Users/chess-server</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>UserName</key>
+    <string>chess-server</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/chess-server/Library/Logs/otb-chess/caddy.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/chess-server/Library/Logs/otb-chess/caddy.log</string>
+</dict>
+</plist>

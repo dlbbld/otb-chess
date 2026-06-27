@@ -1,16 +1,24 @@
+// Copyright (C) 2026 Daniel Baechli
+// SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.server;
 
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.security.SecureRandom;
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import org.java_websocket.WebSocket;
+import org.java_websocket.framing.CloseFrame;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
@@ -41,21 +49,50 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private static final Gson GSON = new Gson();
 
+  // Join codes: 12 base32 chars (~60 bits) from a CSPRNG. Wide enough that the codes can't be
+  // guessed/enumerated, replacing the old 32-bit UUID prefix.
+  private static final SecureRandom RANDOM = new SecureRandom();
+  private static final char[] BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".toCharArray();
+  private static final int JOIN_CODE_LENGTH = 12;
+  // Reconnect tokens are longer (~100 bits) since they authorise re-attaching to a seat.
+  private static final int SESSION_TOKEN_LENGTH = 20;
+
   private final Map<String, GameRoom> gameRooms = new ConcurrentHashMap<>();
   private final Map<WebSocket, String> playerGameMap = new ConcurrentHashMap<>();
   private final ScheduledExecutorService clockExecutor = Executors.newScheduledThreadPool(2);
 
-  // TESTING-ONLY: most recently created game ID, exposed via /api/lastGameId so a second browser
-  // session can pre-fill the join field without manual copy/paste. Remove once development is done.
-  private volatile String lastCreatedGameId;
+  // --- Phase 2 hardening config (12-factor; overridable via environment) ---
+  private final int maxConcurrentGames = OtbChessServer.envInt("OTB_MAX_GAMES", 1000);
+  private final long roomTtlMs = OtbChessServer.envLong("OTB_ROOM_TTL_MS", TimeUnit.MINUTES.toMillis(30));
+  private final int maxMessageChars = OtbChessServer.envInt("OTB_MAX_MSG_CHARS", 65536);
+  private final int maxViolationsPerConn = OtbChessServer.envInt("OTB_MAX_VIOLATIONS", 30);
+  // How long to wait after a socket drops before telling the opponent "disconnected" — gives the
+  // player a window to reconnect (idle drop / network blip) without flapping the game.
+  private final long disconnectGraceMs = OtbChessServer.envLong("OTB_DISCONNECT_GRACE_MS",
+      TimeUnit.SECONDS.toMillis(12));
+  private final Set<String> allowedOrigins = parseAllowedOrigins();
+  private final UsageLog usageLog = UsageLog.fromConfig(OtbChessServer.envStr("OTB_USAGE_LOG", "logs/usage.log"),
+      OtbChessServer.envInt("OTB_USAGE_RETENTION_DAYS", 30));
+  // Daemon so it never keeps the JVM alive (e.g. on a failed startup that stops the server).
+  private final ScheduledExecutorService maintenance = Executors.newSingleThreadScheduledExecutor(daemon("otb-maint"));
 
-  public GameWebSocketServer(int port) {
-    super(new InetSocketAddress(port));
+  public GameWebSocketServer(String host, int port) {
+    super(new InetSocketAddress(host, port));
     setTcpNoDelay(true); // Disable Nagle's algorithm for low-latency messaging
   }
 
   @Override
   public void onOpen(WebSocket conn, ClientHandshake handshake) {
+    // Anti-CSWSH: reject WebSocket handshakes whose Origin isn't allowlisted. A missing Origin is
+    // allowed (non-browser clients / smoke tests don't send one); browsers always do, so a mismatch
+    // means a cross-site page is trying to drive this socket.
+    final String origin = handshake.hasFieldValue("Origin") ? handshake.getFieldValue("Origin") : null;
+    if (!isOriginAllowed(origin, allowedOrigins)) {
+      System.out.println("Rejected WebSocket: disallowed Origin '" + origin + "' from " + conn.getRemoteSocketAddress());
+      conn.close(CloseFrame.POLICY_VALIDATION, "Origin not allowed");
+      return;
+    }
+    conn.setAttachment(new ConnectionState());
     System.out.println("New connection: " + conn.getRemoteSocketAddress());
   }
 
@@ -63,27 +100,55 @@ public class GameWebSocketServer extends WebSocketServer {
   public void onClose(WebSocket conn, int code, String reason, boolean remote) {
     System.out.println("Connection closed: " + conn.getRemoteSocketAddress());
     final String gameId = playerGameMap.remove(conn);
-    if (gameId != null) {
-      final GameRoom room = gameRooms.get(gameId);
-      if (room != null) {
-        final Side side = room.getSide(conn);
-        if (side != Side.NONE) {
-          // Notify opponent
-          final JsonObject msg = new JsonObject();
-          msg.addProperty("type", "opponentDisconnected");
-          msg.addProperty("message", "Your opponent has disconnected.");
-          room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
-        }
-      }
+    if (gameId == null) {
+      return;
     }
+    final GameRoom room = gameRooms.get(gameId);
+    if (room == null) {
+      return;
+    }
+    final Side side = room.getSide(conn);
+    if (side == Side.NONE) {
+      return;
+    }
+    // The player may reconnect (idle drop / blip). Defer the "opponent disconnected" notice; if a
+    // resume swaps in a new socket for this side within the grace window, the seat no longer points
+    // at this (closed) conn and we stay quiet.
+    maintenance.schedule(() -> {
+      if (room.getSocket(side) == conn) {
+        final JsonObject msg = new JsonObject();
+        msg.addProperty("type", "opponentDisconnected");
+        msg.addProperty("message", "Your opponent has disconnected.");
+        room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
+      }
+    }, disconnectGraceMs, TimeUnit.MILLISECONDS);
   }
 
   @Override
   public void onMessage(WebSocket conn, String message) {
-    try {
-      final JsonObject json = GSON.fromJson(message, JsonObject.class);
-      final String type = json.get("type").getAsString();
+    // Bound the payload first so an oversized frame can't drive allocation before we even parse it.
+    if (message != null && message.length() > maxMessageChars) {
+      sendError(conn, "Message too large.");
+      recordViolation(conn);
+      return;
+    }
 
+    final JsonObject json;
+    try {
+      json = GSON.fromJson(message, JsonObject.class);
+    } catch (final RuntimeException e) {
+      sendError(conn, "Malformed message: invalid JSON.");
+      recordViolation(conn);
+      return;
+    }
+    if (json == null || !json.has("type") || !json.get("type").isJsonPrimitive()) {
+      sendError(conn, "Malformed message: missing 'type'.");
+      recordViolation(conn);
+      return;
+    }
+    final String type = json.get("type").getAsString();
+
+    try {
       switch (type) {
         case "createGame" -> handleCreateGame(conn, json);
         case "joinGame" -> handleJoinGame(conn, json);
@@ -99,7 +164,12 @@ public class GameWebSocketServer extends WebSocketServer {
         case "restorePosition" -> handleRestorePosition(conn);
         case "readyToContinue" -> handleReadyToContinue(conn);
         case "opponentClockPressed" -> handleOpponentClockPressed(conn);
-        default -> sendError(conn, "Unknown message type: " + type);
+        case "keepalive" -> handleKeepalive(conn);
+        case "resume" -> handleResume(conn, json);
+        default -> {
+          sendError(conn, "Unknown message type: " + type);
+          recordViolation(conn);
+        }
       }
     } catch (final Exception e) {
       sendInternalError(conn, e, "onMessage");
@@ -119,6 +189,9 @@ public class GameWebSocketServer extends WebSocketServer {
   public void onStart() {
     startedLatch.countDown();
     System.out.println("WebSocket server started on port " + getPort());
+    // Maintenance: reap rooms created but never joined, and purge usage-log entries past retention.
+    maintenance.scheduleAtFixedRate(this::reapAbandonedRooms, 5, 5, TimeUnit.MINUTES);
+    maintenance.scheduleAtFixedRate(usageLog::purgeExpired, 0, 6, TimeUnit.HOURS);
   }
 
   /**
@@ -132,17 +205,49 @@ public class GameWebSocketServer extends WebSocketServer {
     return startedLatch.await(timeout, unit);
   }
 
+  /**
+   * Non-blocking liveness check used by the HTTP {@code /api/health} probe: reports whether {@link #onStart()} has fired,
+   * i.e. the server socket is bound and accepting WebSocket connections.
+   *
+   * @return {@code true} once the WebSocket server is listening
+   */
+  public boolean isListening() {
+    return startedLatch.getCount() == 0;
+  }
+
   // ===== Message handlers =====
 
   private void handleCreateGame(WebSocket conn, JsonObject json) {
-    final long initialTimeMs = json.get("initialTimeMs").getAsLong();
-    final long incrementMs = json.get("incrementMs").getAsLong();
-    final String requestedSide = json.get("side").getAsString();
+    // Resource bound: cap the number of live rooms so a home box can't be exhausted.
+    if (gameRooms.size() >= maxConcurrentGames) {
+      sendError(conn, "The server is at capacity. Please try again shortly.");
+      return;
+    }
+
+    // Validate required fields rather than NPE'ing on missing/wrong-typed input.
+    final Long initialTimeBoxed = optLong(json, "initialTimeMs");
+    final Long incrementBoxed = optLong(json, "incrementMs");
+    final String requestedSide = optString(json, "side");
+    if (initialTimeBoxed == null || incrementBoxed == null || requestedSide == null) {
+      sendError(conn, "createGame requires initialTimeMs, incrementMs, and side.");
+      recordViolation(conn);
+      return;
+    }
+    final long initialTimeMs = initialTimeBoxed;
+    final long incrementMs = incrementBoxed;
+    // Sane bounds: positive base time up to 24h, non-negative increment up to 1h.
+    if (initialTimeMs <= 0 || initialTimeMs > TimeUnit.HOURS.toMillis(24) || incrementMs < 0
+        || incrementMs > TimeUnit.HOURS.toMillis(1)) {
+      sendError(conn, "createGame time control is out of range.");
+      recordViolation(conn);
+      return;
+    }
     // maxIllegalMoves: 1..10 = limit, -1 = unlimited, missing = FIDE default (2)
-    final int maxIllegalMoves = json.has("maxIllegalMoves") ? json.get("maxIllegalMoves").getAsInt()
+    final int maxIllegalMoves = (json.has("maxIllegalMoves") && json.get("maxIllegalMoves").isJsonPrimitive())
+        ? json.get("maxIllegalMoves").getAsInt()
         : io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES;
-    final boolean autoResumeAfterRestore = !json.has("autoResumeAfterRestore")
-        || json.get("autoResumeAfterRestore").getAsBoolean();
+    final boolean autoResumeAfterRestore = !(json.has("autoResumeAfterRestore")
+        && json.get("autoResumeAfterRestore").isJsonPrimitive()) || json.get("autoResumeAfterRestore").getAsBoolean();
 
     // Optional FEN — when supplied, the game starts from that position. Validation goes
     // through Ashlar Chess so the player gets the chess library's specific reason. The
@@ -172,24 +277,34 @@ public class GameWebSocketServer extends WebSocketServer {
       creatorSide = parsed.getSideToMove() == io.github.dlbbld.ashlarchess.board.enums.Side.WHITE ? "white" : "black";
     }
 
-    final String gameId = UUID.randomUUID().toString().substring(0, 8);
     final TimeControl timeControl = new TimeControl(initialTimeMs, incrementMs);
-    final GameRoom room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
-
-    if ("white".equals(creatorSide)) {
-      room.setWhitePlayer(conn);
-    } else {
-      room.setBlackPlayer(conn);
-    }
-
-    gameRooms.put(gameId, room);
+    // Allocate a unique join code. The creator's side is set on the room *before* it becomes
+    // visible in the map, so a racing joiner can never claim the creator's colour. putIfAbsent
+    // guards against the (astronomically unlikely) code collision.
+    String gameId;
+    GameRoom room;
+    do {
+      gameId = generateJoinCode();
+      room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
+      if ("white".equals(creatorSide)) {
+        room.setWhitePlayer(conn);
+      } else {
+        room.setBlackPlayer(conn);
+      }
+    } while (gameRooms.putIfAbsent(gameId, room) != null);
     playerGameMap.put(conn, gameId);
-    lastCreatedGameId = gameId; // TESTING-ONLY: see field comment
+    usageLog.record(UsageLog.EVENT_CREATE, gameId);
+
+    // Reconnect token for this seat, so a dropped socket can re-attach (see handleResume).
+    final Side creatorSideEnum = "white".equals(creatorSide) ? Side.WHITE : Side.BLACK;
+    final String token = generateSessionToken();
+    room.setToken(creatorSideEnum, token);
 
     final JsonObject response = new JsonObject();
     response.addProperty("type", "gameCreated");
     response.addProperty("gameId", gameId);
     response.addProperty("side", creatorSide);
+    response.addProperty("token", token);
     response.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
     response.addProperty("havingMove", startingBoard.getSideToMove().name().toLowerCase());
     conn.send(GSON.toJson(response));
@@ -198,11 +313,18 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void handleJoinGame(WebSocket conn, JsonObject json) {
-    final String gameId = json.get("gameId").getAsString();
+    final String gameId = optString(json, "gameId");
+    if (gameId == null || gameId.isBlank()) {
+      sendError(conn, "joinGame requires a gameId.");
+      recordViolation(conn);
+      return;
+    }
     final GameRoom room = gameRooms.get(gameId);
 
     if (room == null) {
+      // Count misses toward the violation budget so join-code scanning gets throttled.
       sendError(conn, "Game not found: " + gameId);
+      recordViolation(conn);
       return;
     }
     if (room.isFull()) {
@@ -220,6 +342,11 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     playerGameMap.put(conn, gameId);
+    usageLog.record(UsageLog.EVENT_JOIN, gameId);
+
+    // Reconnect token for the joiner's seat (see handleResume).
+    final String token = generateSessionToken();
+    room.setToken("white".equals(side) ? Side.WHITE : Side.BLACK, token);
 
     // Send join confirmation to the joining player. Send the actual starting board
     // (not the hard-coded initial position) so a custom-FEN game shows the right
@@ -230,6 +357,7 @@ public class GameWebSocketServer extends WebSocketServer {
     joinResponse.addProperty("type", "gameJoined");
     joinResponse.addProperty("gameId", gameId);
     joinResponse.addProperty("side", side);
+    joinResponse.addProperty("token", token);
     joinResponse.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingPosition)));
     joinResponse.addProperty("havingMove", havingMove.name().toLowerCase());
     conn.send(GSON.toJson(joinResponse));
@@ -262,8 +390,13 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final Side side = room.getSide(conn);
-    final JsonObject eventData = json.getAsJsonObject("event");
-    final String eventType = eventData.get("eventType").getAsString();
+    final JsonObject eventData = optObject(json, "event");
+    final String eventType = (eventData == null) ? null : optString(eventData, "eventType");
+    if (eventType == null) {
+      sendError(conn, "Malformed boardEvent: missing 'event'/'eventType'.");
+      recordViolation(conn);
+      return;
+    }
 
     // Cosmetic drag-in-progress events (DRAG_START, DRAG_HOVER) are display-only.
     // Forward them to the opponent so they can mirror the dragging player's hand,
@@ -276,9 +409,24 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    final BoardEvent event = MessageConverter.toBoardEvent(eventType, eventData.get("square").getAsString(),
-        eventData.get("targetSquare").getAsString(), eventData.get("piece").getAsString(),
-        eventData.get("displacedPiece").getAsString());
+    final String sq = optString(eventData, "square");
+    final String targetSq = optString(eventData, "targetSquare");
+    final String piece = optString(eventData, "piece");
+    final String displaced = optString(eventData, "displacedPiece");
+    if (sq == null || targetSq == null || piece == null || displaced == null) {
+      sendError(conn, "Malformed boardEvent: missing square/piece fields.");
+      recordViolation(conn);
+      return;
+    }
+    final BoardEvent event;
+    try {
+      event = MessageConverter.toBoardEvent(eventType, sq, targetSq, piece, displaced);
+    } catch (final RuntimeException e) {
+      // Unknown event type or invalid square/piece value — treat as a malformed frame, not a crash.
+      sendError(conn, "Malformed boardEvent.");
+      recordViolation(conn);
+      return;
+    }
 
     if (room.getSession().isRestorationResumePending()) {
       return;
@@ -287,13 +435,9 @@ public class GameWebSocketServer extends WebSocketServer {
     if (room.getSession().isWaitingForRestoration()) {
       forwardBoardEventToOpponent(room, side, eventData);
 
-      if (json.has("boardState")) {
-        @SuppressWarnings("unchecked") final Map<String, String> boardStateMap = GSON
-            .fromJson(json.getAsJsonObject("boardState"), Map.class);
-        final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
-        if (room.getSession().isRestoredPosition(afterPosition)) {
-          completeRestoration(room);
-        }
+      final BitboardPosition afterPosition = optionalBoardState(json);
+      if (afterPosition != null && room.getSession().isRestoredPosition(afterPosition)) {
+        completeRestoration(room);
       }
       return;
     }
@@ -344,11 +488,9 @@ public class GameWebSocketServer extends WebSocketServer {
 
     // Auto-end on game-ending moves (checkmate, stalemate, dead position, fivefold, 75-move):
     // accept the move and end the game without waiting for a clock press.
-    if (midPlayResponse.isEmpty() && json.has("boardState")) {
-      @SuppressWarnings("unchecked") final Map<String, String> boardStateMap = GSON
-          .fromJson(json.getAsJsonObject("boardState"), Map.class);
-      final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
-      final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, afterPosition);
+    final BitboardPosition autoEndPosition = midPlayResponse.isEmpty() ? optionalBoardState(json) : null;
+    if (autoEndPosition != null) {
+      final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, autoEndPosition);
       if (autoEndResponse.isPresent()) {
         sendArbiterResponse(room, side, autoEndResponse.get());
         sendClockUpdate(room);
@@ -365,9 +507,10 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Side side = room.getSide(conn);
 
-    @SuppressWarnings("unchecked") final Map<String, String> boardState = GSON
-        .fromJson(json.getAsJsonObject("boardState"), Map.class);
-    final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardState);
+    final BitboardPosition afterPosition = parseBoardState(conn, json);
+    if (afterPosition == null) {
+      return; // malformed boardState — parseBoardState already sent a clean error + counted it
+    }
 
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     sendArbiterResponse(room, side, response);
@@ -403,13 +546,8 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Side side = room.getSide(conn);
 
-    // Parse the boardState (it's required for the correct-time validation path).
-    BitboardPosition afterPosition = null;
-    if (json.has("boardState")) {
-      @SuppressWarnings("unchecked") final Map<String, String> boardState = GSON
-          .fromJson(json.getAsJsonObject("boardState"), Map.class);
-      afterPosition = MessageConverter.toStaticPosition(boardState);
-    }
+    // Parse the boardState (used by the correct-time validation path; optional/tolerant here).
+    final BitboardPosition afterPosition = optionalBoardState(json);
 
     // Correct-time vs. wrong-time per FIDE 9.1.2.1:
     // Correct = the offering player has the move AND has actually made a move on the board
@@ -563,8 +701,21 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final Side side = room.getSide(conn);
-    final DrawClaimType claimType = DrawClaimType.valueOf(json.get("claimType").getAsString());
-    final String san = json.has("san") ? json.get("san").getAsString() : null;
+    final String claimTypeStr = optString(json, "claimType");
+    DrawClaimType claimType = null;
+    if (claimTypeStr != null) {
+      try {
+        claimType = DrawClaimType.valueOf(claimTypeStr);
+      } catch (final IllegalArgumentException ignored) {
+        claimType = null;
+      }
+    }
+    if (claimType == null) {
+      sendError(conn, "Malformed claimDraw: invalid 'claimType'.");
+      recordViolation(conn);
+      return;
+    }
+    final String san = optString(json, "san");
 
     final DrawClaimResult result = room.getSession().claimDraw(side, claimType, san);
 
@@ -665,19 +816,28 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void completeRestoration(GameRoom room, BitboardPosition restorePosition) {
+    // Capture before completeRestoration() in case the latch is ever cleared there in future.
+    final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
     room.getSession().completeRestoration();
 
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "positionRestored");
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(restorePosition)));
-    if (room.getSession().isAutoResumeAfterRestore()) {
-      msg.addProperty("message", "Position restored. Restarting the clock shortly. Please be ready.");
-      msg.addProperty("autoResumePending", true);
+    msg.addProperty("autoResumePending", room.getSession().isAutoResumeAfterRestore());
+    if (releasedMoveIsFinal) {
+      // The released piece committed the move (FIDE 4.7): nothing more to play, just press the clock.
+      // This guidance is ONLY for the player on move (the committer); the opponent just sees the restore.
+      final Side mover = room.getSession().getHavingMove();
+      msg.addProperty("message", "Position restored.");
+      room.sendToSide(mover.getOppositeSide(), GSON.toJson(msg));
+      msg.addProperty("message", "Position restored — your move is final. Press the clock to continue.");
+      room.sendToSide(mover, GSON.toJson(msg));
     } else {
-      msg.addProperty("message", "Position restored. Are you ready to continue?");
-      msg.addProperty("autoResumePending", false);
+      msg.addProperty("message", room.getSession().isAutoResumeAfterRestore()
+          ? "Position restored. Restarting the clock shortly. Please be ready."
+          : "Position restored. Are you ready to continue?");
+      room.sendToBoth(GSON.toJson(msg));
     }
-    room.sendToBoth(GSON.toJson(msg));
 
     if (room.getSession().isAutoResumeAfterRestore()) {
       clockExecutor.schedule(() -> resumeAfterRestorationDelay(room), 1500, TimeUnit.MILLISECONDS);
@@ -692,12 +852,22 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void resumeAfterRestorationDelay(GameRoom room) {
+    final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
     room.getSession().resumeAfterRestorationDelay();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameResumed");
-    msg.addProperty("message", "Clock restarted. Game continues.");
     msg.addProperty("havingMove", room.getSession().getHavingMove().name().toLowerCase());
-    room.sendToBoth(GSON.toJson(msg));
+    if (releasedMoveIsFinal) {
+      // "Your move is final" is only for the committer (the side to move); the opponent just waits.
+      final Side mover = room.getSession().getHavingMove();
+      msg.addProperty("message", "Clock restarted. Game continues.");
+      room.sendToSide(mover.getOppositeSide(), GSON.toJson(msg));
+      msg.addProperty("message", "Clock restarted. Your move is final — press the clock to continue.");
+      room.sendToSide(mover, GSON.toJson(msg));
+    } else {
+      msg.addProperty("message", "Clock restarted. Game continues.");
+      room.sendToBoth(GSON.toJson(msg));
+    }
     sendClockUpdate(room);
   }
 
@@ -789,23 +959,231 @@ public class GameWebSocketServer extends WebSocketServer {
     room.sendToSide(side.getOppositeSide(), GSON.toJson(forwardMsg));
   }
 
-  // ===== Helper methods =====
+  private void handleKeepalive(WebSocket conn) {
+    // App-level heartbeat: keeps the WebSocket from being idled out by Cloudflare while a creator
+    // waits for an opponent. Reply so traffic flows both ways; never counts as a violation.
+    if (conn.isOpen()) {
+      final JsonObject pong = new JsonObject();
+      pong.addProperty("type", "pong");
+      conn.send(GSON.toJson(pong));
+    }
+  }
 
   /**
-   * TESTING-ONLY: returns the most recently created game ID that is still joinable (room exists and not yet full), or
-   * null if no such game exists. Used by the lobby HTTP endpoint to pre-fill the join code in a second browser session.
-   * Remove once development is done.
+   * Re-attaches a reconnecting player to its seat and resends the authoritative game state. The client presents the
+   * secret token it received on create/join (not the guessable join code), so a third party can't seize a seat.
    */
-  public String getJoinableLastCreatedGameId() {
-    final String id = lastCreatedGameId;
-    if (id == null) {
+  private void handleResume(WebSocket conn, JsonObject json) {
+    final String gameId = optString(json, "gameId");
+    final String token = optString(json, "token");
+    if (gameId == null || token == null) {
+      sendError(conn, "resume requires gameId and token.");
+      recordViolation(conn);
+      return;
+    }
+    final GameRoom room = gameRooms.get(gameId);
+    final Side side = (room == null) ? Side.NONE : room.sideForToken(token);
+    if (room == null || side == Side.NONE) {
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "resumeFailed");
+      msg.addProperty("message", "This game is no longer available.");
+      conn.send(GSON.toJson(msg));
+      return;
+    }
+
+    // Swap the dropped socket for the new one and resend current state.
+    room.setSocket(side, conn);
+    playerGameMap.put(conn, gameId);
+
+    final var session = room.getSession();
+    final var clock = session.getClock();
+    final JsonObject clockData = new JsonObject();
+    clockData.addProperty("whiteTimeMs", clock.getRemainingTimeMs(Side.WHITE));
+    clockData.addProperty("blackTimeMs", clock.getRemainingTimeMs(Side.BLACK));
+    clockData.addProperty("running", clock.getRunningFor().name().toLowerCase());
+
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "resync");
+    msg.addProperty("gameId", gameId);
+    msg.addProperty("side", side.name().toLowerCase());
+    msg.addProperty("state", session.getState().name());
+    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition())));
+    msg.addProperty("havingMove", session.getHavingMove().name().toLowerCase());
+    msg.add("clock", clockData);
+    conn.send(GSON.toJson(msg));
+
+    System.out.println("Resumed " + side.name().toLowerCase() + " in game " + gameId);
+  }
+
+  // ===== Helper methods =====
+
+  /** Per-connection state for app-level abuse throttling (carried via {@link WebSocket#getAttachment()}). */
+  private static final class ConnectionState {
+    private int violations;
+  }
+
+  /**
+   * Records one invalid/malformed request against the connection and closes it once it exceeds the per-connection
+   * violation budget — app-level rate limiting that Cloudflare cannot do (it can't inspect post-upgrade frames).
+   *
+   * @return {@code true} if the connection was closed
+   */
+  private boolean recordViolation(WebSocket conn) {
+    if (!(conn.getAttachment() instanceof ConnectionState state)) {
+      return false;
+    }
+    if (++state.violations > maxViolationsPerConn) {
+      System.out.println(
+          "Closing connection " + conn.getRemoteSocketAddress() + " after " + state.violations + " invalid requests");
+      conn.close(CloseFrame.POLICY_VALIDATION, "Too many invalid requests");
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether a WebSocket {@code Origin} is permitted. A missing/blank Origin is allowed (non-browser clients omit it);
+   * loopback hosts are always allowed for local dev; otherwise the lowercased origin must be in the allowlist.
+   */
+  static boolean isOriginAllowed(String origin, Set<String> allowedExact) {
+    if (origin == null || origin.isBlank()) {
+      return true;
+    }
+    final String normalized = origin.trim().toLowerCase(Locale.ROOT);
+    try {
+      final String host = URI.create(normalized).getHost();
+      if ("localhost".equals(host) || "127.0.0.1".equals(host) || "::1".equals(host)) {
+        return true;
+      }
+    } catch (final RuntimeException ignored) {
+      // Unparseable Origin: fall through to exact match (fails closed unless explicitly allowlisted).
+    }
+    return allowedExact.contains(normalized);
+  }
+
+  private static Set<String> parseAllowedOrigins() {
+    final Set<String> set = new HashSet<>();
+    set.add("https://play.otb-chess.app"); // production beta host (loopback handled separately)
+    for (final String o : OtbChessServer.envStr("OTB_WS_ALLOWED_ORIGINS", "").split(",")) {
+      final String trimmed = o.trim().toLowerCase(Locale.ROOT);
+      if (!trimmed.isEmpty()) {
+        set.add(trimmed);
+      }
+    }
+    return set;
+  }
+
+  private static String optString(JsonObject json, String key) {
+    return (json.has(key) && json.get(key).isJsonPrimitive()) ? json.get(key).getAsString() : null;
+  }
+
+  private static JsonObject optObject(JsonObject json, String key) {
+    return (json.has(key) && json.get(key).isJsonObject()) ? json.getAsJsonObject(key) : null;
+  }
+
+  /**
+   * Parses the required {@code boardState} object into a position, or returns {@code null} after sending a clean
+   * validation error and counting a violation — so a malformed frame becomes a tracked validation failure rather than
+   * an internal error / crash.
+   */
+  private BitboardPosition parseBoardState(WebSocket conn, JsonObject json) {
+    final JsonObject boardState = optObject(json, "boardState");
+    if (boardState == null) {
+      sendError(conn, "Malformed message: missing 'boardState'.");
+      recordViolation(conn);
       return null;
     }
-    final GameRoom room = gameRooms.get(id);
-    if (room == null || room.isFull()) {
+    try {
+      @SuppressWarnings("unchecked") final Map<String, String> map = GSON.fromJson(boardState, Map.class);
+      return MessageConverter.toStaticPosition(map);
+    } catch (final RuntimeException e) {
+      sendError(conn, "Malformed boardState.");
+      recordViolation(conn);
       return null;
     }
-    return id;
+  }
+
+  /** Parses an OPTIONAL {@code boardState}; returns {@code null} if absent or malformed (the field is optional). */
+  private BitboardPosition optionalBoardState(JsonObject json) {
+    final JsonObject boardState = optObject(json, "boardState");
+    if (boardState == null) {
+      return null;
+    }
+    try {
+      @SuppressWarnings("unchecked") final Map<String, String> map = GSON.fromJson(boardState, Map.class);
+      return MessageConverter.toStaticPosition(map);
+    } catch (final RuntimeException e) {
+      return null;
+    }
+  }
+
+  private static Long optLong(JsonObject json, String key) {
+    if (!json.has(key) || !json.get(key).isJsonPrimitive()) {
+      return null;
+    }
+    try {
+      return json.get(key).getAsLong();
+    } catch (final NumberFormatException e) {
+      return null;
+    }
+  }
+
+  /** Generates a fresh {@value #JOIN_CODE_LENGTH}-character base32 join code from the CSPRNG. */
+  static String generateJoinCode() {
+    final char[] chars = new char[JOIN_CODE_LENGTH];
+    for (int i = 0; i < chars.length; i++) {
+      chars[i] = BASE32[RANDOM.nextInt(BASE32.length)];
+    }
+    return new String(chars);
+  }
+
+  /** Generates a fresh {@value #SESSION_TOKEN_LENGTH}-character base32 reconnect token from the CSPRNG. */
+  private static String generateSessionToken() {
+    final char[] chars = new char[SESSION_TOKEN_LENGTH];
+    for (int i = 0; i < chars.length; i++) {
+      chars[i] = BASE32[RANDOM.nextInt(BASE32.length)];
+    }
+    return new String(chars);
+  }
+
+  private static ThreadFactory daemon(String name) {
+    return runnable -> {
+      final Thread thread = new Thread(runnable, name);
+      thread.setDaemon(true);
+      return thread;
+    };
+  }
+
+  /**
+   * Removes rooms that were created but never joined and have outlived {@link #roomTtlMs} — otherwise a creator who
+   * walks away leaves a room (and its session/clock state) parked in memory forever on a home box.
+   */
+  private void reapAbandonedRooms() {
+    try {
+      final long now = System.currentTimeMillis();
+      for (final var entry : gameRooms.entrySet()) {
+        final GameRoom room = entry.getValue();
+        final boolean waiting = room.getSession().getState() == GameState.WAITING_FOR_PLAYERS;
+        if (!waiting || now - room.getCreatedAtMs() <= roomTtlMs) {
+          continue;
+        }
+        gameRooms.remove(entry.getKey());
+        room.stopClockTicker();
+        final WebSocket creator = room.getWhitePlayer() != null ? room.getWhitePlayer() : room.getBlackPlayer();
+        if (creator != null) {
+          playerGameMap.remove(creator);
+          if (creator.isOpen()) {
+            final JsonObject msg = new JsonObject();
+            msg.addProperty("type", "gameAborted");
+            msg.addProperty("message", "Game expired (no opponent joined).");
+            creator.send(GSON.toJson(msg));
+          }
+        }
+        System.out.println("Reaped abandoned game: " + entry.getKey());
+      }
+    } catch (final Exception e) {
+      System.err.println("[maintenance] reapAbandonedRooms: " + e);
+    }
   }
 
   private GameRoom getRoom(WebSocket conn) {

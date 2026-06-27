@@ -1,0 +1,17 @@
+# Line-ending normalisation: LF in the working tree and the index on all platforms.
+# Mirrors ashlar-chess and keeps the LF-only Java license-header tooling stable.
+* text=auto eol=lf
+
+# Windows-only shell scripts must keep CRLF — cmd.exe rejects LF-only .bat/.cmd files.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary types — flagged defensively so git never normalises them.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.jar  binary
+*.zip  binary

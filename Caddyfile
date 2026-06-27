@@ -1,0 +1,37 @@
+# OTB Chess — single public origin.
+#
+# Caddy is the one origin that Cloudflare Tunnel (cloudflared) points at. It serves the static
+# site and the JSON API by proxying to the Java HTTP server, and proxies the WebSocket path
+# `/ws` to the Java WebSocket server. The Java app binds to 127.0.0.1 only, so Caddy (also on
+# the loopback) is the only thing that can reach it; the public edge is Cloudflare.
+#
+# Local dev/prod parity: run this exact file locally (defaults to http://localhost:9000) and the
+# app behaves the same as in production, where cloudflared terminates TLS and forwards to this
+# same listener.
+#
+# Override via environment:
+#   OTB_CADDY_LISTEN  listen address (default :9000; e.g. localhost:9000 behind cloudflared)
+#   OTB_HTTP_PORT     Java HTTP upstream port (default 8080)
+#   OTB_WS_PORT       Java WebSocket upstream port (default 8081)
+
+{
+	# TLS is terminated at the Cloudflare edge; this origin speaks plain HTTP to the tunnel.
+	auto_https off
+	# No need for the admin API on a single-purpose origin.
+	admin off
+}
+
+{$OTB_CADDY_LISTEN::9000} {
+	# Listen on loopback only: the public edge is Cloudflare; cloudflared dials this locally.
+	# A port-only site address (default :9000) matches any Host, so the tunnel's forwarded
+	# Host (play.otb-chess.app) is served here without per-hostname config.
+	bind 127.0.0.1
+
+	# WebSocket endpoint -> Java WebSocket server. reverse_proxy forwards the Upgrade/Connection
+	# headers automatically, so this completes the ws/wss handshake transparently.
+	@ws path /ws /ws/*
+	reverse_proxy @ws 127.0.0.1:{$OTB_WS_PORT:8081}
+
+	# Everything else (static files + /api/*) -> Java HTTP server.
+	reverse_proxy 127.0.0.1:{$OTB_HTTP_PORT:8080}
+}
