@@ -390,8 +390,13 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final Side side = room.getSide(conn);
-    final JsonObject eventData = json.getAsJsonObject("event");
-    final String eventType = eventData.get("eventType").getAsString();
+    final JsonObject eventData = optObject(json, "event");
+    final String eventType = (eventData == null) ? null : optString(eventData, "eventType");
+    if (eventType == null) {
+      sendError(conn, "Malformed boardEvent: missing 'event'/'eventType'.");
+      recordViolation(conn);
+      return;
+    }
 
     // Cosmetic drag-in-progress events (DRAG_START, DRAG_HOVER) are display-only.
     // Forward them to the opponent so they can mirror the dragging player's hand,
@@ -404,9 +409,24 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    final BoardEvent event = MessageConverter.toBoardEvent(eventType, eventData.get("square").getAsString(),
-        eventData.get("targetSquare").getAsString(), eventData.get("piece").getAsString(),
-        eventData.get("displacedPiece").getAsString());
+    final String sq = optString(eventData, "square");
+    final String targetSq = optString(eventData, "targetSquare");
+    final String piece = optString(eventData, "piece");
+    final String displaced = optString(eventData, "displacedPiece");
+    if (sq == null || targetSq == null || piece == null || displaced == null) {
+      sendError(conn, "Malformed boardEvent: missing square/piece fields.");
+      recordViolation(conn);
+      return;
+    }
+    final BoardEvent event;
+    try {
+      event = MessageConverter.toBoardEvent(eventType, sq, targetSq, piece, displaced);
+    } catch (final RuntimeException e) {
+      // Unknown event type or invalid square/piece value — treat as a malformed frame, not a crash.
+      sendError(conn, "Malformed boardEvent.");
+      recordViolation(conn);
+      return;
+    }
 
     if (room.getSession().isRestorationResumePending()) {
       return;
@@ -415,13 +435,9 @@ public class GameWebSocketServer extends WebSocketServer {
     if (room.getSession().isWaitingForRestoration()) {
       forwardBoardEventToOpponent(room, side, eventData);
 
-      if (json.has("boardState")) {
-        @SuppressWarnings("unchecked") final Map<String, String> boardStateMap = GSON
-            .fromJson(json.getAsJsonObject("boardState"), Map.class);
-        final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
-        if (room.getSession().isRestoredPosition(afterPosition)) {
-          completeRestoration(room);
-        }
+      final BitboardPosition afterPosition = optionalBoardState(json);
+      if (afterPosition != null && room.getSession().isRestoredPosition(afterPosition)) {
+        completeRestoration(room);
       }
       return;
     }
@@ -472,11 +488,9 @@ public class GameWebSocketServer extends WebSocketServer {
 
     // Auto-end on game-ending moves (checkmate, stalemate, dead position, fivefold, 75-move):
     // accept the move and end the game without waiting for a clock press.
-    if (midPlayResponse.isEmpty() && json.has("boardState")) {
-      @SuppressWarnings("unchecked") final Map<String, String> boardStateMap = GSON
-          .fromJson(json.getAsJsonObject("boardState"), Map.class);
-      final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardStateMap);
-      final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, afterPosition);
+    final BitboardPosition autoEndPosition = midPlayResponse.isEmpty() ? optionalBoardState(json) : null;
+    if (autoEndPosition != null) {
+      final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, autoEndPosition);
       if (autoEndResponse.isPresent()) {
         sendArbiterResponse(room, side, autoEndResponse.get());
         sendClockUpdate(room);
@@ -493,9 +507,10 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Side side = room.getSide(conn);
 
-    @SuppressWarnings("unchecked") final Map<String, String> boardState = GSON
-        .fromJson(json.getAsJsonObject("boardState"), Map.class);
-    final BitboardPosition afterPosition = MessageConverter.toStaticPosition(boardState);
+    final BitboardPosition afterPosition = parseBoardState(conn, json);
+    if (afterPosition == null) {
+      return; // malformed boardState — parseBoardState already sent a clean error + counted it
+    }
 
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     sendArbiterResponse(room, side, response);
@@ -531,13 +546,8 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Side side = room.getSide(conn);
 
-    // Parse the boardState (it's required for the correct-time validation path).
-    BitboardPosition afterPosition = null;
-    if (json.has("boardState")) {
-      @SuppressWarnings("unchecked") final Map<String, String> boardState = GSON
-          .fromJson(json.getAsJsonObject("boardState"), Map.class);
-      afterPosition = MessageConverter.toStaticPosition(boardState);
-    }
+    // Parse the boardState (used by the correct-time validation path; optional/tolerant here).
+    final BitboardPosition afterPosition = optionalBoardState(json);
 
     // Correct-time vs. wrong-time per FIDE 9.1.2.1:
     // Correct = the offering player has the move AND has actually made a move on the board
@@ -691,8 +701,21 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final Side side = room.getSide(conn);
-    final DrawClaimType claimType = DrawClaimType.valueOf(json.get("claimType").getAsString());
-    final String san = json.has("san") ? json.get("san").getAsString() : null;
+    final String claimTypeStr = optString(json, "claimType");
+    DrawClaimType claimType = null;
+    if (claimTypeStr != null) {
+      try {
+        claimType = DrawClaimType.valueOf(claimTypeStr);
+      } catch (final IllegalArgumentException ignored) {
+        claimType = null;
+      }
+    }
+    if (claimType == null) {
+      sendError(conn, "Malformed claimDraw: invalid 'claimType'.");
+      recordViolation(conn);
+      return;
+    }
+    final String san = optString(json, "san");
 
     final DrawClaimResult result = room.getSession().claimDraw(side, claimType, san);
 
@@ -1052,6 +1075,46 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private static String optString(JsonObject json, String key) {
     return (json.has(key) && json.get(key).isJsonPrimitive()) ? json.get(key).getAsString() : null;
+  }
+
+  private static JsonObject optObject(JsonObject json, String key) {
+    return (json.has(key) && json.get(key).isJsonObject()) ? json.getAsJsonObject(key) : null;
+  }
+
+  /**
+   * Parses the required {@code boardState} object into a position, or returns {@code null} after sending a clean
+   * validation error and counting a violation — so a malformed frame becomes a tracked validation failure rather than
+   * an internal error / crash.
+   */
+  private BitboardPosition parseBoardState(WebSocket conn, JsonObject json) {
+    final JsonObject boardState = optObject(json, "boardState");
+    if (boardState == null) {
+      sendError(conn, "Malformed message: missing 'boardState'.");
+      recordViolation(conn);
+      return null;
+    }
+    try {
+      @SuppressWarnings("unchecked") final Map<String, String> map = GSON.fromJson(boardState, Map.class);
+      return MessageConverter.toStaticPosition(map);
+    } catch (final RuntimeException e) {
+      sendError(conn, "Malformed boardState.");
+      recordViolation(conn);
+      return null;
+    }
+  }
+
+  /** Parses an OPTIONAL {@code boardState}; returns {@code null} if absent or malformed (the field is optional). */
+  private BitboardPosition optionalBoardState(JsonObject json) {
+    final JsonObject boardState = optObject(json, "boardState");
+    if (boardState == null) {
+      return null;
+    }
+    try {
+      @SuppressWarnings("unchecked") final Map<String, String> map = GSON.fromJson(boardState, Map.class);
+      return MessageConverter.toStaticPosition(map);
+    } catch (final RuntimeException e) {
+      return null;
+    }
   }
 
   private static Long optLong(JsonObject json, String key) {

@@ -8,8 +8,8 @@ release's tasks until it ships.
 Architecture (reviewed): iMac running native `launchd` services → Cloudflare Tunnel
 (`cloudflared`, no inbound ports — fits the guest network) → Caddy single public origin
 (static + `/ws`) → Java app (HTTP 8080 + WebSocket 8081 in one JVM, in-memory state).
-Private beta gated by Cloudflare Access. A Linux VPS with a Dockerfile is the later
-portability path, not the initial runtime.
+Originally a private beta gated by Cloudflare Access; **now public** (Access removed). A Linux VPS
+with a Dockerfile is the later portability path, not the initial runtime.
 
 **Status (2026-06-26): LIVE & PUBLIC** at https://play.otb-chess.app — Cloudflare Access removed
 (open to everyone), edge rate-limit at 10,000 req/10s per IP. Full manual setup recorded in

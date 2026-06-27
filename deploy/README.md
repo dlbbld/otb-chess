@@ -3,9 +3,12 @@
 Runtime architecture:
 
 ```
-Internet → Cloudflare (TLS + Access) → Cloudflare Tunnel (cloudflared, outbound only)
+Internet → Cloudflare (TLS + WAF/rate-limit) → Cloudflare Tunnel (cloudflared, outbound only)
          → Caddy (localhost:9000, single origin) → Java app (127.0.0.1:8080 + :8081)
 ```
+
+(The site is currently **public**. It can optionally be gated with Cloudflare Access — see the
+"Cloudflare Access" section of [`../SETUP.md`](../SETUP.md).)
 
 All three processes run as **LaunchDaemons** (start at boot, restart on crash). The Java app and
 Caddy need no Cloudflare account; `cloudflared` is wired up during go-live.
