@@ -20,6 +20,12 @@ from a **private/incognito window** (or a different browser). A private window i
 so it acts as the second player — two normal tabs in the same browser would share one session and act
 as the same player.
 
+## Documentation
+
+- [Manual](MANUAL.md): how to create, join, and play a game.
+- [Manifesto](MANIFESTO.md): why this project exists.
+- [Specification](SPECIFICATION.md): detailed rule and behavior reference.
+
 ## How it works
 
 - **Java** application server: an HTTP server for the static web app and a WebSocket server for
