@@ -63,7 +63,12 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
     }
   }
 
-  public record ReleasedPieceContext(Piece piece, Square square) {
+  /**
+   * The binding release: {@code piece} was released on {@code square}, having been picked up from {@code fromSquare}.
+   * {@code fromSquare} is {@link Square#NONE} when the origin is not a board square (e.g. a promotion piece placed
+   * from the side area, or the castling variant where the message names its own squares).
+   */
+  public record ReleasedPieceContext(Piece piece, Square square, Square fromSquare) {
   }
 
   /**
@@ -121,10 +126,25 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
         args, Optional.empty(), Optional.of(obligation), Optional.empty(), Optional.empty(), Optional.empty());
   }
 
-  public static ArbiterResponse releasedPieceViolation(ReleasedPieceContext context, BitboardPosition restorePosition) {
-    final List<Object> args = List.of(formatPieceName(context.piece()), context.square().getName());
-    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION, MessageKey.ARBITER_RELEASED_PIECE_PLAYER,
-        args, Optional.of(MessageKey.ARBITER_RELEASED_PIECE_OPPONENT), args, Optional.empty(), Optional.empty(),
+  /**
+   * @param ambiguousOrigin true when another piece of the same kind could also have legally reached the release
+   *                        square, so "the {piece} on {square}" alone would not tell the player WHICH piece was
+   *                        released (e.g. knights on c3 and g5 both reaching e4). The message then names the origin:
+   *                        "released the {piece} from {from} on {square}" — SAN-style disambiguation, only when
+   *                        needed. Requires a known {@code fromSquare}.
+   */
+  public static ArbiterResponse releasedPieceViolation(ReleasedPieceContext context, boolean ambiguousOrigin,
+      BitboardPosition restorePosition) {
+    final boolean nameOrigin = ambiguousOrigin && context.fromSquare() != Square.NONE;
+    final MessageKey playerKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_PLAYER
+        : MessageKey.ARBITER_RELEASED_PIECE_PLAYER;
+    final MessageKey opponentKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_OPPONENT
+        : MessageKey.ARBITER_RELEASED_PIECE_OPPONENT;
+    final List<Object> args = nameOrigin
+        ? List.of(formatPieceName(context.piece()), context.fromSquare().getName(), context.square().getName())
+        : List.of(formatPieceName(context.piece()), context.square().getName());
+    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION, playerKey,
+        args, Optional.of(opponentKey), args, Optional.empty(), Optional.empty(),
         Optional.ofNullable(restorePosition), Optional.empty(), Optional.of(context));
   }
 
@@ -138,8 +158,10 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
         context.rookFrom().getName(), context.rookTo().getName());
     // The standard ReleasedPieceContext (piece + square) is also carried, so callers
     // that read structured fields without distinguishing castling still see the king
-    // and the release square.
-    final ReleasedPieceContext releasedContext = new ReleasedPieceContext(context.piece(), context.square());
+    // and the release square. No origin: the castling message names its own squares,
+    // and a castling king release is never ambiguous (there is only one king).
+    final ReleasedPieceContext releasedContext = new ReleasedPieceContext(context.piece(), context.square(),
+        Square.NONE);
     return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION,
         MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, args,
         Optional.of(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_OPPONENT), args, Optional.empty(), Optional.empty(),

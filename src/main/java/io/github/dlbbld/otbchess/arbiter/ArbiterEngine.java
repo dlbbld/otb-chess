@@ -121,8 +121,9 @@ public class ArbiterEngine {
         return ArbiterResponse.releasedPieceViolationCastling(new ArbiterResponse.ReleasedPieceCastlingContext(
             lock.piece(), lock.square(), castlingDirection, rookFrom, rookTo), lock.releasePosition());
       }
-      return ArbiterResponse.releasedPieceViolation(new ReleasedPieceContext(lock.piece(), lock.square()),
-          lock.releasePosition());
+      return ArbiterResponse.releasedPieceViolation(
+          new ReleasedPieceContext(lock.piece(), lock.square(), lock.fromSquare()),
+          isReleaseOriginAmbiguous(board, lock), lock.releasePosition());
     }
 
     // Check if the board position even changed
@@ -155,7 +156,7 @@ public class ArbiterEngine {
   }
 
   private record ReleasedPieceLock(BitboardPosition releasePosition, Set<BitboardPosition> allowedFinalPositions,
-      Set<LegalMove> committedMoves, Piece piece, Square square) {
+      Set<LegalMove> committedMoves, Piece piece, Square square, Square fromSquare) {
 
     /**
      * True iff every legal move consistent with the release is a castling move (i.e. the release commits the player
@@ -197,7 +198,8 @@ public class ArbiterEngine {
         final ReleaseCommitment commitment = findCommitmentForRelease(board, event);
         if (!commitment.allowedFinalPositions().isEmpty()) {
           firstReleasedLegalPosition = Optional.of(new ReleasedPieceLock(currentPosition,
-              commitment.allowedFinalPositions(), commitment.committedMoves(), event.piece(), event.targetSquare()));
+              commitment.allowedFinalPositions(), commitment.committedMoves(), event.piece(), event.targetSquare(),
+              event.square()));
         }
       }
     }
@@ -227,6 +229,25 @@ public class ArbiterEngine {
       }
     }
     return new ReleaseCommitment(positions, moves);
+  }
+
+  /**
+   * True when "the {piece} on {square}" alone would not identify the released piece: more than one piece of the same
+   * kind could have legally reached the release square (e.g. knights on c3 and g5 both reaching e4), so the violation
+   * message must also name the origin square — SAN-style disambiguation, applied only when needed. Origins are counted
+   * over the legal moves of the position before the turn; castling and promotions are irrelevant here (one king; a
+   * promotion release has no board origin — its {@code fromSquare} is {@link Square#NONE}).
+   */
+  private static boolean isReleaseOriginAmbiguous(Board board, ReleasedPieceLock lock) {
+    if (lock.fromSquare() == Square.NONE) {
+      return false;
+    }
+    return board.getLegalMoves().stream()
+        .filter(move -> !move.moveSpecification().isCastling())
+        .filter(move -> move.movingPiece() == lock.piece())
+        .filter(move -> move.moveSpecification().toSquare() == lock.square())
+        .map(move -> move.moveSpecification().fromSquare())
+        .distinct().count() > 1;
   }
 
   private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove) {

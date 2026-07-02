@@ -70,6 +70,14 @@ public launch. Released as **v0.1.1** (still beta).
   no-game-code case through one `showGameUnavailable(message)` helper (clears the saved session,
   shows the message, renders the Back-to-lobby button). e2e coverage added in `lobby.spec.ts`
   (not-found, full, ended, no-id — all assert the message + the way back).
+- [x] **Name the origin square in the released-piece message when ambiguous.** With e.g. knights on
+  c3 and g5 both able to reach e4, "you already released the knight on e4" didn't say WHICH knight.
+  When more than one piece of the same kind could have legally reached the release square, the
+  message now names the origin: "you already released the knight **from c3** on e4" (SAN-style
+  disambiguation, only when ambiguous; the "put the knight back on e4" instruction is unchanged).
+  New message keys `arbiter.released_piece.from.player/opponent`; `ReleasedPieceContext` carries
+  `fromSquare` (NONE for side-area/promotion placements); ambiguity computed in `ArbiterEngine`
+  from the legal moves. Unit-tested (ambiguous + unambiguous cases in `TestArbiterEngine`).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

@@ -128,6 +128,63 @@ class TestArbiterEngine {
     assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
 
+  /**
+   * When two pieces of the same kind could have legally reached the release square, "the knight on e4" would not say
+   * WHICH knight was released — the message must name the origin ("the knight from c3 on e4"). SAN-style
+   * disambiguation, applied only when ambiguous.
+   */
+  @Test
+  void testReleasedPieceViolationNamesOriginWhenAmbiguous() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    // White knights on c3 and g5 — BOTH can reach e4.
+    final Board board = Board.fromFenStrict("4k3/8/8/6N1/8/2N5/8/4K3 w - - 0 1");
+
+    // White releases the c3 knight on e4 (legal commit), takes it back, and puts the OTHER knight
+    // (from g5) on e4 instead.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.C3, Square.E4, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E4, Square.C3, Piece.WHITE_KNIGHT, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.G5, Square.E4, Piece.WHITE_KNIGHT, 2));
+
+    final BitboardPosition wrongKnightOnE4 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.G5, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, wrongKnightOnE4, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_FROM_PLAYER, response.playerMessageKey());
+    assertEquals(Square.C3, response.releasedPieceContext().get().fromSquare());
+    assertTrue(response.renderedPlayerMessage().contains("released the knight from c3 on e4"));
+    // The restore instruction keeps naming only the release square.
+    assertTrue(response.renderedPlayerMessage().contains("put the knight back on e4"));
+    assertEquals(Messages.get(MessageKey.ARBITER_RELEASED_PIECE_FROM_OPPONENT, "knight", "c3", "e4"),
+        response.renderedOpponentMessage().get());
+    // Restore target: the position with the c3 knight on e4.
+    assertEquals(BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.C3, Piece.NONE)
+        .createChangedPosition(Square.E4, Piece.WHITE_KNIGHT).build(), response.restorePosition().get());
+  }
+
+  /** An unambiguous release (only one such piece can reach the square) keeps the plain message without the origin. */
+  @Test
+  void testReleasedPieceViolationOmitsOriginWhenUnambiguous() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    // Only ONE white knight can reach e4.
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.C3, Square.E4, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E4, Square.D5, Piece.WHITE_KNIGHT, 1));
+
+    final BitboardPosition knightOnD5 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.C3, Piece.NONE).createChangedPosition(Square.D5, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, knightOnD5, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_PLAYER, response.playerMessageKey());
+    assertTrue(response.renderedPlayerMessage().contains("released the knight on e4"));
+  }
+
   private static final String PROMOTION_CAPTURE_FEN = "r3k3/1P6/8/8/8/8/8/4K3 w - - 0 1"; // bxa8 promotes
 
   @Test

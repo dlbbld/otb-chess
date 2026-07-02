@@ -50,8 +50,8 @@ class TestGameWebSocketServer {
 
   @Test
   void testOpponentReleasedPieceViolationMessageUsesStructuredContext() {
-    final ReleasedPieceContext context = new ReleasedPieceContext(Piece.WHITE_PAWN, Square.E3);
-    final ArbiterResponse response = ArbiterResponse.releasedPieceViolation(context, null);
+    final ReleasedPieceContext context = new ReleasedPieceContext(Piece.WHITE_PAWN, Square.E3, Square.E2);
+    final ArbiterResponse response = ArbiterResponse.releasedPieceViolation(context, false, null);
 
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_PLAYER, response.playerMessageKey());
     assertEquals(Piece.WHITE_PAWN, response.releasedPieceContext().get().piece());
