@@ -564,6 +564,10 @@ class TestGameSession {
     assertEquals(GameState.ENDED, session.getState());
     assertEquals(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, session.getResult().type());
     assertEquals(Side.WHITE, session.getResult().winner());
+
+    // The game is over — any further claim is rejected on the state check, not counted again.
+    final DrawClaimResult afterEnd = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertEquals("You cannot claim a draw now.", afterEnd.message());
   }
 
   /** The wrong-time claim count survives turn changes — a warning, once given, stands for the whole game. */
@@ -586,6 +590,83 @@ class TestGameSession {
     assertEquals(GameState.ENDED, session.getState());
     assertEquals(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, session.getResult().type());
     assertEquals(Side.WHITE, session.getResult().winner());
+  }
+
+  /** All four claim buttons escalate the same way; for the with-move types any SAN is irrelevant. */
+  @Test
+  void testWrongTimeClaimAppliesToWithMoveTypesRegardlessOfSan() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // A with-move claim while not having the move is rejected before any SAN handling — with a
+    // valid SAN, an invalid SAN, or none at all.
+    final DrawClaimResult withSan = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_WITH_MOVE, "Nf6");
+    assertTrue(withSan.wrongTime());
+    assertFalse(withSan.invalidMove()); // the SAN was never looked at
+
+    final DrawClaimResult withInvalidSan = session.claimDraw(Side.BLACK, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Zz9");
+    assertTrue(withInvalidSan.wrongTime());
+    assertFalse(withInvalidSan.invalidMove());
+    assertTrue(withInvalidSan.message().contains("Warning")); // and both presses counted
+
+    final DrawClaimResult withoutSan = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_WITH_MOVE, null);
+    assertEquals(GameState.ENDED, session.getState()); // third press — game lost
+    assertEquals(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, session.getResult().type());
+    assertFalse(withoutSan.wrongTime()); // the game-ending response carries the loss messages instead
+  }
+
+  /**
+   * A wrong-time claim is a private procedural mistake: no FIDE 9.5.3 two-minute penalty for the opponent and no
+   * conversion into a draw offer (both apply only to completed on-move claims).
+   */
+  @Test
+  void testWrongTimeClaimGivesNoPenaltyAndNoDrawOffer() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final DrawClaimResult result = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+
+    assertTrue(result.wrongTime());
+    assertFalse(result.convertsToDrawOffer());
+    // No 2-minute penalty credited to White: the remaining time can only have ticked DOWN from the
+    // initial allotment (a penalty would have pushed it above it).
+    assertTrue(session.getClock().getRemainingTimeMs(Side.WHITE) <= TEST_TIME.initialTimeMs());
+  }
+
+  /** A wrong-time claim must not burn the once-per-move claim right for when the player IS on move. */
+  @Test
+  void testWrongTimeClaimDoesNotConsumeOnMoveClaimRight() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // Black claims while White has the move — rejected as wrong-time.
+    assertTrue(session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null).wrongTime());
+
+    // White plays 1. e4; Black now HAS the move and claims — processed as a normal (on-move)
+    // claim: rejected on the merits (no repetition), converted into a draw offer per FIDE 9.5.
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+    final DrawClaimResult onMove = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(onMove.wrongTime());
+    assertFalse(onMove.accepted());
+    assertTrue(onMove.convertsToDrawOffer());
+  }
+
+  /** Wrong-time claims are counted per player — one player's warning does not carry over to the other. */
+  @Test
+  void testWrongTimeClaimCountsArePerPlayer() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // Black reaches the warning (two wrong-time claims while White is on move).
+    session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null).message().contains("Warning"));
+
+    // After 1. e4 it is Black's move; White's first wrong-time claim gets the PLAIN rejection —
+    // Black's count is Black's alone.
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+    final DrawClaimResult whiteFirst = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertTrue(whiteFirst.wrongTime());
+    assertEquals("You cannot claim a draw when not having the move.", whiteFirst.message());
   }
 
   /**

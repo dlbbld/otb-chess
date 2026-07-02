@@ -53,6 +53,36 @@ test('wrong-time claims escalate: rejection, warning, then loss of the game', as
   await expect(black.locator('#gameResultReason')).toContainText('repeatedly claiming a draw');
 });
 
+test('wrong-time with-move claim skips the SAN prompt; counts are per player; claim right survives', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // White has the move. Black presses a WITH-MOVE claim button: no SAN prompt appears (the claim
+  // is rejected regardless of any move) — the rejection comes straight at the button press.
+  await black.locator('#claimThreefoldWithMoveBtn').click();
+  await expect(black.locator('#arbiterMessage')).toContainText('cannot claim a draw when not having the move');
+  await expect(black.locator('#sanInputPanel')).toBeHidden();
+
+  // White plays 1. e4 — now Black has the move.
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+
+  // White (now off move) presses a claim button: PLAIN first rejection — Black's earlier
+  // wrong-time press did not count against White.
+  await claimFiftyMoveOnBoard(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('cannot claim a draw when not having the move');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Warning');
+
+  // Black IS on move and claims: processed on the merits (rejected, forwarded as a draw offer) —
+  // the earlier wrong-time press did not burn Black's once-per-move claim right.
+  await claimThreefoldOnBoard(black);
+  await expect(black.locator('#arbiterMessage')).toContainText('rejected');
+  await expect(white.locator('#drawOfferPanel')).toBeVisible();
+});
+
 // ---- 50-move rule ------------------------------------------------------------------------------
 
 test('50-move claim on a qualifying position draws the game and informs the opponent', async ({ browser }) => {
