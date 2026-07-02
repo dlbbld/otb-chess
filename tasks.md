@@ -103,6 +103,18 @@ public launch. Released as **v0.1.1** (still beta).
   `wrongTime` flag on `drawClaimResult` keeps the client from locking; with-move buttons skip the
   SAN prompt when not on move. Unit tests (escalation + persistence across turns) and e2e (full
   three-press flow, buttons asserted enabled between presses).
+- [x] **Accurate opponent message when a rejected claim becomes a draw offer + repeat-claim
+  escalation** (documented as [A-004](docs/fide-deviations.md)). (1) The opponent of a rejected
+  claim no longer sees a claim notice overwritten by a bare "your opponent offers a draw" — one
+  streamlined message: "Your opponent claimed a draw by <threefold repetition of the current
+  position / … with the move X / the 50-move rule …>, but the claim is not valid. It still counts
+  as a draw offer. Do you accept the draw?" (`drawOffered` carries the claim-specific text;
+  `drawClaimOpponent` is skipped for the conversion case). (2) A second claim on the same move no
+  longer disables the buttons: warning immediately ("You cannot make more than one draw claim on
+  your move. You are warned: …"), next repeat loses (`REPEAT_CLAIM_GAME_LOST`, A-003-style
+  personalised messages). Violations counted per player across the game; a legitimate single claim
+  on a later move is never a violation. Claim buttons now stay enabled for the whole game. Bonus
+  fix: a pending draw-offer panel is hidden on `gameEnded`. Unit + e2e coverage.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

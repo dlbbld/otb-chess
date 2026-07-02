@@ -461,7 +461,9 @@ class Game {
 
     this.ws.on('drawOffered', (data) => {
       document.getElementById('drawOfferPanel').style.display = 'flex';
-      this.showArbiterMessage('Your opponent offers a draw.');
+      // Server-rendered: a plain offer says "Your opponent offers a draw."; a rejected claim
+      // converted per FIDE 9.5 explains the claim and that it still counts as an offer.
+      this.showArbiterMessage(data.message || 'Your opponent offers a draw.');
     });
 
     // Bare acknowledgment to the offering player after a correct-time draw offer:
@@ -488,7 +490,7 @@ class Game {
     });
 
     this.ws.on('drawClaimResult', (data) => {
-      this.showArbiterMessage(data.message, data.invalidMove || data.wrongTime ? 'error' : null);
+      this.showArbiterMessage(data.message, data.invalidMove || data.wrongTime || data.repeatClaim ? 'error' : null);
       if (data.invalidMove) {
         const input = document.getElementById('sanInput');
         if (input) {
@@ -496,17 +498,22 @@ class Game {
           input.focus();
         }
       } else if (data.wrongTime) {
-        // Claim while not having the move: deliberately NO lock — the buttons stay enabled so
-        // the player can repeat the fault and learn from the arbiter's escalation (rejection,
-        // warning, then loss of the game). The reset also covers the race where the client
-        // thought it was on move but the server disagreed.
+        // Claim while not having the move: not a completed claim — the once-per-move flag stays
+        // off (also covers the race where the client thought it was on move but the server
+        // disagreed). Buttons remain enabled; the arbiter escalation does the teaching.
         this.claimMadeThisTurn = false;
         this.pendingClaimWithMoveType = null;
-        this.updateButtons();
+        this.hideSanInput();
+      } else if (data.repeatClaim) {
+        // Second claim on the same move: the flag stays ON (a further press goes straight to
+        // the arbiter, which will end the game). Buttons deliberately remain enabled.
+        this.claimMadeThisTurn = true;
+        this.pendingClaimWithMoveType = null;
         this.hideSanInput();
       } else {
-        // The claim has resolved for this turn. The server-side claim ledger now owns the
-        // once-per-turn state; the UI stays locked until a new turn starts.
+        // The claim resolved (accepted or rejected on the merits). Remember it so further
+        // presses this turn skip the SAN prompt and go straight to the arbiter's escalation —
+        // the buttons stay enabled (teaching philosophy), only the server counts violations.
         this.claimMadeThisTurn = true;
         this.pendingClaimWithMoveType = null;
         this.updateButtons();
@@ -530,6 +537,9 @@ class Game {
       Game.clearSession();
       this.board.setEnabled(false);
       this.updateButtons();
+      // A pending draw offer dies with the game (e.g. a rejected claim was forwarded as an
+      // offer and the claimer then lost by escalation) — no Accept/Reject on a finished game.
+      document.getElementById('drawOfferPanel').style.display = 'none';
       // Game has ended — drop the PAUSE overlay because no further clockUpdate
       // will arrive to clear it via the updateClocks path.
       const clockEl = document.getElementById('chessClock');
@@ -898,33 +908,30 @@ class Game {
   }
 
   sendClaimOnBoard(claimType) {
-    if (!this.gameActive || this.claimMadeThisTurn) return;
-    if (!this.isMyTurn) {
-      // Wrong-time claim (FIDE 9.2/9.3 require the move): deliberately let it through WITHOUT
-      // the once-per-turn lock — our philosophy is to let the player make the fault and learn
-      // from the arbiter's escalation (rejection, warning, then loss of the game).
+    if (!this.gameActive) return;
+    if (!this.isMyTurn || this.claimMadeThisTurn) {
+      // Procedural fault — claiming while not having the move, or a second claim on the same
+      // move: deliberately let it through — our philosophy is to let the player make the fault
+      // and learn from the arbiter's escalation (rejection/warning, then loss of the game).
       this.ws.sendClaimDraw(claimType);
       return;
     }
-    this.claimMadeThisTurn = true;
     this.pendingClaimWithMoveType = null;
     this.hideSanInput();
-    this.updateButtons();
     this.ws.sendClaimDraw(claimType);
   }
 
   beginClaimWithMove(claimType, label) {
-    if (!this.gameActive || this.claimMadeThisTurn) return;
-    if (!this.isMyTurn) {
-      // Wrong-time claim: no SAN prompt (the claim is rejected regardless of any move) and no
-      // lock — send it straight to the arbiter so the escalation can play out.
+    if (!this.gameActive) return;
+    if (!this.isMyTurn || this.claimMadeThisTurn) {
+      // Procedural fault (wrong time / repeat on the same move): no SAN prompt — the claim is
+      // rejected regardless of any move — send it straight to the arbiter so the escalation
+      // can play out.
       this.ws.sendClaimDraw(claimType);
       return;
     }
-    this.claimMadeThisTurn = true;
     this.pendingClaimWithMoveType = claimType;
     this.showSanInput(label);
-    this.updateButtons();
   }
 
   showSanInput(label) {
@@ -1034,8 +1041,10 @@ class Game {
     document.getElementById('offerDrawBtn').disabled = !this.gameActive;
     document.getElementById('resignBtn').disabled = !this.gameActive;
     document.getElementById('requestPieceBtn').disabled = !this.gameActive;
-    // Claim buttons are disabled once a claim has been committed on this turn.
-    const claimsAllowed = this.gameActive && !this.claimMadeThisTurn;
+    // Claim buttons stay enabled for the whole game (teaching philosophy: faults are allowed
+    // and the arbiter escalates — see A-003/A-004 in docs/fide-deviations.md). They only die
+    // with the game itself.
+    const claimsAllowed = this.gameActive;
     document.getElementById('claimThreefoldOnBoardBtn').disabled = !claimsAllowed;
     document.getElementById('claimThreefoldWithMoveBtn').disabled = !claimsAllowed;
     document.getElementById('claimFiftyMoveOnBoardBtn').disabled = !claimsAllowed;

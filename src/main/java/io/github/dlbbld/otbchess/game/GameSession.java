@@ -80,6 +80,14 @@ public class GameSession {
   private static final int WRONG_TIME_CLAIM_LIMIT = 3;
   private final Map<Side, Integer> wrongTimeClaimCounts = new EnumMap<>(Side.class);
 
+  // Second-or-later claims on the SAME move (FIDE 9.2/9.3 allow one claim per move). Same
+  // philosophy: buttons stay enabled; the first violation gets the warning immediately (the
+  // player already used their legitimate claim), the second loses the game. Violations are
+  // counted per player across the whole game — a legitimate single claim on a later move is
+  // never a violation, but a repeated one after the warning loses.
+  private static final int REPEAT_CLAIM_VIOLATION_LIMIT = 2;
+  private final Map<Side, Integer> repeatClaimViolationCounts = new EnumMap<>(Side.class);
+
   // FIDE 9.5.3: an incorrect draw claim adds 2 minutes to the opponent's clock.
   // (Article-9 of the Competitive Rules of Play; rapid/blitz Appendix A.3 reduces this
   // to 1 minute — not differentiated here, see fide-deviations.md.)
@@ -521,9 +529,21 @@ public class GameSession {
           + "Claims must be made before any piece interaction.");
     }
     if (claimMadeThisTurn) {
-      return DrawClaimResult.rejectedWithoutDrawOffer(
-          "You have already made a draw claim on this move. Only one claim per move is allowed.",
-          "Your opponent attempted a second draw claim on the same move. The claim was rejected.");
+      // FIDE 9.2/9.3 allow one claim per move. The buttons stay enabled (see
+      // repeatClaimViolationCounts) and the arbiter escalates: warning on the first repeat
+      // (the legitimate claim was already used), loss of the game on the next.
+      final int violations = repeatClaimViolationCounts.merge(side, 1, Integer::sum);
+      if (violations >= REPEAT_CLAIM_VIOLATION_LIMIT) {
+        endGame(new GameResult(GameResultType.REPEAT_CLAIM_GAME_LOST, side.getOppositeSide(),
+            sideName(side) + " loses the game by repeatedly claiming a draw on the same move."));
+        return DrawClaimResult.rejectedWithoutDrawOffer(
+            "You have been warned that you will lose the game when you claim a draw again on the same move."
+                + " As you have claimed a draw again, you lose the game.",
+            "Your opponent has, despite the warnings, repeatedly claimed a draw on the same move, and so has"
+                + " lost the game.");
+      }
+      return DrawClaimResult.repeatClaim("You cannot make more than one draw claim on your move. You are warned:"
+          + " the next draw claim on a move you have already claimed on loses the game.");
     }
 
     final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);

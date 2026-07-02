@@ -883,20 +883,64 @@ class TestGameSession {
     assertEquals("The game is drawn by threefold repetition.", session.getResult().description());
   }
 
+  /**
+   * FIDE 9.2/9.3 allow one claim per move; repeats escalate instead of locking the buttons (teaching philosophy):
+   * warning on the first repeat (the legitimate claim was already used), loss of the game on the next.
+   */
   @Test
-  void testSecondClaimOnSameMoveIsRejected() {
+  void testRepeatClaimOnSameMoveEscalatesToGameLoss() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
-    // First claim from the initial position is rejected (no threefold). It is now committed
-    // for this turn — a second claim must be refused.
+    // First claim from the initial position is rejected on the merits (no threefold) and is the
+    // one legitimate claim for this move.
     final DrawClaimResult first = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
     assertFalse(first.accepted());
+    assertFalse(first.repeatClaim());
 
+    // Second claim on the same move: rejected with the warning, privately (no opponent notice).
     final DrawClaimResult second = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
     assertFalse(second.accepted());
-    assertTrue(second.message().contains("already made a draw claim"));
-    assertTrue(second.opponentMessage().isPresent());
-    assertTrue(second.opponentMessage().get().contains("second draw claim"));
+    assertTrue(second.repeatClaim());
+    assertTrue(second.message().contains("You cannot make more than one draw claim on your move"));
+    assertTrue(second.message().contains("You are warned"));
+    assertTrue(second.opponentMessage().isEmpty());
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    // Third claim: the game is lost.
+    final DrawClaimResult third = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(third.accepted());
+    assertTrue(third.message().contains("you lose the game"));
+    assertTrue(third.opponentMessage().get().contains("repeatedly claimed a draw on the same move"));
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.REPEAT_CLAIM_GAME_LOST, session.getResult().type());
+    assertEquals(Side.BLACK, session.getResult().winner());
+  }
+
+  /**
+   * The repeat-claim warning persists across turns, but a legitimate single claim on a later move is never a
+   * violation — only ANOTHER repeat after the warning loses the game.
+   */
+  @Test
+  void testRepeatClaimWarningPersistsButLegitimateClaimsStayAllowed() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    final DrawClaimResult warned = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(warned.repeatClaim()); // White is now warned
+
+    // Play a move pair; on White's next move a SINGLE claim is legitimate — no loss.
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN); // 1. e4
+    makeMove(session, Square.E7, Square.E5, Piece.BLACK_PAWN); // 1... e5
+    final DrawClaimResult legit = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(legit.repeatClaim());
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    // But a repeat on THIS move is the second violation — game lost.
+    final DrawClaimResult fatal = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertFalse(fatal.accepted());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.REPEAT_CLAIM_GAME_LOST, session.getResult().type());
+    assertEquals(Side.BLACK, session.getResult().winner());
   }
 
   @Test

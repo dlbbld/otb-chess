@@ -20,40 +20,42 @@ import io.github.dlbbld.ashlarchess.board.MoveSpecification;
  * @param wrongTime           true iff the claim was made while not having the move. The client keeps the claim buttons
  *                            ENABLED in this case (teaching philosophy: the player may repeat the fault and learn from
  *                            the arbiter's escalation — rejection, warning, then loss of the game)
+ * @param repeatClaim         true iff the claim was a second-or-later claim on the same move (FIDE 9.2/9.3 allow one
+ *                            per move). Same philosophy as {@code wrongTime}: the buttons stay enabled and the arbiter
+ *                            escalates (warning, then loss of the game)
  */
 public record DrawClaimResult(boolean accepted, String message, Optional<String> opponentMessage,
     Optional<String> gameEndDescription, Optional<MoveSpecification> moveToPerform, boolean invalidMove,
-    boolean convertsToDrawOffer, boolean wrongTime) {
+    boolean convertsToDrawOffer, boolean wrongTime, boolean repeatClaim) {
 
   public static DrawClaimResult accepted(String message, String opponentMessage, String gameEndDescription) {
     return new DrawClaimResult(true, message, Optional.of(opponentMessage), Optional.of(gameEndDescription),
-        Optional.empty(), false, false, false);
+        Optional.empty(), false, false, false, false);
   }
 
   public static DrawClaimResult rejected(String message, String opponentMessage) {
     return new DrawClaimResult(false, message, Optional.of(opponentMessage), Optional.empty(), Optional.empty(), false,
-        true, false);
+        true, false, false);
   }
 
   public static DrawClaimResult rejectedWithMove(String message, String opponentMessage,
       MoveSpecification moveToPerform) {
     return new DrawClaimResult(false, message, Optional.of(opponentMessage), Optional.empty(),
-        Optional.of(moveToPerform), false, true, false);
+        Optional.of(moveToPerform), false, true, false, false);
   }
 
   /** Player's SAN failed validation. No opponent notification, no draw-offer conversion. */
   public static DrawClaimResult invalidMove(String message) {
     return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), true, false,
-        false);
+        false, false);
   }
 
   /**
-   * Used for non-FIDE-claim error paths (e.g. game not in progress, second claim on same move): rejection without
-   * converting to a draw offer.
+   * Used for non-FIDE-claim error paths (e.g. a game-ending violation): rejection without converting to a draw offer.
    */
   public static DrawClaimResult rejectedWithoutDrawOffer(String message, String opponentMessage) {
     return new DrawClaimResult(false, message, Optional.of(opponentMessage), Optional.empty(), Optional.empty(), false,
-        false, false);
+        false, false, false);
   }
 
   /**
@@ -63,12 +65,22 @@ public record DrawClaimResult(boolean accepted, String message, Optional<String>
    */
   public static DrawClaimResult wrongTime(String message) {
     return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), false, false,
-        true);
+        true, false);
+  }
+
+  /**
+   * Second-or-later claim on the same move (FIDE 9.2/9.3 allow one claim per move). No opponent notification, no
+   * draw-offer conversion; the {@code repeatClaim} flag keeps the client's claim buttons enabled so the escalation
+   * (warning, then game loss) can play out.
+   */
+  public static DrawClaimResult repeatClaim(String message) {
+    return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), false, false,
+        false, true);
   }
 
   /** Internal pre-claim error (no opponent notification). */
   public static DrawClaimResult error(String message) {
     return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), false, false,
-        false);
+        false, false);
   }
 }

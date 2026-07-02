@@ -83,6 +83,37 @@ test('wrong-time with-move claim skips the SAN prompt; counts are per player; cl
   await expect(white.locator('#drawOfferPanel')).toBeVisible();
 });
 
+test('repeat claims on the same move escalate: warning, then loss of the game', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // White (on move) uses their one legitimate claim — rejected on the merits, forwarded to
+  // Black as a draw offer. The claim buttons stay ENABLED.
+  await claimThreefoldOnBoard(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('rejected');
+  await expect(black.locator('#drawOfferPanel')).toBeVisible();
+  await expect(white.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
+  await expect(white.locator('#claimFiftyMoveWithMoveBtn')).toBeEnabled();
+
+  // Second claim on the same move: the warning — straight at the button, even for a with-move
+  // claim (no SAN prompt; the claim is refused regardless of any move).
+  await white.locator('#claimFiftyMoveWithMoveBtn').click();
+  await expect(white.locator('#arbiterMessage')).toContainText('cannot make more than one draw claim');
+  await expect(white.locator('#arbiterMessage')).toContainText('You are warned');
+  await expect(white.locator('#sanInputPanel')).toBeHidden();
+  await expect(white.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
+
+  // Third claim: White loses the game; Black is told why.
+  await claimFiftyMoveOnBoard(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('you lose the game');
+  await expect(black.locator('#arbiterMessage')).toContainText('repeatedly claimed a draw on the same move');
+  await expectGameResult(white, '0-1');
+  await expectGameResult(black, '0-1');
+  await expect(black.locator('#gameResultReason')).toContainText('repeatedly claiming a draw on the same move');
+  // The pending draw offer died with the game — no Accept/Reject on a finished game.
+  await expect(black.locator('#drawOfferPanel')).toBeHidden();
+});
+
 // ---- 50-move rule ------------------------------------------------------------------------------
 
 test('50-move claim on a qualifying position draws the game and informs the opponent', async ({ browser }) => {
@@ -165,8 +196,11 @@ test('50-move claim with a legal move that does not satisfy the rule is rejected
   await claimFiftyMoveWithMove(white, 'Rd1'); // legal, but the rule is nowhere near satisfied
 
   await expect(white.locator('#arbiterMessage')).toContainText('Claim rejected');
-  // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer.
-  await expect(black.locator('#arbiterMessage')).toContainText(/offers a draw/i);
+  // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer — announced with
+  // what actually happened, not a bare "offers a draw".
+  await expect(black.locator('#arbiterMessage')).toContainText(
+    'claimed a draw by the 50-move rule with the move Rd1');
+  await expect(black.locator('#arbiterMessage')).toContainText('still counts as a draw offer');
   await expect(black.locator('#drawOfferPanel')).toBeVisible();
   await expect(white.locator('#gameResultPanel')).toBeHidden();
 });
@@ -180,8 +214,11 @@ test('threefold claim without a repetition is rejected and informs the opponent'
   await claimThreefoldOnBoard(white);
 
   await expect(white.locator('#arbiterMessage')).toContainText('rejected');
-  // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer.
-  await expect(black.locator('#arbiterMessage')).toContainText(/offers a draw/i);
+  // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer — announced with
+  // what actually happened, not a bare "offers a draw".
+  await expect(black.locator('#arbiterMessage')).toContainText(
+    'claimed a draw by threefold repetition of the current position');
+  await expect(black.locator('#arbiterMessage')).toContainText('still counts as a draw offer');
   await expect(black.locator('#drawOfferPanel')).toBeVisible();
   await expect(white.locator('#gameResultPanel')).toBeHidden();
 });
@@ -204,8 +241,11 @@ test('threefold claim with a legal move that creates no repetition is rejected a
   await claimThreefoldWithMove(white, 'Nf3'); // legal move, but no repetition results
 
   await expect(white.locator('#arbiterMessage')).toContainText(/reject/i);
-  // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer.
-  await expect(black.locator('#arbiterMessage')).toContainText(/offers a draw/i);
+  // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer — announced with
+  // what actually happened, not a bare "offers a draw".
+  await expect(black.locator('#arbiterMessage')).toContainText(
+    'claimed a draw by threefold repetition with the move Nf3');
+  await expect(black.locator('#arbiterMessage')).toContainText('still counts as a draw offer');
   await expect(black.locator('#drawOfferPanel')).toBeVisible();
   await expect(white.locator('#gameResultPanel')).toBeHidden();
 });

@@ -646,9 +646,18 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendDrawOfferToOpponent(GameRoom room, Side offeringSide) {
+    sendDrawOfferToOpponent(room, offeringSide, "Your opponent offers a draw.");
+  }
+
+  /**
+   * Variant with a custom message — used when a rejected draw claim converts into a draw offer (FIDE 9.5), so the
+   * opponent sees what actually happened ("your opponent claimed … not valid … still counts as a draw offer") instead
+   * of a bare "your opponent offers a draw".
+   */
+  private void sendDrawOfferToOpponent(GameRoom room, Side offeringSide, String message) {
     final JsonObject drawMsg = new JsonObject();
     drawMsg.addProperty("type", "drawOffered");
-    drawMsg.addProperty("message", "Your opponent offers a draw.");
+    drawMsg.addProperty("message", message);
     room.sendToSide(offeringSide.getOppositeSide(), GSON.toJson(drawMsg));
   }
 
@@ -736,25 +745,26 @@ public class GameWebSocketServer extends WebSocketServer {
     response.addProperty("message", result.message());
     response.addProperty("invalidMove", result.invalidMove());
     response.addProperty("wrongTime", result.wrongTime());
+    response.addProperty("repeatClaim", result.repeatClaim());
     if (result.moveToPerform().isPresent()) {
       response.addProperty("mustExecuteMove", result.moveToPerform().get().toString());
     }
     conn.send(GSON.toJson(response));
 
-    // Opponent gets a separate notification (the claim event happened on their counterpart's
-    // side; they need to know it occurred and what its outcome was).
-    if (result.opponentMessage().isPresent()) {
+    // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. The session already
+    // registered the offer; broadcast it with the claim-specific text ("claimed … not valid …
+    // still counts as a draw offer. Do you accept?") so the opponent gets ONE accurate message
+    // together with the Accept/Reject panel — not a claim notification overwritten by a bare
+    // "your opponent offers a draw".
+    if (result.convertsToDrawOffer()) {
+      sendDrawOfferToOpponent(room, side,
+          result.opponentMessage().orElse("Your opponent offers a draw."));
+    } else if (result.opponentMessage().isPresent()) {
+      // Non-converting outcomes (accepted claim, game-ending violation, …): plain notification.
       final JsonObject opponentMsg = new JsonObject();
       opponentMsg.addProperty("type", "drawClaimOpponent");
       opponentMsg.addProperty("message", result.opponentMessage().get());
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
-    }
-
-    // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. The session
-    // already registered the offer; broadcast it so the opponent gets the standard
-    // Accept/Reject panel and the touch-piece invalidation flow.
-    if (result.convertsToDrawOffer()) {
-      sendDrawOfferToOpponent(room, side);
     }
 
     checkGameEnded(room);

@@ -117,3 +117,21 @@ The opponent is not notified of the first two (they are private mistakes, consis
 **Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_TIME_CLAIM_LIMIT"); the client keeps the buttons enabled via the `wrongTime` flag on `drawClaimResult`.
 
 **Rationale**: Same as A-001 — arbiter judgment must be encoded, an explicit three-strike threshold is transparent, and disabling the buttons would prevent the fault instead of teaching from it.
+
+---
+
+### A-004 — Repeat-claim (same move) escalation
+
+**FIDE**: Articles 9.2 / 9.3 — one draw claim per move. FIDE has no penalty ladder for claiming twice on the same move; an arbiter would refuse and, on repetition, escalate under Articles 11.5 / 12.9.
+
+**Our policy**: Mirrors [A-003](#a-003--wrong-time-draw-claim-escalation), with one step less: the player's FIRST claim on the move was legitimate, so the first repeat already carries the warning.
+
+1. First claim on a move: processed on the merits (FIDE 9.2/9.3). If rejected, it is forwarded to the opponent as a draw offer per FIDE 9.5 — announced to the opponent with what actually happened ("your opponent claimed a draw by …, but the claim is not valid. It still counts as a draw offer. Do you accept the draw?"), not a bare "your opponent offers a draw".
+2. Second claim on the same move: rejected with a warning — the next repeat loses the game.
+3. Next repeat (any move; the warning, once given, stands): **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated claims on the same move.
+
+The claim buttons stay **enabled** throughout; violations are counted per player across the whole game. A legitimate single claim on a later move is never a violation. The opponent is not notified of the warning (a private mistake); only the game-ending repeat produces an opponent message.
+
+**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "REPEAT_CLAIM_VIOLATION_LIMIT"); the client keeps the buttons enabled via the `repeatClaim` flag on `drawClaimResult`.
+
+**Rationale**: Same as A-001/A-003. The warning comes one step earlier than in A-003 because the player has already exercised their legitimate claim on that move — the repeat is unambiguous.
