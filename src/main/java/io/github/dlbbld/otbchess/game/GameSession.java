@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.game;
 
+import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -70,6 +72,13 @@ public class GameSession {
   // attempt is processed (accepted or rejected, but not when the SAN was invalid — the
   // player hasn't actually completed an attempt yet). Reset on startNewTurn().
   private boolean claimMadeThisTurn;
+
+  // Claims while NOT having the move (FIDE 9.2/9.3 require the move). Teaching philosophy: the
+  // claim buttons stay enabled so the player can repeat the fault and learn — the arbiter
+  // escalates instead: plain rejection, then a warning, then loss of the game on the third
+  // wrong-time claim. Counted per player across the whole game (a warning, once given, stands).
+  private static final int WRONG_TIME_CLAIM_LIMIT = 3;
+  private final Map<Side, Integer> wrongTimeClaimCounts = new EnumMap<>(Side.class);
 
   // FIDE 9.5.3: an incorrect draw claim adds 2 minutes to the opponent's clock.
   // (Article-9 of the Competitive Rules of Play; rapid/blitz Appendix A.3 reduces this
@@ -483,8 +492,25 @@ public class GameSession {
       return DrawClaimResult.error("You cannot claim a draw now.");
     }
     if (side != board.getSideToMove()) {
-      // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is.
-      return DrawClaimResult.error("You cannot claim a draw when not having the move.");
+      // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is. (Offering a
+      // draw is different — an offer is possible at any time; a CLAIM requires the move.) The
+      // buttons stay enabled (see wrongTimeClaimCounts) and the arbiter escalates: rejection,
+      // then a warning, then loss of the game on the third wrong-time claim.
+      final int count = wrongTimeClaimCounts.merge(side, 1, Integer::sum);
+      if (count >= WRONG_TIME_CLAIM_LIMIT) {
+        endGame(new GameResult(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, side.getOppositeSide(),
+            sideName(side) + " loses the game by repeatedly claiming a draw when not having the move."));
+        return DrawClaimResult.rejectedWithoutDrawOffer(
+            "You have been warned that you will lose the game when you claim a draw again while not having the"
+                + " move. As you have claimed a draw again, you lose the game.",
+            "Your opponent has, despite the warnings, repeatedly requested to claim a draw while not having the"
+                + " move, and so has lost the game.");
+      }
+      if (count == WRONG_TIME_CLAIM_LIMIT - 1) {
+        return DrawClaimResult.wrongTime("You cannot claim a draw when not having the move. Warning: your next"
+            + " draw claim when not having the move loses the game.");
+      }
+      return DrawClaimResult.wrongTime("You cannot claim a draw when not having the move.");
     }
     if (!currentSequence.isEmpty()) {
       // FIDE 9.4: the player loses the right to claim under 9.2 / 9.3 once any piece has

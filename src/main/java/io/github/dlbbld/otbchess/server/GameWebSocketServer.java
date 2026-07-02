@@ -735,6 +735,7 @@ public class GameWebSocketServer extends WebSocketServer {
     response.addProperty("accepted", result.accepted());
     response.addProperty("message", result.message());
     response.addProperty("invalidMove", result.invalidMove());
+    response.addProperty("wrongTime", result.wrongTime());
     if (result.moveToPerform().isPresent()) {
       response.addProperty("mustExecuteMove", result.moveToPerform().get().toString());
     }

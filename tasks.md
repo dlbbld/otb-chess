@@ -92,6 +92,17 @@ public launch. Released as **v0.1.1** (still beta).
   `version.properties` on the classpath (works in every run mode: `java -jar`, `start.bat`, IDE),
   with the manifest as fallback. Verified `{"version":"0.1.1"}` in both run modes; pinned by
   `TestOtbChessServer` (fails if the filtering ever stops running).
+- [x] **Wrong-time draw claims escalate instead of locking the buttons** (documented as
+  [A-003](docs/fide-deviations.md) — mirrors A-001 for wrong-time offers). Teaching philosophy:
+  the claim buttons stay *enabled* for the player not having the move so the fault can be made
+  and learned from. Escalation (counted per player across the game, no reset): 1st wrong-time
+  claim → rejection; 2nd → rejection + warning ("your next draw claim when not having the move
+  loses the game"); 3rd → **loss** (`WRONG_TIME_CLAIM_GAME_LOST`, personalised messages: offender
+  "you have been warned … you lose the game", opponent "repeatedly requested to claim a draw …
+  and so has lost the game"). Opponent hears nothing on the first two (private mistakes). New
+  `wrongTime` flag on `drawClaimResult` keeps the client from locking; with-move buttons skip the
+  SAN prompt when not on move. Unit tests (escalation + persistence across turns) and e2e (full
+  three-press flow, buttons asserted enabled between presses).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

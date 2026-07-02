@@ -534,6 +534,61 @@ class TestGameSession {
   }
 
   /**
+   * Claims while not having the move escalate instead of locking the buttons (teaching philosophy: the player may
+   * repeat the fault): plain rejection, then a warning, then loss of the game on the third wrong-time claim.
+   */
+  @Test
+  void testWrongTimeClaimEscalatesToGameLoss() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // White has the move; BLACK claims. First: plain rejection, marked wrongTime (no button lock).
+    final DrawClaimResult first = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(first.accepted());
+    assertTrue(first.wrongTime());
+    assertEquals("You cannot claim a draw when not having the move.", first.message());
+    assertTrue(first.opponentMessage().isEmpty()); // the opponent is not disturbed
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    // Second: same rejection plus the warning.
+    final DrawClaimResult second = session.claimDraw(Side.BLACK, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertTrue(second.wrongTime());
+    assertTrue(second.message().contains("Warning: your next draw claim when not having the move loses the game"));
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    // Third: the game is lost.
+    final DrawClaimResult third = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(third.accepted());
+    assertTrue(third.message().contains("you lose the game"));
+    assertTrue(third.opponentMessage().get().contains("repeatedly requested to claim a draw"));
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, session.getResult().type());
+    assertEquals(Side.WHITE, session.getResult().winner());
+  }
+
+  /** The wrong-time claim count survives turn changes — a warning, once given, stands for the whole game. */
+  @Test
+  void testWrongTimeClaimCountPersistsAcrossTurns() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    final DrawClaimResult second = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(second.message().contains("Warning"));
+
+    // Play a full move pair; Black's wrong-time count must not reset.
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN); // 1. e4
+    makeMove(session, Square.E7, Square.E5, Piece.BLACK_PAWN); // 1... e5
+
+    // White has the move again; Black's third wrong-time claim loses the game.
+    final DrawClaimResult third = session.claimDraw(Side.BLACK, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertFalse(third.accepted());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, session.getResult().type());
+    assertEquals(Side.WHITE, session.getResult().winner());
+  }
+
+  /**
    * Plays an eight-half-move knight shuffle (Nf3 Nf6 Ng1 Ng8 ×2) so the initial position has occurred 3 times. White is
    * to move. From here white's `Nf3` would create the 3rd occurrence of position-after-1.Nf3 ⇒
    * `canClaimThreefoldRepetitionRuleWithOwnMove()` is true. This keeps the with-move short-circuit from firing and lets

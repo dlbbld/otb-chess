@@ -488,13 +488,22 @@ class Game {
     });
 
     this.ws.on('drawClaimResult', (data) => {
-      this.showArbiterMessage(data.message, data.invalidMove ? 'error' : null);
+      this.showArbiterMessage(data.message, data.invalidMove || data.wrongTime ? 'error' : null);
       if (data.invalidMove) {
         const input = document.getElementById('sanInput');
         if (input) {
           input.value = '';
           input.focus();
         }
+      } else if (data.wrongTime) {
+        // Claim while not having the move: deliberately NO lock — the buttons stay enabled so
+        // the player can repeat the fault and learn from the arbiter's escalation (rejection,
+        // warning, then loss of the game). The reset also covers the race where the client
+        // thought it was on move but the server disagreed.
+        this.claimMadeThisTurn = false;
+        this.pendingClaimWithMoveType = null;
+        this.updateButtons();
+        this.hideSanInput();
       } else {
         // The claim has resolved for this turn. The server-side claim ledger now owns the
         // once-per-turn state; the UI stays locked until a new turn starts.
@@ -890,6 +899,13 @@ class Game {
 
   sendClaimOnBoard(claimType) {
     if (!this.gameActive || this.claimMadeThisTurn) return;
+    if (!this.isMyTurn) {
+      // Wrong-time claim (FIDE 9.2/9.3 require the move): deliberately let it through WITHOUT
+      // the once-per-turn lock — our philosophy is to let the player make the fault and learn
+      // from the arbiter's escalation (rejection, warning, then loss of the game).
+      this.ws.sendClaimDraw(claimType);
+      return;
+    }
     this.claimMadeThisTurn = true;
     this.pendingClaimWithMoveType = null;
     this.hideSanInput();
@@ -899,6 +915,12 @@ class Game {
 
   beginClaimWithMove(claimType, label) {
     if (!this.gameActive || this.claimMadeThisTurn) return;
+    if (!this.isMyTurn) {
+      // Wrong-time claim: no SAN prompt (the claim is rejected regardless of any move) and no
+      // lock — send it straight to the arbiter so the escalation can play out.
+      this.ws.sendClaimDraw(claimType);
+      return;
+    }
     this.claimMadeThisTurn = true;
     this.pendingClaimWithMoveType = claimType;
     this.showSanInput(label);

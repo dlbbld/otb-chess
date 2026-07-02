@@ -99,3 +99,21 @@ The trigger is **"touching a piece with the intention of moving or capturing it.
 **Rationale**: The asymmetry encodes "intention to move" reasonably for the two contexts. A correct-time offer interrupts a moment of stillness; the recipient's first touch is intentional and committal. A wrong-time offer arrives during active play; the recipient may touch many pieces while thinking before committing, and only a *completed* move signals decision.
 
 **Acknowledged tension**: A wrong-time offer plus a recipient who has already released a move (per FIDE 4.7) but hasn't pressed the clock is currently rejected by the system as "too late to accept." This is a side effect of [D-001](#d-001-clock-press-as-the-move-boundary): in our model the move is "made" only at clock-press, so the post-release / pre-clock-press window is unreachable for offer acceptance. A FIDE-strict implementation would allow acceptance up to clock-press.
+
+---
+
+### A-003 — Wrong-time draw-claim escalation
+
+**FIDE**: Articles 9.2 / 9.3 — a draw claim (threefold repetition / 50-move rule) can only be made by the player **having the move**. (An *offer* is different: possible at any time, covered by A-001/A-002.) FIDE itself has no penalty ladder for claiming out of turn; an arbiter would simply say "it's not your move" and, on repetition, escalate under Articles 11.5 / 12.9.
+
+**Our policy**: Mirrors [A-001](#a-001-draw-offer-abuse-threshold). The claim buttons stay **enabled** for the player not having the move (teaching philosophy: the player may make the fault and learn from the response). Wrong-time claims then escalate, counted per player across the whole game:
+
+1. First claim: rejected — "You cannot claim a draw when not having the move."
+2. Second claim: same rejection plus a warning — the next wrong-time claim loses the game.
+3. Third claim: **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated wrong-time claims despite warnings.
+
+The opponent is not notified of the first two (they are private mistakes, consistent with minimal intervention); only the game-ending third produces an opponent message.
+
+**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_TIME_CLAIM_LIMIT"); the client keeps the buttons enabled via the `wrongTime` flag on `drawClaimResult`.
+
+**Rationale**: Same as A-001 — arbiter judgment must be encoded, an explicit three-strike threshold is transparent, and disabling the buttons would prevent the fault instead of teaching from it.

@@ -24,6 +24,35 @@ const FIFTY_ONE_AWAY = '4k3/8/8/8/3R4/8/8/4K3 w - - 99 51'; // 99 -> a quiet mov
 const FIFTY_FAR = '4k3/8/8/8/3R4/8/8/4K3 w - - 0 1'; // nowhere near the rule
 const SEVENTYFIVE_ONE_AWAY = '4k3/8/8/8/3R4/8/8/4K3 w - - 149 100'; // 149 -> a quiet move makes 150
 
+// ---- Claims while not having the move ----------------------------------------------------------
+
+test('wrong-time claims escalate: rejection, warning, then loss of the game', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // White has the move. Black presses a claim button anyway — rejected, but per the teaching
+  // philosophy the buttons stay ENABLED so the fault can be repeated.
+  await claimThreefoldOnBoard(black);
+  await expect(black.locator('#arbiterMessage')).toContainText('cannot claim a draw when not having the move');
+  await expect(black.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
+  await expect(black.locator('#claimFiftyMoveOnBoardBtn')).toBeEnabled();
+
+  // Second press: same rejection plus the warning. (A with-move button skips the SAN prompt —
+  // the claim is rejected regardless of any move.)
+  await claimFiftyMoveOnBoard(black);
+  await expect(black.locator('#arbiterMessage')).toContainText(
+    'Warning: your next draw claim when not having the move loses the game');
+  await expect(black.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
+
+  // Third press: Black loses the game; White is told why.
+  await claimThreefoldOnBoard(black);
+  await expect(black.locator('#arbiterMessage')).toContainText('you lose the game');
+  await expect(white.locator('#arbiterMessage')).toContainText('repeatedly requested to claim a draw');
+  await expectGameResult(black, '1-0');
+  await expectGameResult(white, '1-0');
+  await expect(black.locator('#gameResultReason')).toContainText('repeatedly claiming a draw');
+});
+
 // ---- 50-move rule ------------------------------------------------------------------------------
 
 test('50-move claim on a qualifying position draws the game and informs the opponent', async ({ browser }) => {
