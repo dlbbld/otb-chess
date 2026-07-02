@@ -78,6 +78,14 @@ public launch. Released as **v0.1.1** (still beta).
   New message keys `arbiter.released_piece.from.player/opponent`; `ReleasedPieceContext` carries
   `fromSquare` (NONE for side-area/promotion placements); ambiguity computed in `ArbiterEngine`
   from the legal moves. Unit-tested (ambiguous + unambiguous cases in `TestArbiterEngine`).
+- [x] **Show the time control with its FIDE discipline on the board page.** A muted label like
+  `5+3 • Blitz` (Lichess-style display) in the right column's lower spacer — vertically centered
+  below the clock, about level with the bottom edge of the board, on the board side in both views.
+  FIDE classification (Appendices A/B, initial + 60× increment): blitz ≤ 10 min, rapid < 60 min,
+  classical ≥ 60 min — so 30+0 is *rapid*. Server-rendered (`TimeControl.fideCategory/label/
+  displayLabel`, unit-tested incl. boundaries in `TestTimeControl`) and sent as `timeControlLabel`
+  on `gameCreated`/`gameJoined`/`resync` (so a refresh keeps it); unused, FIDE-misnamed
+  `TimeControl` presets (`CLASSICAL_30_0`) dropped. e2e asserts both players see `3+0 • Blitz`.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

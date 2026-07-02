@@ -715,6 +715,8 @@ For `move_accepted`, the `move` block carries `from`, `to`, `piece`. **Castling 
 
 For `gameJoined` and `gameStarted`, a `havingMove` field carries the side to move at game start (necessary for custom-FEN games where Black may be to move first).
 
+For `gameCreated`, `gameJoined`, and `resync`, a `timeControlLabel` field carries the server-rendered display label of the game's time control with its FIDE discipline, e.g. `5+3 • Blitz` (FIDE Appendices A/B: initial time + 60× increment — blitz ≤ 10 min, rapid < 60 min, classical otherwise). The client shows it verbatim below the clock.
+
 ### Severity / `style` field
 
 The `style` field on outbound messages drives the colour of the arbiter panel: `error` (red), `warning` (yellow), `info` (default), `success` (green). Messages that carry a `style` field today:

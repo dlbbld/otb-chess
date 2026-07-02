@@ -177,6 +177,13 @@ class Game {
     }
   }
 
+  // Ambient game info below the clock: the time control plus its FIDE discipline, e.g.
+  // "5+3 • Blitz". Server-rendered (see TimeControl.displayLabel) and identical for both players.
+  setTimeControlLabel(label) {
+    const el = document.getElementById('timeControlLabel');
+    if (el && label) el.textContent = label;
+  }
+
   onClockButtonPressed(position) {
     if (!this.gameActive) return;
 
@@ -208,6 +215,7 @@ class Game {
       this.board.setPosition(data.board);
       this.board.renderAll();
       this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
       this.showArbiterMessage('Game created. Waiting for opponent...');
       this.clearArbiterButtons();
@@ -229,6 +237,7 @@ class Game {
       this.board.setPosition(data.board);
       this.board.renderAll();
       this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
       // Persist so a refresh resumes this joined game rather than re-joining (which would fail).
       Game.saveSession({ gameId: data.gameId, token: data.token, side: data.side, isCreator: false });
@@ -261,6 +270,7 @@ class Game {
       this.board.setPosition(data.board);
       this.board.renderAll();
       this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
 
       const started = data.state !== 'WAITING_FOR_PLAYERS';

@@ -307,6 +307,8 @@ public class GameWebSocketServer extends WebSocketServer {
     response.addProperty("token", token);
     response.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
     response.addProperty("havingMove", startingBoard.getSideToMove().name().toLowerCase());
+    // Display label like "5+3 • Blitz" — time control plus FIDE discipline (see TimeControl).
+    response.addProperty("timeControlLabel", timeControl.displayLabel());
     conn.send(GSON.toJson(response));
 
     System.out.println("Game created: " + gameId + " by " + creatorSide + (fenInput.isEmpty() ? "" : " (custom FEN)"));
@@ -367,6 +369,7 @@ public class GameWebSocketServer extends WebSocketServer {
     joinResponse.addProperty("token", token);
     joinResponse.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingPosition)));
     joinResponse.addProperty("havingMove", havingMove.name().toLowerCase());
+    joinResponse.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     conn.send(GSON.toJson(joinResponse));
 
     // Notify both players that the game is starting. `havingMove` lets the client
@@ -1017,6 +1020,7 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition())));
     msg.addProperty("havingMove", session.getHavingMove().name().toLowerCase());
     msg.add("clock", clockData);
+    msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     conn.send(GSON.toJson(msg));
 
     System.out.println("Resumed " + side.name().toLowerCase() + " in game " + gameId);
