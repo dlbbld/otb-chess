@@ -4,6 +4,7 @@ import {
   TwoPlayerGame,
   expectGameResult,
   SCORE_DRAW,
+  acceptDraw,
   claimFiftyMoveOnBoard,
   claimThreefoldOnBoard,
   claimFiftyMoveWithMove,
@@ -185,6 +186,33 @@ test('50-move claim with an invalid SAN reports a validation message', async ({ 
 
   await expect(white.locator('#arbiterMessage')).toContainText('Invalid move');
   await expect(white.locator('#gameResultPanel')).toBeHidden();
+});
+
+test('rejected on-board 50-move claim announces the claim and the offer to the opponent', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: FIFTY_FAR });
+  const { white, black } = game;
+
+  await claimFiftyMoveOnBoard(white); // nowhere near the rule -> rejected
+
+  await expect(white.locator('#arbiterMessage')).toContainText('rejected');
+  await expect(black.locator('#arbiterMessage')).toContainText(
+    'claimed a draw by the 50-move rule on the current position');
+  await expect(black.locator('#arbiterMessage')).toContainText('still counts as a draw offer');
+  await expect(black.locator('#drawOfferPanel')).toBeVisible();
+});
+
+test('the draw offer converted from a rejected claim can be accepted and draws the game', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // White's claim is rejected on the merits and forwarded to Black as a draw offer (FIDE 9.5).
+  await claimThreefoldOnBoard(white);
+  await expect(black.locator('#drawOfferPanel')).toBeVisible();
+
+  // Black accepts: the game is drawn like any agreed draw.
+  await acceptDraw(black);
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
 });
 
 test('50-move claim with a legal move that does not satisfy the rule is rejected and informs the opponent', async ({

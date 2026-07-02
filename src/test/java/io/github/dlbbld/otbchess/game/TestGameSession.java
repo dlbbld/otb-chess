@@ -917,6 +917,49 @@ class TestGameSession {
   }
 
   /**
+   * The legitimate first claim already applied the FIDE 9.5.3 penalty and registered the draw offer; the repeat
+   * violation is purely procedural — no second two-minute penalty and no second offer conversion.
+   */
+  @Test
+  void testRepeatClaimAddsNoSecondPenaltyAndNoSecondOffer() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // White's legitimate (rejected) claim: Black gets the one-time 2-minute penalty credit.
+    session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    final long blackTimeAfterFirst = session.getClock().getRemainingTimeMs(Side.BLACK);
+    assertTrue(blackTimeAfterFirst > TEST_TIME.initialTimeMs()); // penalty applied once
+
+    final DrawClaimResult repeat = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertTrue(repeat.repeatClaim());
+    assertFalse(repeat.convertsToDrawOffer());
+    // No further penalty: Black's remaining time cannot have grown again.
+    assertTrue(session.getClock().getRemainingTimeMs(Side.BLACK) <= blackTimeAfterFirst);
+  }
+
+  /**
+   * A-003 (wrong-time) and A-004 (repeat on same move) are separate ladders: warnings on one never advance the other.
+   */
+  @Test
+  void testWrongTimeAndRepeatClaimCountersAreIndependent() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // Black reaches the WRONG-TIME warning while White is on move (two wrong-time claims).
+    session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null).message().contains("Warning"));
+
+    // After 1. e4 Black IS on move: a legitimate claim, then a repeat — the repeat must get the
+    // REPEAT warning (first A-004 violation), not an A-003 game loss.
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+    assertFalse(session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null).repeatClaim());
+    final DrawClaimResult repeat = session.claimDraw(Side.BLACK, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertTrue(repeat.repeatClaim());
+    assertTrue(repeat.message().contains("more than one draw claim"));
+    assertEquals(GameState.IN_PROGRESS, session.getState()); // no cross-ladder loss
+  }
+
+  /**
    * The repeat-claim warning persists across turns, but a legitimate single claim on a later move is never a
    * violation — only ANOTHER repeat after the warning loses the game.
    */
