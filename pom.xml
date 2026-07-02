@@ -62,6 +62,26 @@
 		<!-- Stable artifact name so tooling can reference target/otb-chess.jar regardless
 		     of version. -->
 		<finalName>otb-chess</finalName>
+		<!-- version.properties is Maven-filtered so the app can read its own version from the
+		     classpath in EVERY run mode (java -jar, mvn exec:java / start.bat, IDE) — the jar
+		     manifest's Implementation-Version only exists when running from the packaged jar.
+		     All other resources are copied verbatim (messages.properties contains {0}-style
+		     placeholders that must never be touched by filtering). -->
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+				<excludes>
+					<exclude>version.properties</exclude>
+				</excludes>
+			</resource>
+			<resource>
+				<directory>src/main/resources</directory>
+				<includes>
+					<include>version.properties</include>
+				</includes>
+				<filtering>true</filtering>
+			</resource>
+		</resources>
 		<plugins>
 			<!-- Runnable jar: Main-Class plus a classpath pointing at the dependency jars copied
 			     into target/lib (see maven-dependency-plugin below). Lets

@@ -86,6 +86,12 @@ public launch. Released as **v0.1.1** (still beta).
   displayLabel`, unit-tested incl. boundaries in `TestTimeControl`) and sent as `timeControlLabel`
   on `gameCreated`/`gameJoined`/`resync` (so a refresh keeps it); unused, FIDE-misnamed
   `TimeControl` presets (`CLASSICAL_30_0`) dropped. e2e asserts both players see `3+0 • Blitz`.
+- [x] **Fix "vdevelopment" shown below the board in dev runs.** `start.bat` (`mvn exec:java`) runs
+  straight from `target/classes`, so the jar manifest's `Implementation-Version` doesn't exist and
+  `/api/version` fell back to `development`. The version now comes from a Maven-filtered
+  `version.properties` on the classpath (works in every run mode: `java -jar`, `start.bat`, IDE),
+  with the manifest as fallback. Verified `{"version":"0.1.1"}` in both run modes; pinned by
+  `TestOtbChessServer` (fails if the filtering ever stops running).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.
