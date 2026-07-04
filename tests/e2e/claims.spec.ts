@@ -32,26 +32,33 @@ test('wrong-time claims escalate: rejection, warning, then loss of the game', as
   const { white, black } = game;
 
   // White has the move. Black presses a claim button anyway — rejected, but per the teaching
-  // philosophy the buttons stay ENABLED so the fault can be repeated.
+  // philosophy the buttons stay ENABLED so the fault can be repeated. White sees what happened
+  // in the PASSIVE info window below the clock (face-to-face principle) — the arbiter message
+  // window stays untouched since no action is required.
   await claimThreefoldOnBoard(black);
   await expect(black.locator('#arbiterMessage')).toContainText('cannot claim a draw when not having the move');
   await expect(black.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
   await expect(black.locator('#claimFiftyMoveOnBoardBtn')).toBeEnabled();
+  await expect(white.locator('#opponentInfoPanel')).toContainText('claimed a draw while not having the move');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('claimed');
 
-  // Second press: same rejection plus the warning. (A with-move button skips the SAN prompt —
-  // the claim is rejected regardless of any move.)
+  // Second press: same rejection plus the warning; White's passive info mentions the warning.
   await claimFiftyMoveOnBoard(black);
   await expect(black.locator('#arbiterMessage')).toContainText(
     'Warning: your next draw claim when not having the move loses the game');
   await expect(black.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
+  await expect(white.locator('#opponentInfoPanel')).toContainText('been warned');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('claimed');
 
-  // Third press: Black loses the game; White is told why.
+  // Third press: Black loses the game; White is told why — now action-relevant, so it arrives
+  // in the standard arbiter window, and the stale passive info disappears with the game.
   await claimThreefoldOnBoard(black);
   await expect(black.locator('#arbiterMessage')).toContainText('you lose the game');
   await expect(white.locator('#arbiterMessage')).toContainText('repeatedly requested to claim a draw');
   await expectGameResult(black, '1-0');
   await expectGameResult(white, '1-0');
   await expect(black.locator('#gameResultReason')).toContainText('repeatedly claiming a draw');
+  await expect(white.locator('#opponentInfoPanel')).toBeHidden();
 });
 
 test('wrong-time with-move claim skips the SAN prompt; counts are per player; claim right survives', async ({
@@ -65,11 +72,14 @@ test('wrong-time with-move claim skips the SAN prompt; counts are per player; cl
   await black.locator('#claimThreefoldWithMoveBtn').click();
   await expect(black.locator('#arbiterMessage')).toContainText('cannot claim a draw when not having the move');
   await expect(black.locator('#sanInputPanel')).toBeHidden();
+  await expect(white.locator('#opponentInfoPanel')).toContainText('claimed a draw while not having the move');
 
-  // White plays 1. e4 — now Black has the move.
+  // White plays 1. e4 — now Black has the move, and White's move closes the episode the passive
+  // info reported on: the info window empties.
   await dragPiece(white, 'e2', 'e4');
   await pressClock(white);
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(white.locator('#opponentInfoPanel')).toBeHidden();
 
   // White (now off move) presses a claim button: PLAIN first rejection — Black's earlier
   // wrong-time press did not count against White.
@@ -97,12 +107,15 @@ test('repeat claims on the same move escalate: warning, then loss of the game', 
   await expect(white.locator('#claimFiftyMoveWithMoveBtn')).toBeEnabled();
 
   // Second claim on the same move: the warning — straight at the button, even for a with-move
-  // claim (no SAN prompt; the claim is refused regardless of any move).
+  // claim (no SAN prompt; the claim is refused regardless of any move). Black sees the repeat
+  // passively below the clock while the accept/reject question stays in the arbiter window.
   await white.locator('#claimFiftyMoveWithMoveBtn').click();
   await expect(white.locator('#arbiterMessage')).toContainText('cannot make more than one draw claim');
   await expect(white.locator('#arbiterMessage')).toContainText('You are warned');
   await expect(white.locator('#sanInputPanel')).toBeHidden();
   await expect(white.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
+  await expect(black.locator('#opponentInfoPanel')).toContainText('second draw claim on the same move');
+  await expect(black.locator('#arbiterMessage')).toContainText('still counts as a draw offer');
 
   // Third claim: White loses the game; Black is told why.
   await claimFiftyMoveOnBoard(white);
@@ -111,8 +124,10 @@ test('repeat claims on the same move escalate: warning, then loss of the game', 
   await expectGameResult(white, '0-1');
   await expectGameResult(black, '0-1');
   await expect(black.locator('#gameResultReason')).toContainText('repeatedly claiming a draw on the same move');
-  // The pending draw offer died with the game — no Accept/Reject on a finished game.
+  // The pending draw offer died with the game — no Accept/Reject on a finished game — and the
+  // stale passive info disappeared with it.
   await expect(black.locator('#drawOfferPanel')).toBeHidden();
+  await expect(black.locator('#opponentInfoPanel')).toBeHidden();
 });
 
 // ---- 50-move rule ------------------------------------------------------------------------------

@@ -184,6 +184,25 @@ class Game {
     if (el && label) el.textContent = label;
   }
 
+  // === Passive info window (below the clock) ===
+  // Information about the opponent's actions that requires NO reaction (face-to-face principle:
+  // at a real board the player would see it happen). Action-relevant messages — game end, "you
+  // must correct the move", draw offers — go to the arbiter window above the clock instead.
+
+  showOpponentInfo(message) {
+    const el = document.getElementById('opponentInfoPanel');
+    if (!el) return;
+    el.textContent = message;
+    el.style.display = 'block';
+  }
+
+  clearOpponentInfo() {
+    const el = document.getElementById('opponentInfoPanel');
+    if (!el) return;
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+
   onClockButtonPressed(position) {
     if (!this.gameActive) return;
 
@@ -319,6 +338,8 @@ class Game {
       this.recomputeSideArea();
       this.showArbiterMessage("Move accepted. Opponent's turn.");
       this.clearArbiterButtons();
+      // The move closes the episode the passive info reported on.
+      this.clearOpponentInfo();
     });
 
     // After the OPPONENT's move is accepted — we receive the new board state
@@ -338,6 +359,8 @@ class Game {
       }
       this.showArbiterMessage('Your turn.');
       this.clearArbiterButtons();
+      // A new turn starts: whatever the passive info reported is over.
+      this.clearOpponentInfo();
     });
 
     // Real-time opponent board events (see opponent manipulate pieces)
@@ -358,6 +381,7 @@ class Game {
       this.isMyTurn = data.havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.resetClaimUiForNewTurn();
+      this.clearOpponentInfo();
     });
 
     this.ws.on('clockUpdate', (data) => {
@@ -526,6 +550,13 @@ class Game {
       this.showArbiterMessage(data.message);
     });
 
+    // Passive information about the opponent's actions (e.g. a wrong-time draw claim): shown in
+    // the info window below the clock — the player should see it, like at a real board, but no
+    // action is required, so it stays out of the arbiter message window.
+    this.ws.on('opponentInfo', (data) => {
+      this.showOpponentInfo(data.message);
+    });
+
     this.ws.on('pgn', (data) => {
       document.getElementById('pgnText').value = data.pgn;
       document.getElementById('pgnDialog').style.display = 'block';
@@ -540,6 +571,8 @@ class Game {
       // A pending draw offer dies with the game (e.g. a rejected claim was forwarded as an
       // offer and the claimer then lost by escalation) — no Accept/Reject on a finished game.
       document.getElementById('drawOfferPanel').style.display = 'none';
+      // The game-ending message goes to the arbiter window; stale passive info disappears.
+      this.clearOpponentInfo();
       // Game has ended — drop the PAUSE overlay because no further clockUpdate
       // will arrive to clear it via the updateClocks path.
       const clockEl = document.getElementById('chessClock');

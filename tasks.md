@@ -115,6 +115,16 @@ public launch. Released as **v0.1.1** (still beta).
   personalised messages). Violations counted per player across the game; a legitimate single claim
   on a later move is never a violation. Claim buttons now stay enabled for the whole game. Bonus
   fix: a pending draw-offer panel is hidden on `gameEnded`. Unit + e2e coverage.
+- [x] **Passive game-information window below the clock.** Ground rule (face-to-face principle):
+  what a player would *see* happen at a real board but must not act on goes in a new quiet window
+  below the clock (`#opponentInfoPanel`, new `opponentInfo` WS message); action-relevant messages
+  (game end, corrections, draw offers) stay in the arbiter window above the clock. Wired for the
+  claim escalations: wrong-time claim presses 1–2 (A-003) and the repeat-claim warning (A-004) now
+  inform the opponent passively ("Your opponent claimed a draw while not having the move…", "…has
+  been warned…"); the game-ending third press stays in the standard window. Info clears when the
+  episode closes (own move, opponent move, board update, game end). Time-control label stays
+  centered below it. Unit (opponentInfo on warning/rejection, empty on loss and merit rejections)
+  + e2e (both windows asserted on both boards, clearing pinned).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

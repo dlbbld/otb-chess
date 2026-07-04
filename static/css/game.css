@@ -114,14 +114,35 @@ body:has(.game-layout) {
   flex-direction: row-reverse;
 }
 
-/* Time control ("5+3 • Blitz") lives in the lower spacer, vertically centered in it — which
-   puts it well clear of the clock above and about level with the bottom edge of the board
-   (the column runs slightly past the board, down to the button rows). Muted so it reads as
-   ambient game info, not a message. */
-.right-column .time-control-label {
+/* The lower spacer under the clock: passive game information on top (hugging the clock from
+   below, mirroring how the messages hug it from above), and the time control centered in the
+   remaining space — which keeps it about level with the bottom edge of the board. */
+.right-column .below-clock {
   grid-row: 3;
-  align-self: center;
-  justify-self: start;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Passive info window: what the opponent just did (e.g. a wrong-time draw claim) — visible the
+   way a face-to-face opponent would see it, but requiring NO action. Deliberately quieter than
+   the arbiter panel above the clock. */
+.opponent-info {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #ece7e1;
+  border: 1px solid #ddd5cc;
+  border-radius: 6px;
+  color: #6b6259;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Time control ("5+3 • Blitz"): muted so it reads as ambient game info, not a message. The
+   auto vertical margins center it in the space left below the info window. */
+.right-column .time-control-label {
+  margin: auto 0;
+  align-self: flex-start;
   color: #9a9189;
   font-size: 13px;
   padding-left: 6px;
@@ -129,7 +150,7 @@ body:has(.game-layout) {
 
 /* Black's view: keep the label on the board side, like the clock. */
 .game-layout.clock-on-left-view .right-column .time-control-label {
-  justify-self: end;
+  align-self: flex-end;
   padding: 0 6px 0 0;
 }
 

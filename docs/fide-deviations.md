@@ -112,9 +112,9 @@ The trigger is **"touching a piece with the intention of moving or capturing it.
 2. Second claim: same rejection plus a warning — the next wrong-time claim loses the game.
 3. Third claim: **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated wrong-time claims despite warnings.
 
-The opponent is not notified of the first two (they are private mistakes, consistent with minimal intervention); only the game-ending third produces an opponent message.
+The first two presses inform the opponent **passively** (face-to-face principle: at a real board they would see the claim happen) via the info window below the clock — visible, but requiring no action. Only the game-ending third press produces a message in the standard arbiter window.
 
-**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_TIME_CLAIM_LIMIT"); the client keeps the buttons enabled via the `wrongTime` flag on `drawClaimResult`.
+**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_TIME_CLAIM_LIMIT"); the client keeps the buttons enabled via the `wrongTime` flag on `drawClaimResult`; the passive notification travels as `opponentInfo`.
 
 **Rationale**: Same as A-001 — arbiter judgment must be encoded, an explicit three-strike threshold is transparent, and disabling the buttons would prevent the fault instead of teaching from it.
 
@@ -130,8 +130,8 @@ The opponent is not notified of the first two (they are private mistakes, consis
 2. Second claim on the same move: rejected with a warning — the next repeat loses the game.
 3. Next repeat (any move; the warning, once given, stands): **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated claims on the same move.
 
-The claim buttons stay **enabled** throughout; violations are counted per player across the whole game. A legitimate single claim on a later move is never a violation. The opponent is not notified of the warning (a private mistake); only the game-ending repeat produces an opponent message.
+The claim buttons stay **enabled** throughout; violations are counted per player across the whole game. A legitimate single claim on a later move is never a violation. The warning informs the opponent **passively** (info window below the clock, no action required); only the game-ending repeat produces a message in the standard arbiter window.
 
-**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "REPEAT_CLAIM_VIOLATION_LIMIT"); the client keeps the buttons enabled via the `repeatClaim` flag on `drawClaimResult`.
+**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "REPEAT_CLAIM_VIOLATION_LIMIT"); the client keeps the buttons enabled via the `repeatClaim` flag on `drawClaimResult`; the passive notification travels as `opponentInfo`.
 
 **Rationale**: Same as A-001/A-003. The warning comes one step earlier than in A-003 because the player has already exercised their legitimate claim on that move — the repeat is unambiguous.

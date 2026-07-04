@@ -123,10 +123,16 @@
       </div>
     </div>
 
-    <!-- Time control, e.g. "5+3 • Blitz" (FIDE discipline). Sits in the lower spacer of the
-         column, aligned to the bottom so it is level with the bottom edge of the board — away
-         from the clock, quiet and out of the way. -->
-    <div class="time-control-label" id="timeControlLabel"></div>
+    <!-- Below the clock: the passive game-information window plus the time control. -->
+    <div class="below-clock">
+      <!-- Passive info: what the opponent just did (e.g. a wrong-time draw claim). Face-to-face
+           principle — at a real board the player would see it happen — but it requires NO
+           action, so it lives here and never in the arbiter message window above the clock. -->
+      <div class="opponent-info" id="opponentInfoPanel" style="display:none;"></div>
+      <!-- Time control, e.g. "5+3 • Blitz" (FIDE discipline). Centered in the remaining space,
+           about level with the bottom edge of the board — quiet and out of the way. -->
+      <div class="time-control-label" id="timeControlLabel"></div>
+    </div>
     </div>
   </div>
 

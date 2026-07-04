@@ -767,6 +767,16 @@ public class GameWebSocketServer extends WebSocketServer {
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
     }
 
+    // Passive information for the opponent (face-to-face principle: at a real board they would
+    // see the claim happen). Rendered in the info window below the clock — visible, but
+    // requiring NO action — never in the standard arbiter window.
+    if (result.opponentInfo().isPresent()) {
+      final JsonObject info = new JsonObject();
+      info.addProperty("type", "opponentInfo");
+      info.addProperty("message", result.opponentInfo().get());
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
+    }
+
     checkGameEnded(room);
   }
 

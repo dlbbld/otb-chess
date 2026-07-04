@@ -52,6 +52,8 @@ class TestDrawClaimManager {
       assertTrue(message.contains("It still counts as a draw offer."), message);
       assertTrue(message.endsWith("Do you accept the draw?"), message);
       assertTrue(result.convertsToDrawOffer());
+      // Merit rejections speak through the offer message, not the passive info window.
+      assertTrue(result.opponentInfo().isEmpty());
     }
   }
 }

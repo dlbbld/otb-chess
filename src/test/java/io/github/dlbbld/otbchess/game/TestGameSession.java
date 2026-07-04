@@ -543,24 +543,28 @@ class TestGameSession {
     session.startGame();
 
     // White has the move; BLACK claims. First: plain rejection, marked wrongTime (no button lock).
+    // The opponent's arbiter window stays untouched; they see what happened as PASSIVE info.
     final DrawClaimResult first = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
     assertFalse(first.accepted());
     assertTrue(first.wrongTime());
     assertEquals("You cannot claim a draw when not having the move.", first.message());
-    assertTrue(first.opponentMessage().isEmpty()); // the opponent is not disturbed
+    assertTrue(first.opponentMessage().isEmpty()); // nothing action-relevant for the opponent
+    assertTrue(first.opponentInfo().get().contains("claimed a draw while not having the move"));
     assertEquals(GameState.IN_PROGRESS, session.getState());
 
-    // Second: same rejection plus the warning.
+    // Second: same rejection plus the warning — the opponent's passive info mentions the warning.
     final DrawClaimResult second = session.claimDraw(Side.BLACK, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
     assertTrue(second.wrongTime());
     assertTrue(second.message().contains("Warning: your next draw claim when not having the move loses the game"));
+    assertTrue(second.opponentInfo().get().contains("been warned"));
     assertEquals(GameState.IN_PROGRESS, session.getState());
 
-    // Third: the game is lost.
+    // Third: the game is lost — action-relevant, so it travels as the standard opponent message.
     final DrawClaimResult third = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
     assertFalse(third.accepted());
     assertTrue(third.message().contains("you lose the game"));
     assertTrue(third.opponentMessage().get().contains("repeatedly requested to claim a draw"));
+    assertTrue(third.opponentInfo().isEmpty());
     assertEquals(GameState.ENDED, session.getState());
     assertEquals(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, session.getResult().type());
     assertEquals(Side.WHITE, session.getResult().winner());
@@ -897,13 +901,16 @@ class TestGameSession {
     assertFalse(first.accepted());
     assertFalse(first.repeatClaim());
 
-    // Second claim on the same move: rejected with the warning, privately (no opponent notice).
+    // Second claim on the same move: rejected with the warning. Nothing action-relevant for the
+    // opponent (no arbiter-window message), but they see what happened as passive info.
     final DrawClaimResult second = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
     assertFalse(second.accepted());
     assertTrue(second.repeatClaim());
     assertTrue(second.message().contains("You cannot make more than one draw claim on your move"));
     assertTrue(second.message().contains("You are warned"));
     assertTrue(second.opponentMessage().isEmpty());
+    assertTrue(second.opponentInfo().get().contains("second draw claim on the same move"));
+    assertTrue(second.opponentInfo().get().contains("been warned"));
     assertEquals(GameState.IN_PROGRESS, session.getState());
 
     // Third claim: the game is lost.

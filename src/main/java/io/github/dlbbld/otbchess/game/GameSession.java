@@ -515,10 +515,14 @@ public class GameSession {
                 + " move, and so has lost the game.");
       }
       if (count == WRONG_TIME_CLAIM_LIMIT - 1) {
-        return DrawClaimResult.wrongTime("You cannot claim a draw when not having the move. Warning: your next"
-            + " draw claim when not having the move loses the game.");
+        return DrawClaimResult.wrongTime(
+            "You cannot claim a draw when not having the move. Warning: your next"
+                + " draw claim when not having the move loses the game.",
+            "Your opponent again claimed a draw while not having the move. The claim was rejected and they have"
+                + " been warned: their next draw claim when not having the move loses them the game.");
       }
-      return DrawClaimResult.wrongTime("You cannot claim a draw when not having the move.");
+      return DrawClaimResult.wrongTime("You cannot claim a draw when not having the move.",
+          "Your opponent claimed a draw while not having the move. The claim was rejected.");
     }
     if (!currentSequence.isEmpty()) {
       // FIDE 9.4: the player loses the right to claim under 9.2 / 9.3 once any piece has
@@ -542,8 +546,11 @@ public class GameSession {
             "Your opponent has, despite the warnings, repeatedly claimed a draw on the same move, and so has"
                 + " lost the game.");
       }
-      return DrawClaimResult.repeatClaim("You cannot make more than one draw claim on your move. You are warned:"
-          + " the next draw claim on a move you have already claimed on loses the game.");
+      return DrawClaimResult.repeatClaim(
+          "You cannot make more than one draw claim on your move. You are warned:"
+              + " the next draw claim on a move you have already claimed on loses the game.",
+          "Your opponent made a second draw claim on the same move. The claim was rejected and they have been"
+              + " warned: their next draw claim on a move they have already claimed on loses them the game.");
     }
 
     final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
