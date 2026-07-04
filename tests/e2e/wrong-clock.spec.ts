@@ -60,5 +60,6 @@ test('pressing the opponent\'s lever while it is already down is a physical no-o
   await white.waitForTimeout(800);
   await expect(white.locator('#arbiterMessage')).not.toContainText('do not press');
   await expect(white.locator('#chessClock')).not.toHaveClass(/paused/);
-  await expect(white.locator('#arbiterMessage')).toContainText('Game started');
+  // The game-start message is still standing — nothing happened.
+  await expect(white.locator('#arbiterMessage')).toContainText('clock has been started');
 });

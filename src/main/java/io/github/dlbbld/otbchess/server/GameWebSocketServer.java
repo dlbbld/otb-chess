@@ -953,8 +953,9 @@ public class GameWebSocketServer extends WebSocketServer {
       msg.add("board", board);
       msg.addProperty("havingMove", havingMove.name().toLowerCase());
       msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
-      final String clockLine = havingMove == seat ? "Your clock has been started - your turn."
-          : "Opponent's clock has been started - opponent's turn.";
+      // Short, like the game-start message: no "your turn" coaching — a running clock says it all.
+      final String clockLine = havingMove == seat ? "Your clock has been started."
+          : "Opponent's clock has been started.";
       msg.addProperty("message",
           "Rematch started - you now play " + (seat == Side.WHITE ? "White" : "Black") + ". " + clockLine);
       room.sendToSide(seat, GSON.toJson(msg));

@@ -16,15 +16,14 @@ import { startTwoPlayerGame, TwoPlayerGame } from './helpers/app';
  *   - creator plays Black -> creator does NOT have the first move (case 2); joiner DOES (case 4)
  */
 
+// "Game started" itself is a transient banner over the board; the arbiter message keeps only
+// the two short facts. The creator's opponent is named by COLOUR ("Black joined."); no "your
+// turn" coaching is appended — a running clock says it all.
 const MSG = {
-  creatorFirst:
-    'Game started - your opponent joined the game. Your clock has been started - your turn.',
-  creatorNotFirst:
-    "Game started - your opponent joined the game. Opponent's clock has been started - opponent's turn.",
-  joinerNotFirst:
-    "Game started - you joined the game. Opponent's clock has been started - opponent's turn.",
-  joinerFirst:
-    'Game started - you joined the game. Your clock has been started - your turn.',
+  creatorFirst: 'Black joined. Your clock has been started.',
+  creatorNotFirst: "White joined. Opponent's clock has been started.",
+  joinerNotFirst: "You joined the game. Opponent's clock has been started.",
+  joinerFirst: 'You joined the game. Your clock has been started.',
 };
 
 let game: TwoPlayerGame;
@@ -35,22 +34,28 @@ test.afterEach(async () => {
   }
 });
 
-test('case 1: creator WITH the first move -> "opponent joined" + own clock & turn', async ({ browser }) => {
+test('case 1: creator WITH the first move -> "Black joined" + own clock (+ banner)', async ({ browser }) => {
   game = await startTwoPlayerGame(browser, { side: 'white' });
   await expect(game.creator.locator('#arbiterMessage')).toHaveText(MSG.creatorFirst);
+  // The event itself shows as the transient banner over the board.
+  await expect(game.creator.locator('#gameBanner')).toHaveText('Game started');
+  await expect(game.creator.locator('#gameBanner')).toBeVisible();
+  // ... and fades away on its own.
+  await expect(game.creator.locator('#gameBanner')).toBeHidden({ timeout: 10_000 });
 });
 
-test('case 2: creator WITHOUT the first move -> "opponent joined" + opponent clock & turn', async ({ browser }) => {
+test('case 2: creator WITHOUT the first move -> "White joined" + opponent clock', async ({ browser }) => {
   game = await startTwoPlayerGame(browser, { side: 'black' });
   await expect(game.creator.locator('#arbiterMessage')).toHaveText(MSG.creatorNotFirst);
 });
 
-test('case 3: joiner WITHOUT the first move -> "you joined" + opponent clock & turn', async ({ browser }) => {
+test('case 3: joiner WITHOUT the first move -> "you joined" + opponent clock', async ({ browser }) => {
   game = await startTwoPlayerGame(browser, { side: 'white' });
   await expect(game.joiner.locator('#arbiterMessage')).toHaveText(MSG.joinerNotFirst);
 });
 
-test('case 4: joiner WITH the first move -> "you joined" + own clock & turn', async ({ browser }) => {
+test('case 4: joiner WITH the first move -> "you joined" + own clock (+ banner)', async ({ browser }) => {
   game = await startTwoPlayerGame(browser, { side: 'black' });
   await expect(game.joiner.locator('#arbiterMessage')).toHaveText(MSG.joinerFirst);
+  await expect(game.joiner.locator('#gameBanner')).toHaveText('Game started');
 });

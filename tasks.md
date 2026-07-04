@@ -185,7 +185,14 @@ public launch. Released as **v0.1.1** (still beta).
   pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
 - [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
   same commit; long e2e runtimes explicitly acceptable) + memory updated.
-- [x] **FIDE 7.5.3: a clock press without a move is penalised as an illegal move.** Previously a
+- [x] **Game-start message restructured and shortened.** "Game started" is now a transient
+  Lichess-style **banner** centered over the board (also used for "Rematch started"); the arbiter
+  message keeps only the two short facts: who joined — the creator sees the opponent's colour
+  ("Black joined."), the joiner keeps "You joined the game." — and whose clock runs ("Your clock
+  has been started." / "Opponent's clock has been started."), with no "your turn" coaching (a
+  running clock says it all; rematch clock lines shortened the same way). All four
+  creator/joiner × first-move variants re-pinned exactly in `game-start-message.spec.ts` incl.
+  banner show + fade; `expectGameStarted` helper keys on the clock fact. Previously a
   bare "Please complete your move." info. Now: standard illegal-move treatment — penalty time to
   the opponent, counts toward the limit (default 2 → the **second press in a row loses the
   game**), message "Illegal move: the clock was pressed without a move being made (FIDE 7.5.3).

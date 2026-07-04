@@ -75,6 +75,26 @@ body:has(.game-layout) {
   display: flex;
   align-items: flex-start;
   gap: 0;
+  position: relative; /* anchor for the transient game banner over the board */
+}
+
+/* Transient game-event banner ("Game started", "Rematch started") — Lichess-style, centered
+   over the board and fading away on its own; details live in the arbiter message window. */
+.game-banner {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(48, 46, 44, 0.92);
+  color: #fff;
+  font-size: 26px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  padding: 14px 36px;
+  border-radius: 8px;
+  z-index: 100;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* === Right column: messages above the clock, clock vertically centered next to

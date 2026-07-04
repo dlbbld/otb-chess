@@ -315,7 +315,11 @@ class Game {
       this.isMyTurn = havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.updateButtons();
-      this.showArbiterMessage(Game.gameStartedMessage(this.isCreator, this.isMyTurn));
+      // The event itself is a transient banner (Lichess-style); the arbiter message keeps only
+      // the two short facts: who joined, whose clock runs.
+      this.showGameBanner('Game started');
+      this.showArbiterMessage(Game.gameStartedMessage(this.isCreator, this.isMyTurn,
+        this.side === 'white' ? 'Black' : 'White'));
       this.clearArbiterButtons();
     });
 
@@ -744,6 +748,7 @@ class Game {
       document.getElementById('resignBtn').style.display = '';
       this.updateButtons();
       this.stopDisconnectCountdown();
+      this.showGameBanner('Rematch started');
       this.showArbiterMessage(data.message);
       this.clearArbiterButtons();
     });
@@ -1231,19 +1236,20 @@ class Game {
   /**
    * Builds the game-start arbiter message from two INDEPENDENT facts:
    *   - isCreator:    the creator opened the game and waited, so their *opponent* is the one who
-   *                   joined; the joiner is the one who joined.
+   *                   joined (named by colour, e.g. "Black joined."); the joiner is the one who
+   *                   joined ("You joined the game.").
    *   - hasFirstMove: only the side to move has a running clock at the start of the game.
    * These coincide in a standard creator-plays-White game, but NOT when the creator chose Black or a
    * custom FEN starts with Black to move -- so each clause is keyed to its own fact, never to colour.
+   * Deliberately SHORT: the "Game started" event itself is shown as a banner over the board, and no
+   * "your turn" coaching is appended — a chess player whose clock runs knows they must move.
    * Pure (no DOM / no `this`) so the four creator/joiner x first-move combinations are exhaustively
    * testable; the four cases are pinned in tests/e2e/game-start-message.spec.ts.
    */
-  static gameStartedMessage(isCreator, hasFirstMove) {
-    const joined = isCreator ? 'your opponent joined the game' : 'you joined the game';
-    const clock = hasFirstMove
-      ? 'Your clock has been started - your turn.'
-      : "Opponent's clock has been started - opponent's turn.";
-    return `Game started - ${joined}. ${clock}`;
+  static gameStartedMessage(isCreator, hasFirstMove, opponentColourName) {
+    const joined = isCreator ? `${opponentColourName} joined.` : 'You joined the game.';
+    const clock = hasFirstMove ? 'Your clock has been started.' : "Opponent's clock has been started.";
+    return `${joined} ${clock}`;
   }
 
   showArbiterMessage(message, style) {
@@ -1251,6 +1257,17 @@ class Game {
     el.textContent = message;
     el.className = 'arbiter-message';
     if (style) el.classList.add(style);
+  }
+
+  // Transient Lichess-style banner over the board for game-level events ("Game started",
+  // "Rematch started"). Fades away on its own; details stay in the arbiter message window.
+  showGameBanner(text) {
+    const el = document.getElementById('gameBanner');
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = 'block';
+    clearTimeout(this._gameBannerTimer);
+    this._gameBannerTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
   }
 
   // Shown when there is no active game to open for this id — a code that wasn't found, expired,
