@@ -162,6 +162,11 @@ public launch. Released as **v0.1.1** (still beta).
   opponent left the game. You win." / draw variant). Unit (loss, draw, no-op when not running) +
   e2e (browser-close win, lone-king draw, refresh does NOT forfeit) with short test windows via
   Playwright env.
+- [x] **No Rematch button after an abandonment** — the opponent is gone, there is nobody to
+  accept. The client hides the button for `ABANDONMENT` endings (New Game stays; reset to visible
+  for all other endings across rematch chains) and the server refuses hand-crafted offers ("A
+  rematch is not available - your opponent left the game."). e2e asserts hidden button + server
+  refusal on both abandonment endings (win and draw).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

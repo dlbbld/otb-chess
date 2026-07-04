@@ -41,6 +41,13 @@ test('a player closing the browser loses by abandonment when the opponent can ma
   });
   await expectGameResult(white, '1-0');
   await expect(white.locator('#gameResultReason')).toContainText('Black left the game. White wins the game.');
+
+  // No Rematch offer after an abandonment — the opponent is gone. The button is hidden (New
+  // Game stays), and the server refuses a hand-crafted offer too.
+  await expect(white.locator('#rematchBtn')).toBeHidden();
+  await expect(white.locator('#newGameBtn')).toBeVisible();
+  await white.evaluate(() => (window as any).game.ws.send({ type: 'rematchOffer' }));
+  await expect(white.locator('#arbiterMessage')).toContainText('rematch is not available');
 });
 
 test('abandonment is a draw when the remaining player cannot possibly mate', async ({ browser }) => {
@@ -54,6 +61,8 @@ test('abandonment is a draw when the remaining player cannot possibly mate', asy
   await expectGameResult(white, SCORE_DRAW);
   await expect(white.locator('#arbiterMessage')).toContainText(
     'Your opponent left the game, but because you have insufficient material to mate, the game is a draw.');
+  // The abandonment draw is also rematch-less — the opponent is gone.
+  await expect(white.locator('#rematchBtn')).toBeHidden();
 });
 
 test('a page refresh (reconnect) does not forfeit the game', async ({ browser }) => {

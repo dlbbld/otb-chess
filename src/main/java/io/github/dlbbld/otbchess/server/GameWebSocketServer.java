@@ -835,6 +835,13 @@ public class GameWebSocketServer extends WebSocketServer {
         sendError(conn, "A rematch can only be offered after the game has ended.");
         return;
       }
+      if (room.getSession().getResult() != null
+          && room.getSession().getResult().type() == GameResultType.ABANDONMENT) {
+        // The opponent left the game — there is nobody to accept. The client hides the Rematch
+        // button for this ending; this guard covers hand-crafted messages.
+        sendError(conn, "A rematch is not available - your opponent left the game.");
+        return;
+      }
       final Side side = room.getSide(conn);
       if (side == Side.NONE) {
         return;

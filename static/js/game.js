@@ -584,6 +584,11 @@ class Game {
         : (data.winner === 'white' ? '1-0' : '0-1');
       document.getElementById('gameResultScore').textContent = scoreText;
       document.getElementById('gameResultReason').textContent = data.description;
+      // No rematch after an abandonment \u2014 the opponent is gone, there is nobody to accept
+      // (and the server refuses such offers too). Reset to visible for every other ending,
+      // since the panel is reused across rematch chains.
+      document.getElementById('rematchBtn').style.display =
+        data.resultType === 'ABANDONMENT' ? 'none' : '';
       document.getElementById('gameResultPanel').style.display = 'block';
 
       // Personalise the arbiter message for moves that immediately end the game instead of
