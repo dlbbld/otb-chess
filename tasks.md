@@ -167,6 +167,24 @@ public launch. Released as **v0.1.1** (still beta).
   for all other endings across rematch chains) and the server refuses hand-crafted offers ("A
   rematch is not available - your opponent left the game."). e2e asserts hidden button + server
   refusal on both abandonment endings (win and draw).
+- [x] **Disconnect countdown + Claim victory.** The `opponentDisconnected` notice (12 s) now
+  carries `abandonInMs`; the client shows a live countdown ("Your opponent has disconnected. The
+  game will be ended in Ns.") plus a **Claim victory** button that applies the abandonment
+  adjudication immediately (win — or draw when no mate is possible). Server accepts the claim
+  only when the opponent has been gone past the grace and hasn't resumed; a resume sends the new
+  `opponentReconnected` (clears countdown + button). Unit-level logic is the existing `abandon()`;
+  e2e: countdown + claim → 1-0, rejection while connected, reconnect clears the countdown.
+- [x] **Wrong clock press escalation (A-006).** Real-world modeling: the opponent's clock lever
+  CAN be pressed. Registers only while the opponent's clock is running (lever up) — otherwise a
+  physical no-op, like the real clock. Ladder per player across the game: 1st press → arbiter
+  pauses the game + admonishes ("Please do not press your opponent's clock…"), clock restarts
+  after `OTB_WRONG_CLOCK_PAUSE_MS` (5 s); 2nd → same + warning; 3rd → **loss**
+  (`WRONG_CLOCK_PRESS_GAME_LOST`, personalised messages). Opponent informed passively on 1–2;
+  presses during the pause are no-ops (not counted). Replaces the dead legacy
+  `handleOpponentClockPressed` ready-handshake. Unit (`TestGameSession`: ladder, no-op cases,
+  pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
+- [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
+  same commit; long e2e runtimes explicitly acceptable) + memory updated.
 - [x] **Way back into a running game from the lobby / a new tab.** The seat token lives in
   localStorage (survives new tabs and browser restarts), but only game.html used it — a player
   who lost their game tab and opened localhost:8080 was stranded in the lobby. Now the lobby

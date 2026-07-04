@@ -40,6 +40,11 @@ public class GameRoom {
   // also offers (= accepts), the rematch starts. Reset by startRematch().
   private Side rematchOfferedBy = Side.NONE;
 
+  // Wall-clock time (ms since epoch) since a seat's socket dropped without a resume; null while
+  // connected. Lets "claim victory" verify the opponent has really been gone past the grace.
+  private Long whiteDisconnectedAtMs;
+  private Long blackDisconnectedAtMs;
+
   public GameRoom(String gameId, TimeControl timeControl) {
     this(gameId, timeControl, io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true);
   }
@@ -182,6 +187,24 @@ public class GameRoom {
       clockTickFuture.cancel(false);
       clockTickFuture = null;
     }
+  }
+
+  /** Marks the side's socket as dropped (or reconnected with {@code null}) for the claim-victory guard. */
+  public void setDisconnectedAt(Side side, Long timestampMs) {
+    if (side == Side.WHITE) {
+      this.whiteDisconnectedAtMs = timestampMs;
+    } else if (side == Side.BLACK) {
+      this.blackDisconnectedAtMs = timestampMs;
+    }
+  }
+
+  /** @return when this side's socket dropped (ms since epoch), or {@code null} while connected. */
+  public Long getDisconnectedAt(Side side) {
+    return switch (side) {
+      case WHITE -> whiteDisconnectedAtMs;
+      case BLACK -> blackDisconnectedAtMs;
+      default -> null;
+    };
   }
 
   // ===== Rematch =====

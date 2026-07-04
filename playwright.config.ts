@@ -49,6 +49,8 @@ export default defineConfig({
       // Return to game) to resume BEFORE adjudication.
       OTB_DISCONNECT_GRACE_MS: '1500',
       OTB_ABANDON_MS: '6000',
+      // Short arbiter admonishment pause after a wrong clock press (production default: 5 s).
+      OTB_WRONG_CLOCK_PAUSE_MS: '1000',
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

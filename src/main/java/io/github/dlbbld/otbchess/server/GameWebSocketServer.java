@@ -74,6 +74,10 @@ public class GameWebSocketServer extends WebSocketServer {
   // the leaver loses unless the remaining player has no possible mate (then it is a draw). Longer
   // than the disconnect grace so a network blip never forfeits a game.
   private final long abandonMs = OtbChessServer.envLong("OTB_ABANDON_MS", TimeUnit.SECONDS.toMillis(60));
+  // Length of the arbiter's admonishment pause after a wrong clock press before the interrupted
+  // clock restarts.
+  private final long wrongClockPauseMs = OtbChessServer.envLong("OTB_WRONG_CLOCK_PAUSE_MS",
+      TimeUnit.SECONDS.toMillis(5));
   private final Set<String> allowedOrigins = parseAllowedOrigins();
   private final UsageLog usageLog = UsageLog.fromConfig(OtbChessServer.envStr("OTB_USAGE_LOG", "logs/usage.log"),
       OtbChessServer.envInt("OTB_USAGE_RETENTION_DAYS", 30));
@@ -115,14 +119,18 @@ public class GameWebSocketServer extends WebSocketServer {
     if (side == Side.NONE) {
       return;
     }
+    room.setDisconnectedAt(side, System.currentTimeMillis());
+
     // The player may reconnect (idle drop / blip). Defer the "opponent disconnected" notice; if a
     // resume swaps in a new socket for this side within the grace window, the seat no longer points
-    // at this (closed) conn and we stay quiet.
+    // at this (closed) conn and we stay quiet. The notice carries the time remaining until the
+    // abandonment adjudication so the client can show a countdown and the Claim-victory button.
     maintenance.schedule(() -> {
       if (room.getSocket(side) == conn) {
         final JsonObject msg = new JsonObject();
         msg.addProperty("type", "opponentDisconnected");
         msg.addProperty("message", "Your opponent has disconnected.");
+        msg.addProperty("abandonInMs", Math.max(0, abandonMs - disconnectGraceMs));
         room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
       }
     }, disconnectGraceMs, TimeUnit.MILLISECONDS);
@@ -185,6 +193,7 @@ public class GameWebSocketServer extends WebSocketServer {
         case "rejectDraw" -> handleRejectDraw(conn);
         case "claimDraw" -> handleClaimDraw(conn, json);
         case "resign" -> handleResign(conn);
+        case "claimVictory" -> handleClaimVictory(conn);
         case "rematchOffer" -> handleRematchOffer(conn);
         case "abort" -> handleAbort(conn);
         case "requestPgn" -> handleRequestPgn(conn);
@@ -819,6 +828,40 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   /**
+   * "Claim victory" while the opponent is disconnected: ends the game immediately with the SAME adjudication the
+   * automatic abandonment would apply at the deadline — the leaver loses, unless the claimer has no possible mate
+   * (then it is a draw). Guarded so it works only once the opponent has been gone past the disconnect grace (the
+   * moment the client shows the button); a reconnected opponent makes the claim fail.
+   */
+  private void handleClaimVictory(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null) {
+      return;
+    }
+    final Side side = room.getSide(conn);
+    if (side == Side.NONE) {
+      return;
+    }
+    final Side opponent = side.getOppositeSide();
+    final WebSocket opponentSocket = room.getSocket(opponent);
+    final Long disconnectedAt = room.getDisconnectedAt(opponent);
+    if (opponentSocket != null && opponentSocket.isOpen() || disconnectedAt == null
+        || System.currentTimeMillis() - disconnectedAt < disconnectGraceMs) {
+      sendError(conn, "Victory cannot be claimed - your opponent is not gone.");
+      return;
+    }
+    final GameResult result = room.getSession().abandon(opponent);
+    if (result == null) {
+      sendError(conn, "There is nothing to claim - the game is not running.");
+      return;
+    }
+    room.stopClockTicker();
+    sendGameEnded(room, result);
+    System.out.println("Game " + room.getGameId() + " adjudicated after victory claim by "
+        + side.name().toLowerCase());
+  }
+
+  /**
    * Rematch handshake (Lichess-style): after the game has ended, either player may offer a rematch. The first offer
    * makes the opponent's Rematch button blink; when the opponent presses THEIR button too (= accepting), a new game
    * starts in the same room — same time control and settings, same starting position, colours swapped.
@@ -1042,29 +1085,58 @@ public class GameWebSocketServer extends WebSocketServer {
     }
   }
 
+  /**
+   * The player pressed their OPPONENT's clock lever — possible on a physical clock, so it is modeled. The arbiter
+   * escalates (see GameSession.pressOpponentClock): pause + admonishment, pause + warning, then loss of the game on
+   * the third press. After the admonishment pause ({@code OTB_WRONG_CLOCK_PAUSE_MS}) the interrupted clock restarts.
+   * Presses while the opponent's lever is already down are physical no-ops — silence, like the real thing.
+   */
   private void handleOpponentClockPressed(WebSocket conn) {
     final GameRoom room = getRoom(conn);
     if (room == null) {
       return;
     }
+    final Side side = room.getSide(conn);
+    if (side == Side.NONE) {
+      return;
+    }
 
-    // Stop the clock
-    room.getSession().getClock().stopClock();
+    final var outcome = room.getSession().pressOpponentClock(side);
+    if (!outcome.offense()) {
+      return; // lever was already down — nothing happened, nothing to say
+    }
 
-    // Notify the player who pressed the wrong clock
+    if (outcome.gameLost()) {
+      // Third press: the game is over. The personalised messages travel via gameEnded (actor).
+      sendGameEnded(room, room.getSession().getResult());
+      return;
+    }
+
+    // Admonishment (first press) or warning (second): offender hears the arbiter, the opponent
+    // sees what happened passively; the PAUSE shows on both clocks via the clock update.
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "opponentClockPressed");
-    msg.addProperty("message", "Please do not press the opponent's clock.");
+    msg.addProperty("message", outcome.message());
     conn.send(GSON.toJson(msg));
 
-    // Enter waiting for ready
-    room.getSession().enterWaitingForReady();
+    final JsonObject info = new JsonObject();
+    info.addProperty("type", "opponentInfo");
+    info.addProperty("message", outcome.opponentInfo());
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
 
-    // Send ready prompt to both
-    final JsonObject readyMsg = new JsonObject();
-    readyMsg.addProperty("type", "waitingForReady");
-    readyMsg.addProperty("message", "Are you ready to continue?");
-    room.sendToBoth(GSON.toJson(readyMsg));
+    sendClockUpdate(room);
+
+    // The arbiter restarts the interrupted clock after the pause (no-op if the game ended or
+    // another intervention took over meanwhile).
+    maintenance.schedule(() -> {
+      try {
+        if (room.getSession().resumeAfterWrongClockPress() != null) {
+          sendClockUpdate(room);
+        }
+      } catch (final RuntimeException e) {
+        System.err.println("[wrong-clock-resume] " + room.getGameId() + ": " + e);
+      }
+    }, wrongClockPauseMs, TimeUnit.MILLISECONDS);
   }
 
   private void sendRestoreInstructions(GameRoom room, Side side) {
@@ -1138,7 +1210,15 @@ public class GameWebSocketServer extends WebSocketServer {
 
     // Swap the dropped socket for the new one and resend current state.
     room.setSocket(side, conn);
+    room.setDisconnectedAt(side, null);
     playerGameMap.put(conn, gameId);
+
+    // Tell the opponent the player is back — clears their disconnect countdown / Claim-victory
+    // button (the pending disconnect timers defuse themselves via the socket-identity check).
+    final JsonObject back = new JsonObject();
+    back.addProperty("type", "opponentReconnected");
+    back.addProperty("message", "Your opponent has reconnected.");
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(back));
 
     final var session = room.getSession();
     final var clock = session.getClock();
@@ -1432,7 +1512,7 @@ public class GameWebSocketServer extends WebSocketServer {
     // For draws by an explicit player action (resignation, flag-fall under the FIDE "opponent
     // cannot win" exception, or accepting a draw offer), tag who acted so the client can phrase
     // the message in the second person. Resignation / flag-fall additionally carry the draw reason.
-    if (result.type() == GameResultType.ABANDONMENT
+    if (result.type() == GameResultType.ABANDONMENT || result.type() == GameResultType.WRONG_CLOCK_PRESS_GAME_LOST
         || result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
             || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
       msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());

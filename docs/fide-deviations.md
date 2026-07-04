@@ -155,3 +155,21 @@ As with A-003, **the count accumulates across different moves** and never resets
 **Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "AFTER_TOUCH_CLAIM_LIMIT"); the client routes it via the same `wrongTime` flag as A-003 and tracks `touchedThisTurn` to skip the SAN prompt.
 
 **Rationale**: Same as A-003 — the two are the same offence ("claiming at a procedurally wrong moment") on either side of the clock press.
+
+---
+
+### A-006 — Wrong clock press (pressing the opponent's clock) escalation
+
+**FIDE**: Article 6.2.4 forbids operating the opponent's clock ("A player must press his/her clock with the same hand…"; handling the clock improperly falls under 12.9 penalties). On a physical clock, pressing the opponent's lever is *possible* — and this board models the real world, so the press is allowed and the arbiter reacts.
+
+**Physical semantics**: the press registers only while the opponent's clock is RUNNING (their lever up). If their lever is already down, pressing it does nothing — silence, exactly like the real clock (this also covers presses during a pause).
+
+**Our policy** (same three-step ladder as A-003/A-005, counted per player across the whole game):
+
+1. First press: the arbiter **pauses the game** — offender: *"Please do not press your opponent's clock. The game is paused and will continue shortly."*; the opponent sees what happened passively (info window). After the admonishment pause (`OTB_WRONG_CLOCK_PAUSE_MS`, default 5 s) the interrupted clock restarts.
+2. Second press: same pause plus the warning — the next press loses the game.
+3. Third press: **loss of the game** (`WRONG_CLOCK_PRESS_GAME_LOST`). Offender: told they were warned and lose; opponent: *"Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game."*
+
+**Where in code**: [`GameSession.pressOpponentClock`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_CLOCK_PRESS_LIMIT"); the server schedules the clock restart after the pause.
+
+**Rationale**: Same as the other ladders — model the fault, teach through the arbiter's escalating response, encode the arbiter judgment as an explicit transparent threshold.

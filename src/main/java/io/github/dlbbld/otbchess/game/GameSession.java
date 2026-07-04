@@ -655,6 +655,77 @@ public class GameSession {
     return lossResult;
   }
 
+  // ===== Wrong clock press (pressing the opponent's clock) =====
+
+  // Real-world modeling: on a physical clock the wrong lever CAN be pressed. Escalation like the
+  // other misconducts: the arbiter pauses the game and admonishes (the clock restarts after a
+  // short pause), the second time with a warning, the third press loses the game. Counted per
+  // player across the whole game.
+  private static final int WRONG_CLOCK_PRESS_LIMIT = 3;
+  private final Map<Side, Integer> wrongClockPressCounts = new EnumMap<>(Side.class);
+  // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
+  private Side wrongClockPressPausedFor;
+
+  /**
+   * Outcome of a press of the opponent's clock lever.
+   *
+   * @param offense      false when the press was a physical no-op (the opponent's lever was already down — their
+   *                     clock was not running); nothing is counted or announced then
+   * @param gameLost     true on the third offense — the game has been ended inside this call
+   * @param message      arbiter message for the offender ({@code null} for a no-op)
+   * @param opponentInfo passive info for the opponent ({@code null} for a no-op and for the game-ending press, which
+   *                     speaks through {@code gameEnded} instead)
+   */
+  public record WrongClockPressOutcome(boolean offense, boolean gameLost, String message, String opponentInfo) {
+  }
+
+  /**
+   * The player pressed their OPPONENT's clock lever. Physically meaningful only while the opponent's clock is
+   * running (their lever up) — otherwise the lever is already down and nothing happens, exactly like a real clock.
+   */
+  public synchronized WrongClockPressOutcome pressOpponentClock(Side side) {
+    final Side opponent = side.getOppositeSide();
+    if (state != GameState.IN_PROGRESS || clock.getRunningFor() != opponent) {
+      return new WrongClockPressOutcome(false, false, null, null);
+    }
+    final int count = wrongClockPressCounts.merge(side, 1, Integer::sum);
+    if (count >= WRONG_CLOCK_PRESS_LIMIT) {
+      terminationActor = side;
+      endGame(new GameResult(GameResultType.WRONG_CLOCK_PRESS_GAME_LOST, opponent,
+          sideName(side) + " loses the game by repeatedly pressing the opponent's clock."));
+      return new WrongClockPressOutcome(true, true, null, null);
+    }
+    clock.stopClock();
+    wrongClockPressPausedFor = opponent;
+    if (count == WRONG_CLOCK_PRESS_LIMIT - 1) {
+      return new WrongClockPressOutcome(true, false,
+          "Please do not press your opponent's clock. The game is paused and will continue shortly."
+              + " Warning: the next press of your opponent's clock loses the game.",
+          "Your opponent pressed your clock and has been warned: the next press loses them the game."
+              + " The game is paused; your clock will restart shortly.");
+    }
+    return new WrongClockPressOutcome(true, false,
+        "Please do not press your opponent's clock. The game is paused and will continue shortly.",
+        "Your opponent pressed your clock. The game is paused; your clock will restart shortly.");
+  }
+
+  /**
+   * Ends the admonishment pause after a wrong clock press: restarts the clock of the side that was running before
+   * the offense. No-op when the game ended meanwhile or no such pause is active.
+   *
+   * @return the side whose clock was restarted, or {@code null} when nothing happened
+   */
+  public synchronized Side resumeAfterWrongClockPress() {
+    if (state != GameState.IN_PROGRESS || wrongClockPressPausedFor == null) {
+      wrongClockPressPausedFor = null;
+      return null;
+    }
+    final Side side = wrongClockPressPausedFor;
+    wrongClockPressPausedFor = null;
+    clock.startClock(side);
+    return side;
+  }
+
   // ===== Abandonment =====
 
   /**

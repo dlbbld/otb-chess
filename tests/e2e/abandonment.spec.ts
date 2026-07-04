@@ -50,6 +50,59 @@ test('a player closing the browser loses by abandonment when the opponent can ma
   await expect(white.locator('#arbiterMessage')).toContainText('rematch is not available');
 });
 
+test('the disconnect countdown offers Claim victory — clicking ends the game at once', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+
+  await game.contexts[1].close(); // Black leaves
+
+  // After the grace: the countdown runs and the Claim-victory button is offered.
+  await expect(white.locator('#arbiterMessage')).toContainText('Your opponent has disconnected', {
+    timeout: 10_000,
+  });
+  await expect(white.locator('#arbiterMessage')).toContainText('The game will be ended in');
+  const claimBtn = white.locator('#arbiterButtons').getByText('Claim victory');
+  await expect(claimBtn).toBeVisible();
+
+  // Claiming applies the abandonment adjudication immediately — no waiting for the deadline.
+  await claimBtn.click();
+  await expectGameResult(white, '1-0');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your opponent left the game. You win.');
+  await expect(white.locator('#gameResultReason')).toContainText('Black left the game. White wins the game.');
+});
+
+test('claim victory is rejected while the opponent is connected', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white } = game;
+
+  await white.evaluate(() => (window as any).game.ws.send({ type: 'claimVictory' }));
+  await expect(white.locator('#arbiterMessage')).toContainText('Victory cannot be claimed');
+  await expect(white.locator('#gameResultPanel')).toBeHidden();
+});
+
+test('a reconnect clears the countdown and the Claim victory button', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // Black loses the game TAB (context and localStorage live on) — White's countdown starts.
+  await black.close();
+  await expect(white.locator('#arbiterMessage')).toContainText('The game will be ended in', {
+    timeout: 10_000,
+  });
+  await expect(white.locator('#arbiterButtons').getByText('Claim victory')).toBeVisible();
+
+  // Black returns (saved session resumes the seat): countdown and button disappear.
+  const returned = await game.contexts[1].newPage();
+  await returned.goto('/game.html');
+  await expect(returned.locator('#arbiterMessage')).toContainText('Reconnected', { timeout: 10_000 });
+  await expect(white.locator('#arbiterMessage')).toContainText('Your opponent has reconnected');
+  await expect(white.locator('#arbiterButtons').getByText('Claim victory')).toBeHidden();
+});
+
 test('abandonment is a draw when the remaining player cannot possibly mate', async ({ browser }) => {
   // White (the remaining player) has only the king; Black has king + queen. No series of legal
   // moves lets White mate — the abandoned game is adjudicated as a draw, as chess servers do.

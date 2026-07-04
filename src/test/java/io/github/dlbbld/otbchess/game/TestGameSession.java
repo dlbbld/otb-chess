@@ -776,6 +776,84 @@ class TestGameSession {
     assertEquals("You cannot claim a draw when not having the move.", whiteFirst.message());
   }
 
+  // ===== Wrong clock press (pressing the opponent's clock) =====
+
+  /** Pressing the opponent's lever while it is already DOWN (their clock not running) is a physical no-op. */
+  @Test
+  void testWrongClockPressIsNoOpWhenOpponentClockNotRunning() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame(); // White's clock runs
+
+    // White presses BLACK's lever — Black's clock is not running, the lever is down: nothing.
+    final GameSession.WrongClockPressOutcome outcome = session.pressOpponentClock(Side.WHITE);
+    assertFalse(outcome.offense());
+    assertEquals(Side.WHITE, session.getClock().getRunningFor()); // clock untouched
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+  }
+
+  /** The A-006 ladder: pause + admonishment, pause + warning, loss on the third press. */
+  @Test
+  void testWrongClockPressEscalatesToGameLoss() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame(); // White's clock runs — BLACK pressing it is the offense
+
+    // First press: the arbiter pauses the game and admonishes; the opponent is informed passively.
+    final GameSession.WrongClockPressOutcome first = session.pressOpponentClock(Side.BLACK);
+    assertTrue(first.offense());
+    assertFalse(first.gameLost());
+    assertTrue(first.message().contains("Please do not press your opponent's clock"));
+    assertFalse(first.message().contains("Warning"));
+    assertTrue(first.opponentInfo().contains("pressed your clock"));
+    assertEquals(Side.NONE, session.getClock().getRunningFor()); // paused
+
+    // The arbiter restarts the interrupted clock (White's) after the pause.
+    assertEquals(Side.WHITE, session.resumeAfterWrongClockPress());
+    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+
+    // Second press: same pause, plus the warning.
+    final GameSession.WrongClockPressOutcome second = session.pressOpponentClock(Side.BLACK);
+    assertTrue(second.message().contains("Warning: the next press of your opponent's clock loses the game"));
+    assertTrue(second.opponentInfo().contains("been warned"));
+    assertEquals(Side.WHITE, session.resumeAfterWrongClockPress());
+
+    // Third press: the game is lost.
+    final GameSession.WrongClockPressOutcome third = session.pressOpponentClock(Side.BLACK);
+    assertTrue(third.gameLost());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.WRONG_CLOCK_PRESS_GAME_LOST, session.getResult().type());
+    assertEquals(Side.WHITE, session.getResult().winner());
+    assertEquals(Side.BLACK, session.getTerminationActor());
+    assertEquals("Black loses the game by repeatedly pressing the opponent's clock.",
+        session.getResult().description());
+  }
+
+  /** During the admonishment pause nothing runs — further presses are physical no-ops, not extra offenses. */
+  @Test
+  void testWrongClockPressDuringPauseIsNoOp() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    assertTrue(session.pressOpponentClock(Side.BLACK).offense()); // pause active now
+    assertFalse(session.pressOpponentClock(Side.BLACK).offense()); // no clock running -> no-op
+    assertFalse(session.pressOpponentClock(Side.BLACK).offense());
+
+    // Resume, then the NEXT real press is offense #2 (the pause presses were not counted).
+    assertEquals(Side.WHITE, session.resumeAfterWrongClockPress());
+    final GameSession.WrongClockPressOutcome second = session.pressOpponentClock(Side.BLACK);
+    assertTrue(second.offense());
+    assertTrue(second.message().contains("Warning"));
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+  }
+
+  /** The resume helper is a safe no-op when no wrong-clock pause is active. */
+  @Test
+  void testResumeAfterWrongClockPressWithoutPauseIsNoOp() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    assertNull(session.resumeAfterWrongClockPress());
+    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+  }
+
   // ===== Abandonment (player left the game) =====
 
   /** Abandonment is adjudicated like a resignation: the leaver loses when the opponent can still mate. */

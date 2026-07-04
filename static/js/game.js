@@ -211,19 +211,52 @@ class Game {
     el.style.display = 'none';
   }
 
+  // === Disconnect countdown (opponent gone) ===
+  // After the server's disconnect notice, count down to the abandonment adjudication and offer
+  // "Claim victory" (same adjudication, just immediately). Cleared on reconnect / game end.
+
+  startDisconnectCountdown(baseMessage, abandonInMs) {
+    this.stopDisconnectCountdown();
+    if (!abandonInMs || abandonInMs <= 0) {
+      this.showArbiterMessage(baseMessage, 'info');
+      return;
+    }
+    const deadline = Date.now() + abandonInMs;
+    const render = () => {
+      const secondsLeft = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      this.showArbiterMessage(`${baseMessage} The game will be ended in ${secondsLeft}s.`, 'info');
+      if (secondsLeft <= 0) this.stopDisconnectCountdown(); // the gameEnded broadcast takes over
+    };
+    render();
+    this._disconnectCountdownTimer = setInterval(render, 1000);
+    this.clearArbiterButtons();
+    this.showArbiterButton('Claim victory', () => {
+      this.ws.send({ type: 'claimVictory' });
+    });
+  }
+
+  stopDisconnectCountdown() {
+    if (this._disconnectCountdownTimer) {
+      clearInterval(this._disconnectCountdownTimer);
+      this._disconnectCountdownTimer = null;
+    }
+  }
+
   onClockButtonPressed(position) {
     if (!this.gameActive) return;
 
     const pressedColor = position === 'bottom' ? this.bottomClockColor : this.topClockColor;
 
-    // Only a press of the player's OWN lever while it's their turn does anything —
-    // exactly like a real chess clock where pressing the wrong side does not register.
-    // We intentionally do NOT notify the server about clicks on the opponent's lever
-    // (or on the player's own lever when it's not their turn): no message, no arbiter
-    // intervention, no "do not press the opponent's clock" feedback. Silence keeps
-    // the cursor-and-click behaviour identical for both halves and avoids leaking
-    // which lever belongs to whom.
-    if (pressedColor !== this.side) return;
+    if (pressedColor !== this.side) {
+      // Real-world modeling: on a physical clock the OPPONENT's lever CAN be pressed. The
+      // server decides whether it registers (only while the opponent's clock is running —
+      // their lever up; otherwise it is a physical no-op) and escalates: pause + admonishment,
+      // pause + warning, loss of the game on the third press.
+      this.ws.send({ type: 'opponentClockPressed' });
+      return;
+    }
+    // A press of the player's own lever when it is not their turn is a physical no-op
+    // (the lever is already down) — silence, exactly like a real clock.
     if (!this.isMyTurn) return;
 
     this.ws.sendClockPress(this.board.getBoardState());
@@ -579,8 +612,11 @@ class Game {
       // A pending draw offer dies with the game (e.g. a rejected claim was forwarded as an
       // offer and the claimer then lost by escalation) — no Accept/Reject on a finished game.
       document.getElementById('drawOfferPanel').style.display = 'none';
-      // The game-ending message goes to the arbiter window; stale passive info disappears.
+      // The game-ending message goes to the arbiter window; stale passive info disappears, and
+      // a running disconnect countdown (plus its Claim-victory button) stops.
       this.clearOpponentInfo();
+      this.stopDisconnectCountdown();
+      this.clearArbiterButtons();
       // Game has ended — drop the PAUSE overlay because no further clockUpdate
       // will arrive to clear it via the updateClocks path.
       const clockEl = document.getElementById('chessClock');
@@ -635,6 +671,12 @@ class Game {
         this.showArbiterMessage(data.actor === this.side
           ? 'You left the game and lose.'
           : 'Your opponent left the game. You win.');
+      } else if (data.resultType === 'WRONG_CLOCK_PRESS_GAME_LOST') {
+        // Third press of the opponent's clock despite the warning (see A-006).
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You have been warned that you will lose the game when you press your opponent\'s clock again.'
+            + ' As you have pressed it again, you lose the game.'
+          : 'Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game.');
       } else if (data.resultType === 'DRAW_AGREEMENT' && data.winner === 'none') {
         // Who accepted goes on top (arbiter message); the result panel keeps the canonical
         // "The game is drawn by agreement." after the ½-½ score.
@@ -695,6 +737,7 @@ class Game {
       document.getElementById('abortBtn').style.display = 'none';
       document.getElementById('resignBtn').style.display = '';
       this.updateButtons();
+      this.stopDisconnectCountdown();
       this.showArbiterMessage(data.message);
       this.clearArbiterButtons();
     });
@@ -707,9 +750,18 @@ class Game {
     });
 
     this.ws.on('opponentDisconnected', (data) => {
-      this.showArbiterMessage(data.message, 'info');
       // Drop any in-flight opponent drag visualisation — no more events will arrive.
       this.board.clearOpponentDragVisuals();
+      // Countdown to the abandonment adjudication (Lichess-style), plus the option to end it
+      // now: "Claim victory" applies the same adjudication immediately (win — or draw when no
+      // mate is possible). A reconnect (opponentReconnected) or the game end clears all of it.
+      this.startDisconnectCountdown(data.message, data.abandonInMs);
+    });
+
+    this.ws.on('opponentReconnected', (data) => {
+      this.stopDisconnectCountdown();
+      this.clearArbiterButtons();
+      this.showArbiterMessage(data.message, 'info');
     });
 
     this.ws.on('error', (data) => {
