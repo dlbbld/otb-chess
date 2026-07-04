@@ -40,6 +40,9 @@ test('wrong-time claims escalate: rejection, warning, then loss of the game', as
   await expect(black.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
   await expect(black.locator('#claimFiftyMoveOnBoardBtn')).toBeEnabled();
   await expect(white.locator('#opponentInfoPanel')).toContainText('claimed a draw while not having the move');
+  // "Not considered", not "rejected" — the claim never reached the rule machinery.
+  await expect(white.locator('#opponentInfoPanel')).toContainText('The claim was not considered');
+  await expect(white.locator('#opponentInfoPanel')).not.toContainText('rejected');
   await expect(white.locator('#arbiterMessage')).not.toContainText('claimed');
 
   // Second press: same rejection plus the warning; White's passive info mentions the warning.
@@ -143,6 +146,7 @@ test('claims after touching a piece (move made, clock not pressed) escalate acro
   await expect(white.locator('#arbiterMessage')).toContainText('after touching or moving a piece');
   await expect(white.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
   await expect(black.locator('#opponentInfoPanel')).toContainText('claimed a draw after touching a piece');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('The claim was not considered');
 
   // Second press in the same situation — via a WITH-MOVE button: no SAN prompt, the warning.
   await white.locator('#claimFiftyMoveWithMoveBtn').click();

@@ -530,8 +530,10 @@ Claims made at a procedurally wrong moment do **not** disable the claim buttons 
 
 | Press | Claimer (arbiter window) | Opponent |
 |---|---|---|
-| 1st | _"You cannot claim a draw when not having the move."_ | passive info: claimed + rejected |
-| 2nd | same + _"Warning: your next draw claim when not having the move loses the game."_ | passive info: claimed again + warned |
+| 1st | _"You cannot claim a draw when not having the move."_ | passive info: _"… claimed a draw while not having the move. The claim was not considered."_ |
+| 2nd | same + _"Warning: your next draw claim when not having the move loses the game."_ | passive info: claimed again, not considered + warned |
+
+Wording note: procedurally refused claims are **"not considered"** — only a claim that actually reached the rule machinery and was examined on the merits can be **"rejected"**. This applies to all three ladders (wrong time, after touch, repeat on the same move).
 | 3rd | _"You have been warned … you lose the game."_ | arbiter window: _"… repeatedly requested to claim a draw while not having the move, and so has lost the game."_ |
 
 Result type `WRONG_TIME_CLAIM_GAME_LOST`. Example across moves: Black claims while White is on move 10 (rejection), on move 12 (warning), on move 15 — Black loses.

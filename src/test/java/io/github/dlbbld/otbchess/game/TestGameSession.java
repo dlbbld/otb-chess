@@ -549,7 +549,10 @@ class TestGameSession {
     assertTrue(first.wrongTime());
     assertEquals("You cannot claim a draw when not having the move.", first.message());
     assertTrue(first.opponentMessage().isEmpty()); // nothing action-relevant for the opponent
-    assertTrue(first.opponentInfo().get().contains("claimed a draw while not having the move"));
+    // "Not considered", NOT "rejected": the claim never reached the rule machinery — only a
+    // claim examined on the merits can be rejected.
+    assertEquals("Your opponent claimed a draw while not having the move. The claim was not considered.",
+        first.opponentInfo().get());
     assertEquals(GameState.IN_PROGRESS, session.getState());
 
     // Second: same rejection plus the warning — the opponent's passive info mentions the warning.
@@ -648,7 +651,8 @@ class TestGameSession {
     assertTrue(first.wrongTime());
     assertTrue(first.message().contains("FIDE 9.4"));
     assertTrue(first.opponentMessage().isEmpty());
-    assertTrue(first.opponentInfo().get().contains("claimed a draw after touching a piece"));
+    assertEquals("Your opponent claimed a draw after touching a piece on this move. The claim was not considered.",
+        first.opponentInfo().get());
 
     final DrawClaimResult second = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
     assertTrue(second.wrongTime());
@@ -1186,6 +1190,7 @@ class TestGameSession {
     assertTrue(second.message().contains("You are warned"));
     assertTrue(second.opponentMessage().isEmpty());
     assertTrue(second.opponentInfo().get().contains("second draw claim on the same move"));
+    assertTrue(second.opponentInfo().get().contains("The claim was not considered"));
     assertTrue(second.opponentInfo().get().contains("been warned"));
     assertEquals(GameState.IN_PROGRESS, session.getState());
 

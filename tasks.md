@@ -185,6 +185,13 @@ public launch. Released as **v0.1.1** (still beta).
   pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
 - [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
   same commit; long e2e runtimes explicitly acceptable) + memory updated.
+- [x] **Wording fix: procedurally refused claims are "not considered", not "rejected".** A claim
+  made while not having the move (or after touching a piece, or as a repeat on the same move)
+  never reaches the rule machinery — only a claim examined on the merits (threefold/50-move
+  check) can be *rejected*. The five passive-info texts now say "The claim was not considered."
+  (merit rejections keep "…the claim is not valid. It still counts as a draw offer."). Wording
+  note added to SPECIFICATION.md; exact texts pinned in unit tests, e2e asserts the new phrase
+  and the absence of "rejected".
 - [x] **Moved-opponent-piece escalation (A-007).** Dragging an opponent's piece (never legal) now
   escalates like the other misconducts instead of repeating the same notice forever: 1st → arbiter
   pauses + "Please restore the position" (existing Revert/auto-resume flow), opponent informed
