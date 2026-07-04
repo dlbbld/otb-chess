@@ -69,6 +69,32 @@ test('joining a game that has already ended shows a friendly message and a way b
   }
 });
 
+test('a new tab in the same browser finds its way back into the running game via the lobby', async ({
+  browser,
+}) => {
+  const game = await startTwoPlayerGame(browser);
+  try {
+    // The player "loses" the game tab and opens a NEW tab in the same browser (same context =
+    // same localStorage): the lobby must offer the way back, not strand them.
+    const newTab = await game.contexts[0].newPage();
+    await newTab.goto('/');
+    await expect(newTab.locator('#gameInProgress')).toBeVisible();
+    await newTab.locator('#returnToGameBtn').click();
+
+    // The new tab resumes the same seat (secret token from localStorage) — game continues.
+    await expect(newTab.locator('#arbiterMessage')).toContainText('Reconnected', { timeout: 15_000 });
+    await expect(newTab.locator('#board')).toBeVisible();
+  } finally {
+    await Promise.all(game.contexts.map((c) => c.close()));
+  }
+});
+
+test('the lobby shows no game-in-progress banner without a saved session', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#gameInProgress')).toBeHidden();
+  await expect(page.locator('#createGameBtn')).toBeVisible();
+});
+
 test('an invalid starting FEN is rejected on the start screen, not on the board', async ({ page }) => {
   await page.goto('/');
   await page.locator('#startingFen').fill('not-a-valid-fen');

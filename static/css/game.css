@@ -23,6 +23,8 @@ body {
 .board-version { margin-top: 2px; }
 .lobby > p { text-align: center; color: #777; margin-bottom: 24px; }
 .lobby-section { margin-bottom: 24px; padding: 16px; background: #f5f0eb; border-radius: 8px; }
+/* "Game in progress" banner: the way back into a running game from a new tab / the lobby. */
+.lobby-section.game-in-progress { border-left: 4px solid #4caf50; }
 .lobby-section h2 { font-size: 16px; margin-bottom: 12px; color: #5d4037; }
 .lobby-section label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
 .radio-group { display: flex; gap: 16px; margin-bottom: 12px; }

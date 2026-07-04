@@ -30,7 +30,13 @@ class Game {
     // drives the "who joined" half of the game-start message (see gameStartedMessage).
     this.isCreator = isCreator;
 
-    if (!isCreator && !this.gameId) {
+    // A saved session (gameId + secret token in localStorage) means a running game in THIS
+    // browser: a bare /game.html — e.g. the lobby's "Return to game", or a new tab — resumes it
+    // without needing any game code in the URL.
+    const saved = Game.loadSession();
+    const hasSavedSession = !!(saved && saved.gameId && saved.token);
+
+    if (!isCreator && !this.gameId && !hasSavedSession) {
       this.showGameUnavailable('No game code was provided.');
       return;
     }
@@ -47,11 +53,10 @@ class Game {
     await this.ws.connect();
     this.setupMessageHandlers();
 
-    // A saved session means this is a refresh of an existing game: resume the SAME game (and code)
-    // rather than creating/joining a new one. The lobby clears it for a deliberate new game, and we
-    // clear it on abort / game end.
-    const saved = Game.loadSession();
-    if (saved && saved.gameId && saved.token) {
+    // A saved session means this is a refresh of an existing game (or a return via the lobby /
+    // a bare /game.html): resume the SAME game (and code) rather than creating/joining a new
+    // one. The lobby clears it for a deliberate new game, and we clear it on abort / game end.
+    if (hasSavedSession) {
       this.isCreator = saved.isCreator;
       this.side = saved.side || this.side;
       this.ws.sessionToken = saved.token;

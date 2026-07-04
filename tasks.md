@@ -167,6 +167,14 @@ public launch. Released as **v0.1.1** (still beta).
   for all other endings across rematch chains) and the server refuses hand-crafted offers ("A
   rematch is not available - your opponent left the game."). e2e asserts hidden button + server
   refusal on both abandonment endings (win and draw).
+- [x] **Way back into a running game from the lobby / a new tab.** The seat token lives in
+  localStorage (survives new tabs and browser restarts), but only game.html used it — a player
+  who lost their game tab and opened localhost:8080 was stranded in the lobby. Now the lobby
+  shows a "Game in progress — Return to game" banner when a saved session exists (create/join
+  still deliberately clear it), and a bare `/game.html` resumes from the saved session instead
+  of bailing with "no game code". Stale sessions resolve via the existing resumeFailed →
+  friendly-message → Back-to-lobby flow (which clears them, so no loop). e2e: new-tab reconnect
+  flow + no banner without a session (client-only change — no Java to unit-test).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.
