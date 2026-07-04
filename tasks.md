@@ -185,6 +185,13 @@ public launch. Released as **v0.1.1** (still beta).
   pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
 - [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
   same commit; long e2e runtimes explicitly acceptable) + memory updated.
+- [x] **Bug fix: no reconnect into an adjudicated (ended) game.** The leaver's closed tab never
+  received `gameEnded`, so their localStorage still held the seat token — the lobby offered
+  "Return to game" and `resume` happily resynced into the ENDED game. Now a resume into an ENDED
+  game is refused (`resumeFailed`, "This game has already ended."), which also clears the stale
+  session and thus the lobby banner. Running-game reconnects unaffected (pinned by the existing
+  refresh/lobby-return tests). e2e replays the reported journey: leave → claim victory → leaver
+  returns → banner (stale) → refusal → Back to lobby → banner gone.
 - [x] **Way back into a running game from the lobby / a new tab.** The seat token lives in
   localStorage (survives new tabs and browser restarts), but only game.html used it — a player
   who lost their game tab and opened localhost:8080 was stranded in the lobby. Now the lobby

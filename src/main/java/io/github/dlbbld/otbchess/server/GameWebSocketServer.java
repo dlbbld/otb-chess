@@ -1207,6 +1207,17 @@ public class GameWebSocketServer extends WebSocketServer {
       conn.send(GSON.toJson(msg));
       return;
     }
+    if (room.getSession().getState() == GameState.ENDED) {
+      // The game ended while this player was away — e.g. adjudicated as abandoned after they
+      // closed the tab, so their client never saw gameEnded and still holds the seat token.
+      // A reconnect into a finished game is not allowed; resumeFailed makes the client clear
+      // the stale saved session (which also removes the lobby's "Return to game" banner).
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "resumeFailed");
+      msg.addProperty("message", "This game has already ended.");
+      conn.send(GSON.toJson(msg));
+      return;
+    }
 
     // Swap the dropped socket for the new one and resend current state.
     room.setSocket(side, conn);

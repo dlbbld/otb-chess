@@ -103,6 +103,37 @@ test('a reconnect clears the countdown and the Claim victory button', async ({ b
   await expect(white.locator('#arbiterButtons').getByText('Claim victory')).toBeHidden();
 });
 
+test('after the abandonment adjudication the leaver cannot reconnect (reported bug)', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+
+  // Black loses the game TAB (context and its localStorage live on); White ends the game via
+  // Claim victory once the countdown is offered — same adjudication as the automatic deadline.
+  await black.close();
+  const claimBtn = white.locator('#arbiterButtons').getByText('Claim victory');
+  await expect(claimBtn).toBeVisible({ timeout: 10_000 });
+  await claimBtn.click();
+  await expectGameResult(white, '1-0');
+
+  // Black comes back AFTER the game has been decided. The lobby still shows the (stale) banner —
+  // the closed tab never saw gameEnded — but the reconnect must be REFUSED.
+  const returned = await game.contexts[1].newPage();
+  await returned.goto('/');
+  await expect(returned.locator('#gameInProgress')).toBeVisible();
+  await returned.locator('#returnToGameBtn').click();
+  await expect(returned.locator('#arbiterMessage')).toContainText('This game has already ended');
+  await expect(returned.locator('#arbiterButtons')).toContainText('Back to lobby');
+
+  // The refusal cleared the stale session: back in the lobby, the banner is gone.
+  await returned.locator('#arbiterButtons').getByText('Back to lobby').click();
+  await expect(returned.locator('#createGameBtn')).toBeVisible();
+  await expect(returned.locator('#gameInProgress')).toBeHidden();
+});
+
 test('abandonment is a draw when the remaining player cannot possibly mate', async ({ browser }) => {
   // White (the remaining player) has only the king; Black has king + queen. No series of legal
   // moves lets White mate — the abandoned game is adjudicated as a draw, as chess servers do.
