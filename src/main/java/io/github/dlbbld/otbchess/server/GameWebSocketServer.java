@@ -70,6 +70,10 @@ public class GameWebSocketServer extends WebSocketServer {
   // player a window to reconnect (idle drop / network blip) without flapping the game.
   private final long disconnectGraceMs = OtbChessServer.envLong("OTB_DISCONNECT_GRACE_MS",
       TimeUnit.SECONDS.toMillis(12));
+  // How long after a socket drops (without a resume) a RUNNING game is adjudicated as abandoned:
+  // the leaver loses unless the remaining player has no possible mate (then it is a draw). Longer
+  // than the disconnect grace so a network blip never forfeits a game.
+  private final long abandonMs = OtbChessServer.envLong("OTB_ABANDON_MS", TimeUnit.SECONDS.toMillis(60));
   private final Set<String> allowedOrigins = parseAllowedOrigins();
   private final UsageLog usageLog = UsageLog.fromConfig(OtbChessServer.envStr("OTB_USAGE_LOG", "logs/usage.log"),
       OtbChessServer.envInt("OTB_USAGE_RETENTION_DAYS", 30));
@@ -122,6 +126,28 @@ public class GameWebSocketServer extends WebSocketServer {
         room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
       }
     }, disconnectGraceMs, TimeUnit.MILLISECONDS);
+
+    // Stage 2: if the player is STILL gone after the (longer) abandonment window, a running game
+    // is adjudicated as abandoned, like chess servers do: the leaver loses — unless the remaining
+    // player has no possible mate by any series of legal moves, in which case it is a draw
+    // (GameSession.abandon). A resume swaps in a new socket and defuses this; a game that ended
+    // meanwhile (e.g. the leaver's flag fell) makes abandon() a no-op.
+    maintenance.schedule(() -> {
+      try {
+        if (room.getSocket(side) != conn) {
+          return; // reconnected
+        }
+        final GameResult result = room.getSession().abandon(side);
+        if (result == null) {
+          return; // game wasn't running (never started, or already decided)
+        }
+        room.stopClockTicker();
+        sendGameEnded(room, result);
+        System.out.println("Game " + gameId + " adjudicated after abandonment by " + side.name().toLowerCase());
+      } catch (final RuntimeException e) {
+        System.err.println("[abandonment] " + gameId + ": " + e);
+      }
+    }, abandonMs, TimeUnit.MILLISECONDS);
   }
 
   @Override
@@ -1399,12 +1425,14 @@ public class GameWebSocketServer extends WebSocketServer {
     // For draws by an explicit player action (resignation, flag-fall under the FIDE "opponent
     // cannot win" exception, or accepting a draw offer), tag who acted so the client can phrase
     // the message in the second person. Resignation / flag-fall additionally carry the draw reason.
-    if (result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
-        || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
+    if (result.type() == GameResultType.ABANDONMENT
+        || result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
+            || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
       msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());
     }
     if (result.winner() == Side.NONE
-        && (result.type() == GameResultType.RESIGNATION || result.type() == GameResultType.FLAG_FALL)) {
+        && (result.type() == GameResultType.RESIGNATION || result.type() == GameResultType.FLAG_FALL
+            || result.type() == GameResultType.ABANDONMENT)) {
       msg.addProperty("drawReason",
           room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
     }

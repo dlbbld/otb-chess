@@ -146,6 +146,22 @@ public launch. Released as **v0.1.1** (still beta).
   `rematchOfferSent`/`rematchOffered`/`rematchStarted` out (race-safe per room; offer before game
   end rejected). Unit (`TestGameRoom`: seat/token/session reset, original-FEN restart) + e2e (full
   offer→blink→accept→swapped-colours→play flow, wrong-state rejection).
+- [x] **Rematch position guarantee explicitly tested** (training-critical): a rematch restarts
+  from the game's ORIGINAL starting position — the standard start for normal games, the custom
+  FEN for custom-position games — never from where the previous game ended. Unit (`TestGameRoom`:
+  standard + custom FEN, both after moves were played) and e2e (board-reset asserts in the
+  standard rematch test; a dedicated custom-FEN rematch test proving the custom position returns
+  on both boards with colours swapped and remains playable).
+- [x] **Abandonment adjudication (player closes the browser).** Two timers from a mid-game
+  disconnect: at `OTB_DISCONNECT_GRACE_MS` (12 s) the opponent is informed ("Your opponent has
+  disconnected."); at `OTB_ABANDON_MS` (60 s) the game is adjudicated as abandoned like chess
+  servers do — the leaver loses (`ABANDONMENT`, "«Side» left the game. «Side» wins."), unless the
+  remaining player has no possible mate (same helpmate adjudication as resignation/flag fall) —
+  then it's a draw with the insufficient-material / no-potential-mate reason. A resume defuses
+  both timers; an already-decided game is left as it ended. Personalised client messages ("Your
+  opponent left the game. You win." / draw variant). Unit (loss, draw, no-op when not running) +
+  e2e (browser-close win, lone-king draw, refresh does NOT forfeit) with short test windows via
+  Playwright env.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

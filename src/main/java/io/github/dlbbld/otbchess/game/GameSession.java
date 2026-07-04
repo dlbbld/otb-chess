@@ -655,6 +655,37 @@ public class GameSession {
     return lossResult;
   }
 
+  // ===== Abandonment =====
+
+  /**
+   * A player abandoned the game (closed the browser / never reconnected). Adjudicated like a resignation, as chess
+   * servers do: the leaver loses — unless the remaining player could not checkmate by any series of legal moves
+   * (helpmate test via {@link Adjudicator}, QUICK variant like {@link #resign(Side)}), in which case it is a draw.
+   *
+   * @return the game result, or {@code null} when there is nothing to adjudicate (game not running)
+   */
+  public synchronized GameResult abandon(Side side) {
+    if (state != GameState.IN_PROGRESS) {
+      // Never started (reaper territory) or already decided (e.g. flag fell while they were gone).
+      return null;
+    }
+    final Side opponent = side.getOppositeSide();
+    terminationActor = side;
+
+    if (Adjudicator.adjudicateResignationQuick(board, side) == AdjudicationResult.DRAW) {
+      drawExceptionByInsufficientMaterial = board.isInsufficientMaterial(opponent);
+      final GameResult drawResult = new GameResult(GameResultType.ABANDONMENT, Side.NONE,
+          sideName(side) + " left the game, but because " + drawReason(opponent) + ", the game is a draw.");
+      endGame(drawResult);
+      return drawResult;
+    }
+
+    final GameResult lossResult = new GameResult(GameResultType.ABANDONMENT, opponent,
+        sideName(side) + " left the game. " + sideName(opponent) + " wins the game.");
+    endGame(lossResult);
+    return lossResult;
+  }
+
   // ===== Flag fall =====
 
   /**

@@ -605,11 +605,12 @@ class Game {
         this.showArbiterMessage(data.mover === this.side
           ? 'Your last move led to a fivefold repetition.'
           : "Your opponent's last move led to a fivefold repetition.");
-      } else if ((data.resultType === 'RESIGNATION' || data.resultType === 'FLAG_FALL')
-          && data.winner === 'none') {
-        // FIDE draw exception: the actor resigned/flagged but the opponent cannot mate.
+      } else if ((data.resultType === 'RESIGNATION' || data.resultType === 'FLAG_FALL'
+          || data.resultType === 'ABANDONMENT') && data.winner === 'none') {
+        // FIDE draw exception: the actor resigned/flagged/left but the opponent cannot mate.
         // Phrase it in the second person for each player.
-        const verb = data.resultType === 'RESIGNATION' ? 'resigned' : 'flagged';
+        const verb = data.resultType === 'RESIGNATION' ? 'resigned'
+          : (data.resultType === 'FLAG_FALL' ? 'flagged' : 'left the game');
         const reason = data.drawReason === 'INSUFFICIENT_MATERIAL'
           ? 'insufficient material to mate'
           : 'no potential mate';
@@ -618,6 +619,12 @@ class Game {
           : `Your opponent ${verb}, but because you have ${reason}, the game is a draw.`;
         this.showArbiterMessage(msg);
         document.getElementById('gameResultReason').textContent = msg;
+      } else if (data.resultType === 'ABANDONMENT') {
+        // Abandonment loss: the leaver is gone (their client won't render this); phrase for the
+        // remaining player. The actor check keeps it correct should the leaver ever see it.
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You left the game and lose.'
+          : 'Your opponent left the game. You win.');
       } else if (data.resultType === 'DRAW_AGREEMENT' && data.winner === 'none') {
         // Who accepted goes on top (arbiter message); the result panel keeps the canonical
         // "The game is drawn by agreement." after the ½-½ score.

@@ -66,9 +66,25 @@ class TestGameRoom {
     assertEquals(TEST_TIME.initialTimeMs(), room.getSession().getClock().getRemainingTimeMs(Side.WHITE));
   }
 
+  /** A standard game's rematch restarts from the NORMAL starting position, not from where the game ended. */
+  @Test
+  void testStartRematchRestoresStandardStartingPosition() {
+    final String standardStartFen = new Board().getFen();
+    final GameRoom room = new GameRoom("TESTGAME", TEST_TIME);
+    room.getSession().startGame();
+    // Mutate the game: 1. e4 e5.
+    room.getSession().getBoard().move(new MoveSpecification(Square.E2, Square.E4));
+    room.getSession().getBoard().move(new MoveSpecification(Square.E7, Square.E5));
+    assertEquals(false, standardStartFen.equals(room.getSession().getBoard().getFen()));
+
+    room.startRematch();
+
+    assertEquals(standardStartFen, room.getSession().getBoard().getFen());
+  }
+
   /** The rematch restarts from the ORIGINAL starting position — also for custom-FEN games with moves played. */
   @Test
-  void testStartRematchRestoresOriginalStartingPosition() {
+  void testStartRematchRestoresCustomFenStartingPosition() {
     final String startFen = "4k3/8/8/8/8/8/8/4K2R w K - 0 1";
     final GameRoom room = new GameRoom("TESTGAME", TEST_TIME, 2, true, Board.fromFenStrict(startFen));
     room.getSession().startGame();

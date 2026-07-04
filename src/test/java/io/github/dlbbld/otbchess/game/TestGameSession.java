@@ -776,6 +776,59 @@ class TestGameSession {
     assertEquals("You cannot claim a draw when not having the move.", whiteFirst.message());
   }
 
+  // ===== Abandonment (player left the game) =====
+
+  /** Abandonment is adjudicated like a resignation: the leaver loses when the opponent can still mate. */
+  @Test
+  void testAbandonAdjudicatesLossWhenOpponentCanMate() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final GameResult result = session.abandon(Side.BLACK);
+
+    assertEquals(GameResultType.ABANDONMENT, result.type());
+    assertEquals(Side.WHITE, result.winner());
+    assertEquals("Black left the game. White wins the game.", result.description());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(Side.BLACK, session.getTerminationActor());
+  }
+
+  /**
+   * FIDE 5.1.2-style exception, as chess servers apply it to abandonment: when the REMAINING player could not
+   * checkmate by any series of legal moves (here: a lone king), the abandoned game is a draw, not a loss.
+   */
+  @Test
+  void testAbandonAdjudicatesDrawWhenOpponentCannotMate() {
+    // White has only the king; Black (who leaves) has king + queen. White cannot possibly mate.
+    final GameSession session = new GameSession(TEST_TIME, 2, true,
+        Board.fromFenStrict("4k3/8/8/3q4/8/8/8/4K3 w - - 0 1"));
+    session.startGame();
+
+    final GameResult result = session.abandon(Side.BLACK);
+
+    assertEquals(GameResultType.ABANDONMENT, result.type());
+    assertEquals(Side.NONE, result.winner());
+    assertTrue(result.description().contains("Black left the game"));
+    assertTrue(result.description().contains("the game is a draw"));
+    assertTrue(session.isDrawExceptionByInsufficientMaterial()); // lone king = insufficient material
+    assertEquals(GameState.ENDED, session.getState());
+  }
+
+  /** Abandonment of a game that is not running adjudicates nothing (ended games stay as they ended). */
+  @Test
+  void testAbandonIsNoOpWhenGameNotRunning() {
+    final GameSession session = new GameSession(TEST_TIME);
+    // Not started yet.
+    assertEquals(null, session.abandon(Side.BLACK));
+
+    session.startGame();
+    session.resign(Side.WHITE);
+    assertEquals(GameState.ENDED, session.getState());
+    // Already decided — the resignation result stands.
+    assertEquals(null, session.abandon(Side.BLACK));
+    assertEquals(GameResultType.RESIGNATION, session.getResult().type());
+  }
+
   /**
    * Plays an eight-half-move knight shuffle (Nf3 Nf6 Ng1 Ng8 ×2) so the initial position has occurred 3 times. White is
    * to move. From here white's `Nf3` would create the 3rd occurrence of position-after-1.Nf3 ⇒

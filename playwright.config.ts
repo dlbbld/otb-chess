@@ -43,6 +43,10 @@ export default defineConfig({
       ...process.env as Record<string, string>,
       OTB_HTTP_PORT: '18080',
       OTB_WS_PORT: '18081',
+      // Short disconnect/abandonment windows so the abandonment tests run in seconds
+      // (production defaults: 12 s grace, 60 s abandonment).
+      OTB_DISCONNECT_GRACE_MS: '1500',
+      OTB_ABANDON_MS: '4000',
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
