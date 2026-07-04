@@ -185,6 +185,16 @@ public launch. Released as **v0.1.1** (still beta).
   pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
 - [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
   same commit; long e2e runtimes explicitly acceptable) + memory updated.
+- [x] **Moved-opponent-piece escalation (A-007).** Dragging an opponent's piece (never legal) now
+  escalates like the other misconducts instead of repeating the same notice forever: 1st → arbiter
+  pauses + "Please restore the position" (existing Revert/auto-resume flow), opponent informed
+  passively; 2nd → same + "Warning: the next time you move an opponent's piece, you lose the
+  game."; 3rd → **loss** (`MOVED_OPPONENT_PIECE_GAME_LOST`, personalised messages). Counted per
+  player across the game. Hooked into the mid-play validation via
+  `GameSession.escalateMovedOpponentPiece`; generic `pendingOpponentInfo` channel added for
+  mid-play passive notices. Unit (full ladder, info texts, clock pause) + e2e (three rounds with
+  Revert/resume on live boards, 0-1 result). Invalid-restoration position changes keep the old
+  single-message behavior (separate concern).
 - [x] **Bug fix: no reconnect into an adjudicated (ended) game.** The leaver's closed tab never
   received `gameEnded`, so their localStorage still held the seat token — the lobby offered
   "Return to game" and `resume` happily resynced into the ENDED game. Now a resume into an ENDED

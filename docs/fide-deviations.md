@@ -173,3 +173,19 @@ As with A-003, **the count accumulates across different moves** and never resets
 **Where in code**: [`GameSession.pressOpponentClock`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_CLOCK_PRESS_LIMIT"); the server schedules the clock restart after the pause.
 
 **Rationale**: Same as the other ladders — model the fault, teach through the arbiter's escalating response, encode the arbiter judgment as an explicit transparent threshold.
+
+---
+
+### A-007 — Moving an opponent's piece: escalation
+
+**FIDE**: Article 4.1 — a player may only move their own pieces ("Each move must be played with one hand only"; touching/moving the opponent's pieces improperly falls under the arbiter's Article 11.5 / 12.9 judgment). Dragging an opponent's piece from square to square is never part of a legal move sequence in our event model (capture-by-removal uses REMOVE, restoration uses RESTORE_*).
+
+**Our policy** (same three-step ladder as A-003/A-005/A-006, counted per player across the whole game):
+
+1. First time: the arbiter **pauses the game** — offender: *"Position change: You moved an opponent's piece. That is not allowed. Please restore the position."* with the **Revert** flow; the clock restarts after the restoration (standard auto-resume). The opponent sees what happened passively (info window).
+2. Second time: same, plus the warning — *"Warning: the next time you move an opponent's piece, you lose the game."*
+3. Third time: **loss of the game** (`MOVED_OPPONENT_PIECE_GAME_LOST`). Offender: told they were warned and lose; opponent: *"Your opponent has, despite the warnings, repeatedly moved your pieces, and so has lost the game."*
+
+**Where in code**: [`GameSession.escalateMovedOpponentPiece`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "MOVED_OPPONENT_PIECE_LIMIT"), hooked into the mid-play validation; the passive opponent notice travels as `opponentInfo`.
+
+**Rationale**: Same as the other ladders — the board models the physical world where the fault is possible; the arbiter teaches through escalation instead of making the fault impossible.

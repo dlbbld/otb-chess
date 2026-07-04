@@ -776,6 +776,48 @@ class TestGameSession {
     assertEquals("You cannot claim a draw when not having the move.", whiteFirst.message());
   }
 
+  // ===== Moving an opponent's piece (A-007) =====
+
+  /** The A-007 ladder: notice + restore, notice + warning + restore, loss on the third moved opponent piece. */
+  @Test
+  void testMovedOpponentPieceEscalatesToGameLoss() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame(); // White to move
+
+    // First time: the arbiter intervenes (clock paused, restore required); Black is informed
+    // passively via the pending opponent info.
+    final Optional<ArbiterResponse> first = session.recordEvent(Side.WHITE,
+        BoardEvent.dragMove(Square.E7, Square.E5, Piece.BLACK_PAWN, System.currentTimeMillis()));
+    assertTrue(first.isPresent());
+    assertEquals(ArbiterResponseType.POSITION_CHANGE, first.get().type());
+    assertTrue(first.get().renderedPlayerMessage().contains("You moved an opponent"));
+    assertFalse(first.get().renderedPlayerMessage().contains("Warning"));
+    assertEquals(Side.NONE, session.getClock().getRunningFor()); // paused
+    final String firstInfo = session.consumePendingOpponentInfo();
+    assertTrue(firstInfo.contains("moved one of your pieces"));
+    assertNull(session.consumePendingOpponentInfo()); // consumed exactly once
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    // Second time: same, plus the warning.
+    final Optional<ArbiterResponse> second = session.recordEvent(Side.WHITE,
+        BoardEvent.dragMove(Square.D7, Square.D5, Piece.BLACK_PAWN, System.currentTimeMillis()));
+    assertTrue(second.get().renderedPlayerMessage()
+        .contains("Warning: the next time you move an opponent's piece, you lose the game"));
+    assertTrue(session.consumePendingOpponentInfo().contains("been warned"));
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    // Third time: the game is lost.
+    final Optional<ArbiterResponse> third = session.recordEvent(Side.WHITE,
+        BoardEvent.dragMove(Square.G8, Square.F6, Piece.BLACK_KNIGHT, System.currentTimeMillis()));
+    assertTrue(third.isPresent());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.MOVED_OPPONENT_PIECE_GAME_LOST, session.getResult().type());
+    assertEquals(Side.BLACK, session.getResult().winner());
+    assertEquals(Side.WHITE, session.getTerminationActor());
+    assertEquals("White loses the game by repeatedly moving the opponent's pieces.",
+        session.getResult().description());
+  }
+
   // ===== Wrong clock press (pressing the opponent's clock) =====
 
   /** Pressing the opponent's lever while it is already DOWN (their clock not running) is a physical no-op. */

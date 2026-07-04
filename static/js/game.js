@@ -677,6 +677,12 @@ class Game {
           ? 'You have been warned that you will lose the game when you press your opponent\'s clock again.'
             + ' As you have pressed it again, you lose the game.'
           : 'Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game.');
+      } else if (data.resultType === 'MOVED_OPPONENT_PIECE_GAME_LOST') {
+        // Third moved opponent piece despite the warning (see A-007).
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You have been warned that you will lose the game when you move an opponent\'s piece again.'
+            + ' As you have moved one again, you lose the game.'
+          : 'Your opponent has, despite the warnings, repeatedly moved your pieces, and so has lost the game.');
       } else if (data.resultType === 'DRAW_AGREEMENT' && data.winner === 'none') {
         // Who accepted goes on top (arbiter message); the result panel keeps the canonical
         // "The game is drawn by agreement." after the ½-½ score.

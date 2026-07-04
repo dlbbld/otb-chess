@@ -28,6 +28,7 @@ import io.github.dlbbld.otbchess.game.model.GameResult;
 import io.github.dlbbld.otbchess.game.model.GameResultType;
 import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
+import io.github.dlbbld.otbchess.message.MessageKey;
 
 /**
  * Central orchestrator for an OTB Chess game.
@@ -185,6 +186,11 @@ public class GameSession {
         removedSquaresThisTurn);
     if (midPlayResponse.isPresent()) {
       clock.stopClock();
+      // Moving an OPPONENT's piece escalates like the other misconducts (A-007): notice,
+      // notice + warning, loss of the game on the third time — counted across the whole game.
+      if (midPlayResponse.get().playerMessageKey() == MessageKey.ARBITER_POSITION_CHANGE_OPPONENT_PIECE) {
+        return Optional.of(escalateMovedOpponentPiece(side, midPlayResponse.get()));
+      }
       return midPlayResponse;
     }
 
@@ -653,6 +659,47 @@ public class GameSession {
         sideName(side) + " resigns. " + sideName(opponent) + " wins the game.");
     endGame(lossResult);
     return lossResult;
+  }
+
+  // ===== Moving an opponent's piece (A-007) =====
+
+  // Dragging an opponent's piece on the board is never allowed; the arbiter escalates like the
+  // other misconducts: notice + restore, notice + warning + restore, loss of the game on the
+  // third time. Counted per player across the whole game.
+  private static final int MOVED_OPPONENT_PIECE_LIMIT = 3;
+  private final Map<Side, Integer> movedOpponentPieceCounts = new EnumMap<>(Side.class);
+
+  // Passive information for the opponent produced by the latest escalation step (see the
+  // face-to-face principle / info window below the clock); consumed by the server layer.
+  private String pendingOpponentInfo;
+
+  /** @return and clears the passive opponent-info text of the latest escalation step, if any. */
+  public synchronized String consumePendingOpponentInfo() {
+    final String info = pendingOpponentInfo;
+    pendingOpponentInfo = null;
+    return info;
+  }
+
+  private ArbiterResponse escalateMovedOpponentPiece(Side side, ArbiterResponse original) {
+    final int count = movedOpponentPieceCounts.merge(side, 1, Integer::sum);
+    if (count >= MOVED_OPPONENT_PIECE_LIMIT) {
+      terminationActor = side;
+      endGame(new GameResult(GameResultType.MOVED_OPPONENT_PIECE_GAME_LOST, side.getOppositeSide(),
+          sideName(side) + " loses the game by repeatedly moving the opponent's pieces."));
+      // The server sees the ENDED state and broadcasts gameEnded (with the personalised
+      // messages) instead of restore instructions.
+      return original;
+    }
+    if (count == MOVED_OPPONENT_PIECE_LIMIT - 1) {
+      pendingOpponentInfo = "Your opponent again moved one of your pieces and has been warned: the next time"
+          + " they move one of your pieces, they lose the game. The position must be restored.";
+      return ArbiterResponse.positionChange(
+          "Position change: You moved an opponent's piece. That is not allowed. Please restore the position."
+              + " Warning: the next time you move an opponent's piece, you lose the game.");
+    }
+    pendingOpponentInfo = "Your opponent moved one of your pieces. The game is paused until the position"
+        + " has been restored.";
+    return original;
   }
 
   // ===== Wrong clock press (pressing the opponent's clock) =====

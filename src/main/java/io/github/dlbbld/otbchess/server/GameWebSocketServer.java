@@ -492,10 +492,25 @@ public class GameWebSocketServer extends WebSocketServer {
 
     if (midPlayResponse.isPresent()) {
       final ArbiterResponse response = midPlayResponse.get();
+      if (room.getSession().getState() == GameState.ENDED) {
+        // The violation reached its escalation limit (e.g. third moved opponent piece, A-007):
+        // the game is over — the personalised messages travel via gameEnded, no restore.
+        checkGameEnded(room);
+        return;
+      }
       if (response.type() == ArbiterResponseType.POSITION_CHANGE) {
         sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
       } else {
         sendArbiterResponse(room, side, response);
+      }
+      // Passive info for the opponent (face-to-face principle): produced by escalating
+      // violations such as a moved opponent piece; rendered below the clock, no action needed.
+      final String info = room.getSession().consumePendingOpponentInfo();
+      if (info != null) {
+        final JsonObject infoMsg = new JsonObject();
+        infoMsg.addProperty("type", "opponentInfo");
+        infoMsg.addProperty("message", info);
+        room.sendToSide(side.getOppositeSide(), GSON.toJson(infoMsg));
       }
     }
 
@@ -1524,6 +1539,7 @@ public class GameWebSocketServer extends WebSocketServer {
     // cannot win" exception, or accepting a draw offer), tag who acted so the client can phrase
     // the message in the second person. Resignation / flag-fall additionally carry the draw reason.
     if (result.type() == GameResultType.ABANDONMENT || result.type() == GameResultType.WRONG_CLOCK_PRESS_GAME_LOST
+        || result.type() == GameResultType.MOVED_OPPONENT_PIECE_GAME_LOST
         || result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
             || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
       msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());
