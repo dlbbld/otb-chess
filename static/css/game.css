@@ -477,6 +477,17 @@ body:has(.game-layout) {
   text-align: center;
 }
 
+/* Rematch invitation (Lichess-style): when the opponent has offered a rematch, THIS player's
+   Rematch button blinks until they accept (click) or ignore it. */
+@keyframes rematch-blink {
+  0%, 100% { background: #4caf50; color: #fff; }
+  50% { background: inherit; color: inherit; }
+}
+
+.action-btn.rematch-blink {
+  animation: rematch-blink 1s ease-in-out infinite;
+}
+
 .game-result-score {
   font-size: 28px;
   font-weight: bold;

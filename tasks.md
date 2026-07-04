@@ -137,6 +137,15 @@ public launch. Released as **v0.1.1** (still beta).
   `touchedThisTurn`). SPECIFICATION.md claim sections rewritten to the current three-ladder
   behavior (stale once-per-turn / touch-before-claim texts replaced); defensive null-SAN guard in
   `DrawClaimManager`. Unit + e2e for both same-move and across-moves scenarios.
+- [x] **Rematch (Lichess-style).** After a normally ended game both result panels show a
+  **Rematch** button. One player's click offers (their button freezes as "Rematch offered"); the
+  opponent's button starts **blinking**; the opponent's click accepts. The rematch reuses the room
+  and game id: same time control and settings, same starting position (original FEN for custom
+  games), **colours swapped**; fresh per-seat reconnect tokens (refresh-resume works in the new
+  game); counts as create+join in the usage log. Wire: `rematchOffer` in;
+  `rematchOfferSent`/`rematchOffered`/`rematchStarted` out (race-safe per room; offer before game
+  end rejected). Unit (`TestGameRoom`: seat/token/session reset, original-FEN restart) + e2e (full
+  offer→blink→accept→swapped-colours→play flow, wrong-state rejection).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

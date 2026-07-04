@@ -159,6 +159,7 @@ public class GameWebSocketServer extends WebSocketServer {
         case "rejectDraw" -> handleRejectDraw(conn);
         case "claimDraw" -> handleClaimDraw(conn, json);
         case "resign" -> handleResign(conn);
+        case "rematchOffer" -> handleRematchOffer(conn);
         case "abort" -> handleAbort(conn);
         case "requestPgn" -> handleRequestPgn(conn);
         case "restorePosition" -> handleRestorePosition(conn);
@@ -789,6 +790,86 @@ public class GameWebSocketServer extends WebSocketServer {
     final Side side = room.getSide(conn);
     final GameResult result = room.getSession().resign(side);
     sendGameEnded(room, result);
+  }
+
+  /**
+   * Rematch handshake (Lichess-style): after the game has ended, either player may offer a rematch. The first offer
+   * makes the opponent's Rematch button blink; when the opponent presses THEIR button too (= accepting), a new game
+   * starts in the same room — same time control and settings, same starting position, colours swapped.
+   */
+  private void handleRematchOffer(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null) {
+      return;
+    }
+    // The whole handshake is guarded per room: two simultaneous offers must resolve to
+    // offer-then-accept, never to two dangling offers.
+    synchronized (room) {
+      if (room.getSession().getState() != GameState.ENDED) {
+        sendError(conn, "A rematch can only be offered after the game has ended.");
+        return;
+      }
+      final Side side = room.getSide(conn);
+      if (side == Side.NONE) {
+        return;
+      }
+      final Side offeredBy = room.getRematchOfferedBy();
+      if (offeredBy == side) {
+        return; // repeated click on an already-sent offer — idempotent
+      }
+      if (offeredBy == Side.NONE) {
+        room.setRematchOfferedBy(side);
+        final JsonObject ack = new JsonObject();
+        ack.addProperty("type", "rematchOfferSent");
+        ack.addProperty("message", "Rematch offer sent.");
+        conn.send(GSON.toJson(ack));
+        final JsonObject offer = new JsonObject();
+        offer.addProperty("type", "rematchOffered");
+        offer.addProperty("message", "Your opponent offers a rematch.");
+        room.sendToSide(side.getOppositeSide(), GSON.toJson(offer));
+        return;
+      }
+      // The other side had already offered — this press accepts: start the rematch.
+      startRematch(room);
+    }
+  }
+
+  /** Starts the accepted rematch: colours swapped, fresh session/tokens, both players re-seated. */
+  private void startRematch(GameRoom room) {
+    room.stopClockTicker();
+    room.startRematch(); // swaps seats, fresh session from the original starting position
+
+    final var session = room.getSession();
+    final var havingMove = session.getHavingMove();
+    final var board = GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition()));
+
+    // Fresh per-seat reconnect tokens (the seats changed owners) and per-player start messages.
+    for (final Side seat : new Side[] { Side.WHITE, Side.BLACK }) {
+      final String token = generateSessionToken();
+      room.setToken(seat, token);
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "rematchStarted");
+      msg.addProperty("gameId", room.getGameId());
+      msg.addProperty("side", seat.name().toLowerCase());
+      msg.addProperty("token", token);
+      msg.add("board", board);
+      msg.addProperty("havingMove", havingMove.name().toLowerCase());
+      msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
+      final String clockLine = havingMove == seat ? "Your clock has been started - your turn."
+          : "Opponent's clock has been started - opponent's turn.";
+      msg.addProperty("message",
+          "Rematch started - you now play " + (seat == Side.WHITE ? "White" : "Black") + ". " + clockLine);
+      room.sendToSide(seat, GSON.toJson(msg));
+    }
+
+    // A rematch is a new game — same two events as create + join.
+    usageLog.record(UsageLog.EVENT_CREATE, room.getGameId());
+    usageLog.record(UsageLog.EVENT_JOIN, room.getGameId());
+
+    session.startGame();
+    room.startClockTicker(clockExecutor, () -> tickClock(room));
+    sendClockUpdate(room);
+    System.out.println("Rematch started: " + room.getGameId());
   }
 
   /**

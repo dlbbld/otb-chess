@@ -627,6 +627,61 @@ class Game {
       }
     });
 
+    // Own rematch offer acknowledged: freeze the button so the offer can't be spammed; the
+    // opponent's button is blinking now.
+    this.ws.on('rematchOfferSent', (data) => {
+      const btn = document.getElementById('rematchBtn');
+      btn.disabled = true;
+      btn.textContent = 'Rematch offered';
+      this.showArbiterMessage(data.message);
+    });
+
+    // The opponent offered a rematch: THIS player's button starts blinking (Lichess-style);
+    // clicking it accepts.
+    this.ws.on('rematchOffered', (data) => {
+      document.getElementById('rematchBtn').classList.add('rematch-blink');
+      this.showArbiterMessage(data.message);
+    });
+
+    // Rematch accepted: a fresh game in the same room — same time control and starting
+    // position, colours swapped. Reset the whole client state as a combined created+started.
+    this.ws.on('rematchStarted', (data) => {
+      this.gameId = data.gameId;
+      this.side = data.side;
+      // The seats swapped: orient the board absolutely for the NEW colour (flip() only toggles).
+      if ((this.side === 'black') !== this.board.flipped) {
+        this.board.flip();
+      }
+      this.board.setPosition(data.board);
+      this.board.renderAll();
+      this.board.clearHighlights();
+      this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
+      this.setupExtraQueens();
+
+      this.gameActive = true;
+      this.isMyTurn = data.havingMove === this.side;
+      this.board.setEnabled(this.isMyTurn);
+      this.resetClaimUiForNewTurn();
+      this.clearOpponentInfo();
+
+      // Fresh reconnect session for the new seat (the old token died with the seat swap).
+      Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: this.isCreator });
+
+      // Result panel (and its rematch state) belongs to the finished game — reset for this one.
+      document.getElementById('gameResultPanel').style.display = 'none';
+      const rematchBtn = document.getElementById('rematchBtn');
+      rematchBtn.disabled = false;
+      rematchBtn.textContent = 'Rematch';
+      rematchBtn.classList.remove('rematch-blink');
+      document.getElementById('drawOfferPanel').style.display = 'none';
+      document.getElementById('abortBtn').style.display = 'none';
+      document.getElementById('resignBtn').style.display = '';
+      this.updateButtons();
+      this.showArbiterMessage(data.message);
+      this.clearArbiterButtons();
+    });
+
     this.ws.on('gameAborted', () => {
       // Challenge cancelled before it started — drop the saved session and go back to the lobby to
       // create a new one (which will then get a fresh code).
@@ -771,6 +826,12 @@ class Game {
       if (this._lastClockData) {
         this.updateClocks(this._lastClockData);
       }
+    });
+
+    document.getElementById('rematchBtn').addEventListener('click', () => {
+      // First click = offer; a click while the button blinks (opponent offered) = accept.
+      // The server resolves both through the same message.
+      this.ws.send({ type: 'rematchOffer' });
     });
 
     document.getElementById('newGameBtn').addEventListener('click', () => {
