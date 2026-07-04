@@ -8,7 +8,7 @@ import {
 import { dragPiece, pressClock } from './helpers/board';
 
 // The test server runs with short windows (playwright.config.ts):
-// OTB_DISCONNECT_GRACE_MS=1500 (info message), OTB_ABANDON_MS=4000 (adjudication).
+// OTB_DISCONNECT_GRACE_MS=1500 (info message), OTB_ABANDON_MS=6000 (adjudication).
 
 let game: TwoPlayerGame;
 
@@ -65,6 +65,49 @@ test('abandonment is a draw when the remaining player cannot possibly mate', asy
   await expect(white.locator('#rematchBtn')).toBeHidden();
 });
 
+test('closing the game tab and returning through the lobby resumes the game (reported bug)', async ({
+  browser,
+}) => {
+  // The originally reported journey: moves are played, one player CLOSES the game tab (not the
+  // browser), the opponent is told about the disconnect — and the player finds the way back via
+  // the lobby's "Return to game" before the abandonment window closes.
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await dragPiece(black, 'e7', 'e5');
+  await pressClock(black);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+
+  // White closes the game TAB; the browser context (and its localStorage) lives on.
+  await white.close();
+
+  // After the grace, Black is informed — for information only; the game is still running.
+  await expect(black.locator('#arbiterMessage')).toContainText('Your opponent has disconnected', {
+    timeout: 10_000,
+  });
+
+  // White opens a new tab: the lobby offers the way back, and the click resumes the same seat.
+  const newTab = await game.contexts[0].newPage();
+  await newTab.goto('/');
+  await expect(newTab.locator('#gameInProgress')).toBeVisible();
+  await newTab.locator('#returnToGameBtn').click();
+  await expect(newTab.locator('#arbiterMessage')).toContainText('Reconnected', { timeout: 10_000 });
+
+  // The return defused the abandonment timer: wait past the window — no adjudication.
+  await newTab.waitForTimeout(7_000);
+  await expect(newTab.locator('#gameResultPanel')).toBeHidden();
+  await expect(black.locator('#gameResultPanel')).toBeHidden();
+
+  // And the game simply continues: White (to move after 1... e5) plays, Black receives it.
+  await dragPiece(newTab, 'g1', 'f3');
+  await pressClock(newTab);
+  await expect(newTab.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
 test('a page refresh (reconnect) does not forfeit the game', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
@@ -74,7 +117,7 @@ test('a page refresh (reconnect) does not forfeit the game', async ({ browser })
   await expect(black.locator('#arbiterMessage')).toContainText('Reconnected', { timeout: 10_000 });
 
   // Wait past the abandonment window — the reconnect must have defused the adjudication.
-  await black.waitForTimeout(5_000);
+  await black.waitForTimeout(7_000);
   await expect(white.locator('#gameResultPanel')).toBeHidden();
   await expect(black.locator('#gameResultPanel')).toBeHidden();
 

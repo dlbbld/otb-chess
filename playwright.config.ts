@@ -44,9 +44,11 @@ export default defineConfig({
       OTB_HTTP_PORT: '18080',
       OTB_WS_PORT: '18081',
       // Short disconnect/abandonment windows so the abandonment tests run in seconds
-      // (production defaults: 12 s grace, 60 s abandonment).
+      // (production defaults: 12 s grace, 60 s abandonment). The abandonment window leaves
+      // enough room after the grace message for a lobby round-trip (close tab -> new tab ->
+      // Return to game) to resume BEFORE adjudication.
       OTB_DISCONNECT_GRACE_MS: '1500',
-      OTB_ABANDON_MS: '4000',
+      OTB_ABANDON_MS: '6000',
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
