@@ -583,7 +583,14 @@ public class GameWebSocketServer extends WebSocketServer {
       // Note: opponentMoved (sent by sendArbiterResponse) already includes the board state.
       // Do NOT also send boardUpdate here, as it can overwrite the opponent's in-progress moves.
     } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
-      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+      if (response.illegalMoveDetail().map(d -> d.noMoveMade()).orElse(false)) {
+        // FIDE 7.5.3 press-without-move: the board is still at the turn start — nothing to
+        // restore, no restoration flow. The messages (already sent) ask for a move; a clock
+        // update shows the opponent's penalty time immediately.
+        sendClockUpdate(room);
+      } else {
+        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+      }
     } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));

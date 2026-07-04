@@ -780,6 +780,34 @@ class TestGameSession {
     assertEquals("You cannot claim a draw when not having the move.", whiteFirst.message());
   }
 
+  // ===== Clock press without a move (FIDE 7.5.3) =====
+
+  /**
+   * FIDE 7.5.3: pressing the clock without making a move is penalised as an illegal move — the opponent gets the
+   * standard penalty time, the count escalates, and with the default limit of two the second press loses the game.
+   * Nothing needs restoring, so the mover's clock keeps running.
+   */
+  @Test
+  void testTwoClockPressesWithoutMoveLoseTheGame() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame(); // White's clock runs
+
+    final ArbiterResponse first = session.pressClockButton(Side.WHITE, session.getBoard().getBitboardPosition());
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
+    assertTrue(first.renderedPlayerMessage().contains("FIDE 7.5.3"));
+    // Standard illegal-move penalty credited to Black; White's clock keeps running (no restore).
+    assertTrue(session.getClock().getRemainingTimeMs(Side.BLACK) > TEST_TIME.initialTimeMs());
+    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    final ArbiterResponse second = session.pressClockButton(Side.WHITE, session.getBoard().getBitboardPosition());
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, second.type());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.ILLEGAL_MOVE_GAME_LOST, session.getResult().type());
+    assertEquals(Side.BLACK, session.getResult().winner());
+    assertTrue(session.getResult().description().contains("White loses the game"));
+  }
+
   // ===== Moving an opponent's piece (A-007) =====
 
   /** The A-007 ladder: notice + restore, notice + warning + restore, loss on the third moved opponent piece. */

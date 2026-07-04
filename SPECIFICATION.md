@@ -166,11 +166,9 @@ The two LCDs and the rocker keep the same relative placement so that "the LCD ne
 
 ### Clock-press semantics
 
-- A click **only registers when**:
-  - it lands on the player's **own** rocker side, **and**
-  - it is the player's **own turn**.
-- Otherwise the click is silently ignored -- the cursor and DOM behaviour are identical for both halves so the board cannot leak whose lever is whose. No "do not press your opponent's clock" feedback.
-- A clock press is the trigger for full move evaluation (see "Two-Layer Evaluation at Clock Press").
+- A press of the player's **own** lever on their **own turn** triggers full move evaluation (see "Two-Layer Evaluation at Clock Press").
+- **Pressing the clock without having made a move** (board unchanged at the press) is considered and penalised **as an illegal move** per FIDE 7.5.3: standard penalty time to the opponent, counts toward the illegal-move limit (default 2 → the second such press loses the game). There is nothing to restore, so the message asks the player to make a move and their clock keeps running.
+- A press of the **opponent's** lever registers only while the opponent's clock is running (their lever up) and escalates per [A-006](docs/fide-deviations.md#a-006--wrong-clock-press-pressing-the-opponents-clock-escalation): pause + admonishment, pause + warning, loss on the third press. With the opponent's lever already down (or one's own lever pressed out of turn) the press is a physical no-op — silence, like the real clock.
 
 ---
 

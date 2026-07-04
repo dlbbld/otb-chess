@@ -126,9 +126,19 @@ public class ArbiterEngine {
           isReleaseOriginAmbiguous(board, lock), lock.releasePosition());
     }
 
-    // Check if the board position even changed
+    // FIDE 7.5.3: pressing the clock without making a move (board unchanged) is considered and
+    // penalised as an illegal move — it counts toward the illegal-move limit and carries the
+    // standard penalty. There is nothing to restore, so the message asks for a move instead.
     if (board.getBitboardPosition().equals(afterPosition)) {
-      return ArbiterResponse.incompleteMove("Please complete your move.");
+      illegalMoveTracker.recordIllegalMove(sideToMove);
+      final String reason = "the clock was pressed without a move being made (FIDE 7.5.3)";
+      final IllegalMoveDetail detail = new IllegalMoveDetail(Optional.of(reason), Optional.of(reason), sideToMove,
+          illegalMoveTracker.getIllegalMoveCount(sideToMove), illegalMoveTracker.getMaxIllegalMoves(),
+          illegalMoveTracker.isUnlimited(), true);
+      if (illegalMoveTracker.isGameLost(sideToMove)) {
+        return ArbiterResponse.illegalMoveGameLost(detail);
+      }
+      return ArbiterResponse.illegalMove(detail);
     }
 
     // Layer 1: Position Comparison — find matching legal move
@@ -311,7 +321,7 @@ public class ArbiterEngine {
     final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
     final IllegalMoveDetail detail = new IllegalMoveDetail(reason.map(IllegalMoveReason::playerReason),
         reason.map(IllegalMoveReason::opponentReason), sideToMove, count, illegalMoveTracker.getMaxIllegalMoves(),
-        illegalMoveTracker.isUnlimited());
+        illegalMoveTracker.isUnlimited(), false);
 
     if (illegalMoveTracker.isGameLost(sideToMove)) {
       return ArbiterResponse.illegalMoveGameLost(detail);

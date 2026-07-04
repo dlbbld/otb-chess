@@ -502,17 +502,33 @@ class TestArbiterEngine {
     assertTrue(response.illegalMoveDetail().get().unlimited());
   }
 
+  /**
+   * FIDE 7.5.3: pressing the clock without making a move is considered and penalised as an illegal move. With the
+   * default limit of two illegal moves, the second such press loses the game.
+   */
   @Test
-  void testIncompleteMoveBoardUnchanged() {
+  void testClockPressWithoutMoveIsPenalisedAsIllegalMove() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();
-
-    // Player presses clock without changing the board
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
 
-    final ArbiterResponse response = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
+    // First press without a move: an illegal move — counted, with the "make a move" instruction
+    // (nothing to restore, the board is unchanged).
+    final ArbiterResponse first = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_PLAYER_NEXT, first.playerMessageKey());
+    assertTrue(first.illegalMoveDetail().get().noMoveMade());
+    assertTrue(first.renderedPlayerMessage().contains("the clock was pressed without a move being made (FIDE 7.5.3)"));
+    assertTrue(first.renderedPlayerMessage().contains("Please make a move."));
+    assertFalse(first.renderedPlayerMessage().contains("restore"));
+    assertTrue(first.renderedOpponentMessage().get().contains("They are requested to make a move."));
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
 
-    assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, response.type());
+    // Second press without a move: the game is lost (default limit: 2 illegal moves).
+    final ArbiterResponse second = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, second.type());
+    assertTrue(second.renderedPlayerMessage().contains("White loses the game"));
+    assertTrue(second.renderedPlayerMessage().contains("2nd illegal move"));
   }
 
   @Test

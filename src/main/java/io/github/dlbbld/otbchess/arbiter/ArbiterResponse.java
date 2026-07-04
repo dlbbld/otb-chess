@@ -39,8 +39,13 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
     opponentMessageArgs = List.copyOf(opponentMessageArgs);
   }
 
+  /**
+   * @param noMoveMade true for the FIDE 7.5.3 case — the clock was pressed with the board unchanged. Counted and
+   *                   penalised like any illegal move, but there is nothing to restore: the messages say "make a
+   *                   move" instead of "restore the position", and the server skips the restoration flow.
+   */
   public record IllegalMoveDetail(Optional<String> playerReason, Optional<String> opponentReason, Side side, int count,
-      int maxIllegalMoves, boolean unlimited) {
+      int maxIllegalMoves, boolean unlimited, boolean noMoveMade) {
 
     String playerReasonPrefix() {
       return playerReason.map(reason -> "Illegal move: " + ensureSentence(reason) + " ").orElse("Illegal move. ");
@@ -171,16 +176,20 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
   public static ArbiterResponse illegalMove(IllegalMoveDetail detail) {
     final MessageKey playerKey;
     final List<Object> playerArgs;
+    // The no-move variants (FIDE 7.5.3) end with "Please make a move." — there is nothing to restore.
     if (detail.unlimited()) {
-      playerKey = MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_UNLIMITED;
+      playerKey = detail.noMoveMade() ? MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_PLAYER_UNLIMITED
+          : MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_UNLIMITED;
       playerArgs = List.of(detail.playerReasonPrefix(), detail.count(), detail.countOrdinal());
     } else {
       final int remaining = detail.maxIllegalMoves() - detail.count();
       if (remaining == 1) {
-        playerKey = MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT;
+        playerKey = detail.noMoveMade() ? MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_PLAYER_NEXT
+            : MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT;
         playerArgs = List.of(detail.playerReasonPrefix(), detail.count(), detail.countOrdinal());
       } else {
-        playerKey = MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_LIMIT;
+        playerKey = detail.noMoveMade() ? MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_PLAYER_LIMIT
+            : MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_LIMIT;
         playerArgs = List.of(detail.playerReasonPrefix(), detail.count(), detail.countOrdinal(),
             detail.maxIllegalMoves(), detail.maxOrdinal());
       }
@@ -188,7 +197,9 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
 
     final Optional<String> opponentReason = detail.opponentReasonDetail();
     final Optional<MessageKey> opponentKey = Optional
-        .of(opponentReason.isPresent() ? MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT
+        .of(opponentReason.isPresent()
+            ? (detail.noMoveMade() ? MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_OPPONENT
+                : MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT)
             : MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT_GENERIC);
     final List<Object> opponentArgs = opponentReason.<List<Object>>map(List::of).orElseGet(List::of);
 

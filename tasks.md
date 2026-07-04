@@ -185,7 +185,15 @@ public launch. Released as **v0.1.1** (still beta).
   pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
 - [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
   same commit; long e2e runtimes explicitly acceptable) + memory updated.
-- [x] **Wording fix: procedurally refused claims are "not considered", not "rejected".** A claim
+- [x] **FIDE 7.5.3: a clock press without a move is penalised as an illegal move.** Previously a
+  bare "Please complete your move." info. Now: standard illegal-move treatment — penalty time to
+  the opponent, counts toward the limit (default 2 → the **second press in a row loses the
+  game**), message "Illegal move: the clock was pressed without a move being made (FIDE 7.5.3).
+  … Please make a move." (new `no_move` message-key variants — nothing to restore, so no
+  restoration flow and the mover's clock keeps running; `IllegalMoveDetail.noMoveMade`). Spec's
+  stale clock-press section rewritten. Unit (engine: keys/messages/count/game-lost; session:
+  penalty + running clock + loss) + e2e (single press → penalty visible on the clock + game
+  continues with a real move; two presses → 0-1 with "2nd illegal move by White"). A claim
   made while not having the move (or after touching a piece, or as a repeat on the same move)
   never reaches the rule machinery — only a claim examined on the merits (threefold/50-move
   check) can be *rejected*. The five passive-info texts now say "The claim was not considered."

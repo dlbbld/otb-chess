@@ -18,6 +18,7 @@ import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.ashlarchess.pgn.PgnCreate;
 import io.github.dlbbld.otbchess.arbiter.ArbiterEngine;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
+import io.github.dlbbld.otbchess.arbiter.ArbiterResponse.IllegalMoveDetail;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.arbiter.MidPlayValidator;
 import io.github.dlbbld.otbchess.event.ActionSequence;
@@ -339,7 +340,12 @@ public class GameSession {
       case ILLEGAL_MOVE -> {
         // Add penalty time to opponent
         clock.addPenaltyTime(side.getOppositeSide(), arbiter.getIllegalMoveTracker().getPenaltyTimeMs());
-        clock.stopClock();
+        // FIDE 7.5.3 press-without-move: nothing to restore — the player simply still has to
+        // move, so their clock keeps running. Every other illegal move pauses for restoration.
+        final boolean noMoveMade = response.illegalMoveDetail().map(IllegalMoveDetail::noMoveMade).orElse(false);
+        if (!noMoveMade) {
+          clock.stopClock();
+        }
         restorationFromReleasedPiece = false;
       }
       case ILLEGAL_MOVE_GAME_LOST -> {
