@@ -26,8 +26,11 @@ npm run e2e:report   # open the HTML report of the last run
 ```
 
 The Java server is started automatically by Playwright (`webServer` in
-[`playwright.config.ts`](../../playwright.config.ts)) on ports `8080`/`8081`, and an
-already-running local server is reused. Inspect a failed run with:
+[`playwright.config.ts`](../../playwright.config.ts)) on the **dedicated e2e ports
+`18080`/`18081`** — deliberately NOT the normal dev ports, so a dev server on
+`8080`/`8081` (e.g. `start.bat`) can keep running while the suite executes. The suite
+tests the packaged jar (`npm run e2e` rebuilds it; after Java changes rebuild before
+`npx playwright test`). Inspect a failed run with:
 
 ```bash
 npx playwright show-trace test-results/<...>/trace.zip

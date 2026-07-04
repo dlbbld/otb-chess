@@ -140,4 +140,9 @@ public launch. Released as **v0.1.1** (still beta).
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.
+- The Playwright e2e suite runs its own server instance on **dedicated ports 18080/18081**, so a
+  dev server on 8080/8081 (`start.bat`) can keep running while tests execute — no more killing the
+  dev server for test runs. The suite tests the packaged jar: after Java changes run
+  `npm run build:server` (or `npm run e2e`, which rebuilds) — a running `start.bat` picks up Java
+  changes only on its own restart, static files immediately.
 - Don't regress the recent UX: end-of-game / draw messages are personalised per player ("you" vs "your opponent") from `gameEnded` (`mover`/`actor`/`drawReason`). Principle: minimal info during play, clear "who did what" on results.
