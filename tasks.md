@@ -145,4 +145,9 @@ public launch. Released as **v0.1.1** (still beta).
   dev server for test runs. The suite tests the packaged jar: after Java changes run
   `npm run build:server` (or `npm run e2e`, which rebuilds) — a running `start.bat` picks up Java
   changes only on its own restart, static files immediately.
+- **`start.bat` serves only APPROVED code**: it snapshots the latest commit into the
+  `..\otb-chess-stable` worktree (created/refreshed automatically) and builds/serves from there —
+  in-progress, uncommitted edits in the main working tree never reach manual testing, including
+  static files. Restart `start.bat` after a new commit to pick it up. `start-dev.bat` keeps the
+  old behavior (run the working tree as-is, in-progress code included).
 - Don't regress the recent UX: end-of-game / draw messages are personalised per player ("you" vs "your opponent") from `gameEnded` (`mover`/`actor`/`drawReason`). Principle: minimal info during play, clear "who did what" on results.
