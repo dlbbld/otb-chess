@@ -88,6 +88,13 @@ public class GameSession {
   private static final int REPEAT_CLAIM_VIOLATION_LIMIT = 2;
   private final Map<Side, Integer> repeatClaimViolationCounts = new EnumMap<>(Side.class);
 
+  // Claims AFTER touching/moving a piece on this move, before the clock press (FIDE 9.4: the
+  // right to claim is lost once a piece is touched). Same ladder as the wrong-time claims:
+  // rejection, warning, loss on the third — counted per player across the whole game, i.e. the
+  // count accumulates over different moves.
+  private static final int AFTER_TOUCH_CLAIM_LIMIT = 3;
+  private final Map<Side, Integer> afterTouchClaimCounts = new EnumMap<>(Side.class);
+
   // FIDE 9.5.3: an incorrect draw claim adds 2 minutes to the opponent's clock.
   // (Article-9 of the Competitive Rules of Play; rapid/blitz Appendix A.3 reduces this
   // to 1 minute — not differentiated here, see fide-deviations.md.)
@@ -528,9 +535,28 @@ public class GameSession {
       // FIDE 9.4: the player loses the right to claim under 9.2 / 9.3 once any piece has
       // been touched on this move. Any event in the current turn's action sequence
       // (CLICK, DRAG_*, REMOVE, RESTORE_*) counts as a touch — claims must be made
-      // before starting to interact with pieces.
-      return DrawClaimResult.error("You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). "
-          + "Claims must be made before any piece interaction.");
+      // before starting to interact with pieces. Same escalation ladder as the wrong-time
+      // claims (see afterTouchClaimCounts): rejection, warning, loss on the third.
+      final int count = afterTouchClaimCounts.merge(side, 1, Integer::sum);
+      if (count >= AFTER_TOUCH_CLAIM_LIMIT) {
+        endGame(new GameResult(GameResultType.CLAIM_AFTER_TOUCH_GAME_LOST, side.getOppositeSide(),
+            sideName(side) + " loses the game by repeatedly claiming a draw after touching a piece."));
+        return DrawClaimResult.rejectedWithoutDrawOffer(
+            "You have been warned that you will lose the game when you claim a draw again after touching a piece."
+                + " As you have claimed a draw again, you lose the game.",
+            "Your opponent has, despite the warnings, repeatedly claimed a draw after touching a piece, and so"
+                + " has lost the game.");
+      }
+      final String rejection = "You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4)."
+          + " Claims must be made before any piece interaction.";
+      if (count == AFTER_TOUCH_CLAIM_LIMIT - 1) {
+        return DrawClaimResult.wrongTime(
+            rejection + " Warning: your next draw claim after touching a piece loses the game.",
+            "Your opponent again claimed a draw after touching a piece on this move. The claim was rejected and"
+                + " they have been warned: their next draw claim after touching a piece loses them the game.");
+      }
+      return DrawClaimResult.wrongTime(rejection,
+          "Your opponent claimed a draw after touching a piece on this move. The claim was rejected.");
     }
     if (claimMadeThisTurn) {
       // FIDE 9.2/9.3 allow one claim per move. The buttons stay enabled (see

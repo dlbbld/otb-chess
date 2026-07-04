@@ -596,6 +596,109 @@ class TestGameSession {
     assertEquals(Side.WHITE, session.getResult().winner());
   }
 
+  /**
+   * The user-facing reference scenario for the cross-move accumulation (A-003): ONE wrong-time claim per (different)
+   * White move — rejection on the first, warning on the second, loss on the third. The count never resets.
+   */
+  @Test
+  void testWrongTimeClaimEscalationSpansSeparateMoves() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // While White is on move 1: Black's first wrong-time claim — plain rejection.
+    final DrawClaimResult first = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(first.wrongTime());
+    assertFalse(first.message().contains("Warning"));
+
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN); // 1. e4
+    makeMove(session, Square.E7, Square.E5, Piece.BLACK_PAWN); // 1... e5
+
+    // While White is on move 2: the second wrong-time claim — the warning.
+    final DrawClaimResult second = session.claimDraw(Side.BLACK, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertTrue(second.wrongTime());
+    assertTrue(second.message().contains("Warning"));
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    makeMove(session, Square.G1, Square.F3, Piece.WHITE_KNIGHT); // 2. Nf3
+    makeMove(session, Square.G8, Square.F6, Piece.BLACK_KNIGHT); // 2... Nf6
+
+    // While White is on move 3: the third wrong-time claim — Black loses.
+    final DrawClaimResult third = session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(third.accepted());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, session.getResult().type());
+    assertEquals(Side.WHITE, session.getResult().winner());
+  }
+
+  /**
+   * FIDE 9.4 / A-005: claiming after touching a piece on this move (here: the move is already made on the board but
+   * the clock not yet pressed) escalates exactly like the wrong-time claims — rejection, warning, loss on the third.
+   */
+  @Test
+  void testClaimAfterTouchEscalatesToGameLoss() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // White drags e2-e4 on the board but does NOT press the clock — the touch forfeits the claim right.
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN,
+        System.currentTimeMillis()));
+
+    final DrawClaimResult first = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(first.accepted());
+    assertTrue(first.wrongTime());
+    assertTrue(first.message().contains("FIDE 9.4"));
+    assertTrue(first.opponentMessage().isEmpty());
+    assertTrue(first.opponentInfo().get().contains("claimed a draw after touching a piece"));
+
+    final DrawClaimResult second = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertTrue(second.wrongTime());
+    assertTrue(second.message().contains("Warning: your next draw claim after touching a piece loses the game"));
+    assertTrue(second.opponentInfo().get().contains("been warned"));
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    final DrawClaimResult third = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(third.message().contains("you lose the game"));
+    assertTrue(third.opponentMessage().get().contains("repeatedly claimed a draw after touching a piece"));
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.CLAIM_AFTER_TOUCH_GAME_LOST, session.getResult().type());
+    assertEquals(Side.BLACK, session.getResult().winner());
+  }
+
+  /** The after-touch count (A-005) accumulates across DIFFERENT moves, exactly like the wrong-time count. */
+  @Test
+  void testClaimAfterTouchCountSpansSeparateMoves() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    // Move 1: White drags e2-e4 (touch), claims -> plain rejection; then completes the move.
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN,
+        System.currentTimeMillis()));
+    assertTrue(session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null).wrongTime());
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+    session.pressClockButton(Side.WHITE, afterE4); // 1. e4
+    makeMove(session, Square.E7, Square.E5, Piece.BLACK_PAWN); // 1... e5
+
+    // Move 2: same fault on a NEW move -> the warning (count persisted).
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT,
+        System.currentTimeMillis()));
+    final DrawClaimResult second = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertTrue(second.message().contains("Warning"));
+    final BitboardPosition afterNf3 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+    session.pressClockButton(Side.WHITE, afterNf3); // 2. Nf3
+    makeMove(session, Square.G8, Square.F6, Piece.BLACK_KNIGHT); // 2... Nf6
+
+    // Move 3: the third after-touch claim -> White loses.
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.B1, Square.C3, Piece.WHITE_KNIGHT,
+        System.currentTimeMillis()));
+    final DrawClaimResult third = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertFalse(third.accepted());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.CLAIM_AFTER_TOUCH_GAME_LOST, session.getResult().type());
+    assertEquals(Side.BLACK, session.getResult().winner());
+  }
+
   /** All four claim buttons escalate the same way; for the with-move types any SAN is irrelevant. */
   @Test
   void testWrongTimeClaimAppliesToWithMoveTypesRegardlessOfSan() {

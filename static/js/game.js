@@ -9,6 +9,9 @@ class Game {
     // FIDE 9.2 / 9.3: at most one draw claim per move. Set when the server reports a
     // non-invalid claim outcome; reset whenever a new turn starts on this side.
     this.claimMadeThisTurn = false;
+    // FIDE 9.4: touching any piece this turn forfeits the right to claim. Mirrors the server's
+    // action-sequence check so a doomed claim goes straight to the arbiter (no SAN prompt).
+    this.touchedThisTurn = false;
     this.pendingClaimWithMoveType = null;
     this.gameActive = false;
     this.sideAreaPieces = [];
@@ -790,6 +793,9 @@ class Game {
   }
 
   onBoardEvent(event) {
+    // Any board interaction counts as a touch (FIDE 9.4) — the right to claim is gone for this
+    // move, so claim presses from here on skip the SAN prompt and go straight to the arbiter.
+    this.touchedThisTurn = true;
     // Send the current physical board state with every event so the server can detect
     // game-ending moves (checkmate/stalemate/etc.) without waiting for a clock press.
     this.ws.sendBoardEvent(event, this.board.getBoardState());
@@ -942,10 +948,11 @@ class Game {
 
   sendClaimOnBoard(claimType) {
     if (!this.gameActive) return;
-    if (!this.isMyTurn || this.claimMadeThisTurn) {
-      // Procedural fault — claiming while not having the move, or a second claim on the same
-      // move: deliberately let it through — our philosophy is to let the player make the fault
-      // and learn from the arbiter's escalation (rejection/warning, then loss of the game).
+    if (!this.isMyTurn || this.claimMadeThisTurn || this.touchedThisTurn) {
+      // Procedural fault — claiming while not having the move, after touching a piece this
+      // move (FIDE 9.4), or a second claim on the same move: deliberately let it through — our
+      // philosophy is to let the player make the fault and learn from the arbiter's escalation
+      // (rejection/warning, then loss of the game).
       this.ws.sendClaimDraw(claimType);
       return;
     }
@@ -956,10 +963,10 @@ class Game {
 
   beginClaimWithMove(claimType, label) {
     if (!this.gameActive) return;
-    if (!this.isMyTurn || this.claimMadeThisTurn) {
-      // Procedural fault (wrong time / repeat on the same move): no SAN prompt — the claim is
-      // rejected regardless of any move — send it straight to the arbiter so the escalation
-      // can play out.
+    if (!this.isMyTurn || this.claimMadeThisTurn || this.touchedThisTurn) {
+      // Procedural fault (wrong time / after touching a piece / repeat on the same move): no
+      // SAN prompt — the claim is rejected regardless of any move — send it straight to the
+      // arbiter so the escalation can play out.
       this.ws.sendClaimDraw(claimType);
       return;
     }
@@ -979,6 +986,7 @@ class Game {
 
   resetClaimUiForNewTurn() {
     this.claimMadeThisTurn = false;
+    this.touchedThisTurn = false;
     this.pendingClaimWithMoveType = null;
     this.hideSanInput();
     this.updateButtons();

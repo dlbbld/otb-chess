@@ -94,6 +94,80 @@ test('wrong-time with-move claim skips the SAN prompt; counts are per player; cl
   await expect(white.locator('#drawOfferPanel')).toBeVisible();
 });
 
+test('wrong-time claim escalation accumulates across different moves', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // While White is on move 1: Black's first wrong-time claim — plain rejection, no warning yet.
+  await claimThreefoldOnBoard(black);
+  await expect(black.locator('#arbiterMessage')).toContainText('cannot claim a draw when not having the move');
+  await expect(black.locator('#arbiterMessage')).not.toContainText('Warning');
+
+  // 1. e4 e5 — the game goes on.
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await dragPiece(black, 'e7', 'e5');
+  await pressClock(black);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+
+  // While White is on move 2: the second wrong-time claim — now the warning (count persisted).
+  await claimFiftyMoveOnBoard(black);
+  await expect(black.locator('#arbiterMessage')).toContainText(
+    'Warning: your next draw claim when not having the move loses the game');
+
+  // 2. Nf3 Nf6.
+  await dragPiece(white, 'g1', 'f3');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await dragPiece(black, 'g8', 'f6');
+  await pressClock(black);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+
+  // While White is on move 3: the third wrong-time claim — Black loses.
+  await claimThreefoldOnBoard(black);
+  await expect(black.locator('#arbiterMessage')).toContainText('you lose the game');
+  await expectGameResult(black, '1-0');
+  await expectGameResult(white, '1-0');
+});
+
+test('claims after touching a piece (move made, clock not pressed) escalate across moves', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // White makes the move ON THE BOARD but does not press the clock — the touch forfeits the
+  // claim right (FIDE 9.4). The claim is rejected straight at the button; Black sees it
+  // passively; the buttons stay enabled.
+  await dragPiece(white, 'e2', 'e4');
+  await claimThreefoldOnBoard(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('after touching or moving a piece');
+  await expect(white.locator('#claimThreefoldOnBoardBtn')).toBeEnabled();
+  await expect(black.locator('#opponentInfoPanel')).toContainText('claimed a draw after touching a piece');
+
+  // Second press in the same situation — via a WITH-MOVE button: no SAN prompt, the warning.
+  await white.locator('#claimFiftyMoveWithMoveBtn').click();
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Warning: your next draw claim after touching a piece loses the game');
+  await expect(white.locator('#sanInputPanel')).toBeHidden();
+  await expect(black.locator('#opponentInfoPanel')).toContainText('been warned');
+
+  // White completes the move; Black replies — the game goes on, the count persists.
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await dragPiece(black, 'e7', 'e5');
+  await pressClock(black);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+
+  // A NEW move, the same fault: White touches the knight and claims — third time, White loses.
+  await dragPiece(white, 'g1', 'f3');
+  await claimThreefoldOnBoard(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('you lose the game');
+  await expect(black.locator('#arbiterMessage')).toContainText(
+    'repeatedly claimed a draw after touching a piece');
+  await expectGameResult(white, '0-1');
+  await expectGameResult(black, '0-1');
+});
+
 test('repeat claims on the same move escalate: warning, then loss of the game', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;

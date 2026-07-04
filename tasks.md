@@ -125,6 +125,18 @@ public launch. Released as **v0.1.1** (still beta).
   episode closes (own move, opponent move, board update, game end). Time-control label stays
   centered below it. Unit (opponentInfo on warning/rejection, empty on loss and merit rejections)
   + e2e (both windows asserted on both boards, clearing pinned).
+- [x] **Cross-move accumulation documented + claim-after-touch escalation (A-005).** (1) A-003's
+  wrong-time claim count explicitly accumulates over *different* moves (claim on move 10 →
+  rejection, move 12 → warning, move 15 → loss); documented in SPECIFICATION.md ("Procedurally
+  wrong claims: three escalation ladders") and A-003, pinned by unit + e2e tests playing real
+  moves between the claims. (2) NEW: claiming after touching/moving a piece before the clock
+  press (FIDE 9.4 — e.g. move made on the board, clock not yet pressed) now escalates with the
+  identical ladder instead of a flat error: rejection → warning → loss
+  (`CLAIM_AFTER_TOUCH_GAME_LOST`), counted across moves, opponent informed passively on the first
+  two, with-move buttons skip the SAN prompt once a piece was touched (client tracks
+  `touchedThisTurn`). SPECIFICATION.md claim sections rewritten to the current three-ladder
+  behavior (stale once-per-turn / touch-before-claim texts replaced); defensive null-SAN guard in
+  `DrawClaimManager`. Unit + e2e for both same-move and across-moves scenarios.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

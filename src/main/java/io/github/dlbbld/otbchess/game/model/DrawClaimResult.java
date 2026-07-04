@@ -17,9 +17,11 @@ import io.github.dlbbld.ashlarchess.board.MoveSpecification;
  * @param invalidMove         true iff the player's SAN failed Ashlar Chess validation
  * @param convertsToDrawOffer true iff this rejection should be treated as a draw offer to the opponent (rejected
  *                            with-move / on-board claims, but not invalid-SAN or duplicate-claim rejections)
- * @param wrongTime           true iff the claim was made while not having the move. The client keeps the claim buttons
- *                            ENABLED in this case (teaching philosophy: the player may repeat the fault and learn from
- *                            the arbiter's escalation — rejection, warning, then loss of the game)
+ * @param wrongTime           true iff the claim was made at a procedurally wrong moment: while not having the move
+ *                            (FIDE 9.2/9.3), or after touching/moving a piece on this move before the clock press
+ *                            (FIDE 9.4). No claim was completed; the client keeps the claim buttons ENABLED (teaching
+ *                            philosophy: the player may repeat the fault and learn from the arbiter's escalation —
+ *                            rejection, warning, then loss of the game)
  * @param repeatClaim         true iff the claim was a second-or-later claim on the same move (FIDE 9.2/9.3 allow one
  *                            per move). Same philosophy as {@code wrongTime}: the buttons stay enabled and the arbiter
  *                            escalates (warning, then loss of the game)
@@ -63,9 +65,10 @@ public record DrawClaimResult(boolean accepted, String message, Optional<String>
   }
 
   /**
-   * Claim made while not having the move (FIDE 9.2/9.3 require the move). No draw-offer conversion, and — via the
-   * {@code wrongTime} flag — no client-side lock of the claim buttons, so the player can repeat the fault and the
-   * arbiter escalation (warning, then game loss) can play out. The opponent sees what happened as passive info.
+   * Claim made at a procedurally wrong moment — while not having the move (FIDE 9.2/9.3) or after touching a piece on
+   * this move (FIDE 9.4). No draw-offer conversion, and — via the {@code wrongTime} flag — no client-side lock of the
+   * claim buttons, so the player can repeat the fault and the arbiter escalation (warning, then game loss) can play
+   * out. The opponent sees what happened as passive info.
    */
   public static DrawClaimResult wrongTime(String message, String opponentInfo) {
     return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), false, false,

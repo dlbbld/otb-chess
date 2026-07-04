@@ -515,30 +515,34 @@ The player's SAN is echoed verbatim in the message so both players see exactly w
 | Outcome | Claimer message | Opponent message | Game-end description |
 |---|---|---|---|
 | **Accepted** | _"Your claim was accepted after your move «SAN»."_ | _"Your opponent requested a draw for threefold repetition after the move «SAN»."_ (or 50-move variant) | _"The game is drawn by threefold repetition."_ (in the result panel -- short, no duplication of the long claim text) |
-| **Rejected -- legal SAN but rule not satisfied** | _"Claim rejected, because there is no threefold repetition after the mentioned move «SAN». Please play."_ + `mustExecuteMove` | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none -- game continues; the player must still play the specified move) |
-| **Rejected -- short-circuit** (no move could satisfy) | _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none) |
+| **Rejected -- legal SAN but rule not satisfied** | _"Claim rejected, because there is no threefold repetition after the mentioned move «SAN». Please play."_ + `mustExecuteMove` | _"Your opponent claimed a draw by threefold repetition with the move «SAN», but the claim is not valid. It still counts as a draw offer. Do you accept the draw?"_ (arrives with the Accept/Reject panel via `drawOffered`) | (none -- game continues; the player must still play the specified move) |
+| **Rejected -- short-circuit** (no move could satisfy) | _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ | same as above | (none) |
 
 The arbiter **never silently accepts an illegal SAN** -- the player learns from Ashlar Chess's exact reason.
 
 When a with-move claim is rejected, the player must still make the specified move (FIDE 9.5); the clock restarts on them. If they then press the clock with the board in any other state, the arbiter responds _"The specified move, «SAN», was not executed. Please revert the position and play the specified move."_ together with a **Revert** button that restores the board to the start of the turn. The move is still owed after reverting -- the player reverts, plays the specified move, and presses the clock.
 
-#### Once-per-turn limit (FIDE 9.2 / 9.3)
+#### Procedurally wrong claims: three escalation ladders
 
-A player may make **at most one claim per move**. This includes both "on board" and "with move" attempts; an invalid-SAN submission in an already-committed with-move claim does **not** consume the server-side allowance (the player is still completing the same claim). When a player tries a second claim on the same move:
+Claims made at a procedurally wrong moment do **not** disable the claim buttons — the buttons stay enabled for the whole game (teaching philosophy: faults are allowed and the arbiter escalates). Three separate ladders exist, each **counted per player across the whole game — the count accumulates over different moves and never resets** (a warning, once given, stands). The non-game-ending steps inform the opponent **passively** via the info window below the clock (`opponentInfo`; face-to-face principle — no action required); only the game-ending step arrives in the standard arbiter window. With-move claim buttons skip the SAN prompt for all three (the claim is rejected regardless of any move).
 
-- Claimer: _"You have already made a draw claim on this move. Only one claim per move is allowed."_
-- Opponent: _"Your opponent attempted a second draw claim on the same move. The claim was rejected."_
-- Counter resets at the start of the next turn.
+**1. Wrong time — not having the move (FIDE 9.2/9.3; policy [A-003](docs/fide-deviations.md#a-003--wrong-time-draw-claim-escalation))**
 
-#### Touch-before-claim rule (FIDE 9.4)
+| Press | Claimer (arbiter window) | Opponent |
+|---|---|---|
+| 1st | _"You cannot claim a draw when not having the move."_ | passive info: claimed + rejected |
+| 2nd | same + _"Warning: your next draw claim when not having the move loses the game."_ | passive info: claimed again + warned |
+| 3rd | _"You have been warned … you lose the game."_ | arbiter window: _"… repeatedly requested to claim a draw while not having the move, and so has lost the game."_ |
 
-A player **loses the right to claim** under 9.2 / 9.3 once they have touched any piece on the current move. In our model "touched" means any event recorded in the turn's action sequence — CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE, or RESTORE_*. Claims must be made *before* any piece interaction.
+Result type `WRONG_TIME_CLAIM_GAME_LOST`. Example across moves: Black claims while White is on move 10 (rejection), on move 12 (warning), on move 15 — Black loses.
 
-When the player attempts a claim after a recorded event:
+**2. After touching a piece — same side of the move, before the clock press (FIDE 9.4; policy [A-005](docs/fide-deviations.md#a-005--claim-after-touch-escalation-fide-94))**
 
-- Claimer: _"You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). Claims must be made before any piece interaction."_
-- Opponent: not notified.
-- The claim does not consume the once-per-turn allowance, since it never reached the claim machinery.
+A player **loses the right to claim** once they have touched any piece on the current move — any event in the turn's action sequence (CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE, RESTORE_*) counts. This covers in particular the window where the player has already made their move on the board but **not yet pressed the clock**. The ladder is EXACTLY as for wrong-time claims: rejection (_"You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). Claims must be made before any piece interaction."_), then + warning, then loss (`CLAIM_AFTER_TOUCH_GAME_LOST`) — accumulated across moves, opponent informed passively on the first two. These rejections never reach the claim machinery, so they consume no once-per-move allowance and trigger no 9.5.3 penalty.
+
+**3. Repeat claim on the same move (FIDE 9.2/9.3 allow one claim per move; policy [A-004](docs/fide-deviations.md#a-004--repeat-claim-same-move-escalation))**
+
+The first claim on a move is the legitimate one (an invalid-SAN submission does **not** consume it — the player is still completing the same claim). A second claim on the same move is a violation and — since the legitimate claim was already used — carries the warning immediately: _"You cannot make more than one draw claim on your move. You are warned: the next draw claim on a move you have already claimed on loses the game."_ (opponent: passive info). The next repeat violation — on that move or any later one — loses the game (`REPEAT_CLAIM_GAME_LOST`). A legitimate single claim on a later move is never a violation.
 
 #### Penalty for rejected claims (FIDE 9.5.3)
 

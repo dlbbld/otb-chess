@@ -112,6 +112,8 @@ The trigger is **"touching a piece with the intention of moving or capturing it.
 2. Second claim: same rejection plus a warning — the next wrong-time claim loses the game.
 3. Third claim: **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated wrong-time claims despite warnings.
 
+**The count accumulates across different moves.** The three claims need not happen during the same opponent move: e.g. Black claims while White is on move 10 (rejection), again while White is on move 12 (warning), and again while White is on move 15 — Black loses. The counter never resets during the game; a warning, once given, stands.
+
 The first two presses inform the opponent **passively** (face-to-face principle: at a real board they would see the claim happen) via the info window below the clock — visible, but requiring no action. Only the game-ending third press produces a message in the standard arbiter window.
 
 **Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_TIME_CLAIM_LIMIT"); the client keeps the buttons enabled via the `wrongTime` flag on `drawClaimResult`; the passive notification travels as `opponentInfo`.
@@ -135,3 +137,21 @@ The claim buttons stay **enabled** throughout; violations are counted per player
 **Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "REPEAT_CLAIM_VIOLATION_LIMIT"); the client keeps the buttons enabled via the `repeatClaim` flag on `drawClaimResult`; the passive notification travels as `opponentInfo`.
 
 **Rationale**: Same as A-001/A-003. The warning comes one step earlier than in A-003 because the player has already exercised their legitimate claim on that move — the repeat is unambiguous.
+
+---
+
+### A-005 — Claim-after-touch escalation (FIDE 9.4)
+
+**FIDE**: Article 9.4 — the player loses the right to claim under 9.2/9.3 once they have touched a piece with the intention of moving it. In our model, any board interaction this turn (CLICK, DRAG, REMOVE, RESTORE) counts as a touch, so this also covers the window where the player has already **made their move on the board but not yet pressed the clock**. FIDE has no penalty ladder for insisting; an arbiter would refuse and, on repetition, escalate under Articles 11.5 / 12.9.
+
+**Our policy**: EXACTLY the [A-003](#a-003--wrong-time-draw-claim-escalation) ladder, applied to the on-move player who claims after touching a piece:
+
+1. First claim: rejected — "You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). Claims must be made before any piece interaction."
+2. Second claim: same rejection plus a warning — the next claim after touching a piece loses the game.
+3. Third claim: **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated claims after touching a piece.
+
+As with A-003, **the count accumulates across different moves** and never resets. The claim buttons stay **enabled**; the first two presses inform the opponent **passively** (info window below the clock); only the game-ending third press produces a message in the standard arbiter window. With-move claim buttons skip the SAN prompt once a piece has been touched (the claim is rejected regardless of any move).
+
+**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "AFTER_TOUCH_CLAIM_LIMIT"); the client routes it via the same `wrongTime` flag as A-003 and tracks `touchedThisTurn` to skip the SAN prompt.
+
+**Rationale**: Same as A-003 — the two are the same offence ("claiming at a procedurally wrong moment") on either side of the clock press.

@@ -41,6 +41,9 @@ public class DrawClaimManager {
   }
 
   private DrawClaimResult claimThreefoldWithMove(Board board, String san) {
+    if (san == null || san.isBlank()) {
+      return DrawClaimResult.invalidMove("Please enter a move in SAN notation for the claim.");
+    }
     final MoveSpecification moveSpec;
     try {
       moveSpec = LenientSanParser.parse(san, board).moveSpecification();
@@ -85,6 +88,9 @@ public class DrawClaimManager {
   }
 
   private DrawClaimResult claimFiftyMoveWithMove(Board board, String san) {
+    if (san == null || san.isBlank()) {
+      return DrawClaimResult.invalidMove("Please enter a move in SAN notation for the claim.");
+    }
     final MoveSpecification moveSpec;
     try {
       moveSpec = LenientSanParser.parse(san, board).moveSpecification();
