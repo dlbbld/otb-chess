@@ -278,6 +278,10 @@ public launch. Released as **v0.1.1** (still beta).
   the arbiter now uses the FIDE 4.4.a touch-castling reason instead of the later released-king
   reason. Unit + e2e pin the exact wording, hidden Revert button, passive opponent notice, and
   completion by moving the rook.
+- [x] **En-passant removal-first satisfies opponent-piece touch.** Removing the en-passant-captured
+  pawn before moving the capturing pawn now satisfies the opponent-piece/specific-capture obligation
+  by checking the legal move's captured square, not only its destination square. Unit + focused e2e
+  pin the c5xb6 e.p. journey.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

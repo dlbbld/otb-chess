@@ -1003,6 +1003,24 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testEnPassantRemovalFirstSatisfiesOpponentPawnTouch() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.remove(Square.B5, Piece.BLACK_PAWN, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.C5, Square.B6, Piece.WHITE_PAWN, 1));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B5, Piece.NONE).createChangedPosition(Square.C5, Piece.NONE)
+        .createChangedPosition(Square.B6, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
+  }
+
+  @Test
   void testPlayerFumblesButEndsWithValidPosition() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();

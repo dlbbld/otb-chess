@@ -359,6 +359,8 @@ Opponent-side castling-start notices are passive information only. They are show
 - The player moves their pawn diagonally to the empty square behind the opponent pawn.
 - The player removes the opponent pawn from the board (drags it off the board to the side area).
 - The position check at clock press validates the en passant move; the order in which the two manipulations are made does not matter.
+- If the opponent pawn is removed first, that touch is satisfied by the en passant move because the touched pawn is the
+  captured piece even though the moving pawn lands on the en passant square.
 
 ---
 

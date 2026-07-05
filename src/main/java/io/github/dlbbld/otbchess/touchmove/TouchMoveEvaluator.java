@@ -232,7 +232,7 @@ public class TouchMoveEvaluator {
   private static boolean canCapture(Set<LegalMove> legalMoves, Square fromSquare, Square toSquare) {
     for (final LegalMove legalMove : legalMoves) {
       if (legalMove.moveSpecification().fromSquare() == fromSquare
-          && legalMove.moveSpecification().toSquare() == toSquare && legalMove.capturedPiece() != Piece.NONE) {
+          && capturesOnSquare(legalMove, toSquare)) {
         return true;
       }
     }
@@ -308,11 +308,21 @@ public class TouchMoveEvaluator {
    */
   private static boolean canBeCapturedOnSquare(Set<LegalMove> legalMoves, Square square) {
     for (final LegalMove legalMove : legalMoves) {
-      if (legalMove.moveSpecification().toSquare() == square && legalMove.capturedPiece() != Piece.NONE) {
+      if (capturesOnSquare(legalMove, square)) {
         return true;
       }
     }
     return false;
+  }
+
+  private static boolean capturesOnSquare(LegalMove legalMove, Square square) {
+    if (legalMove.capturedPiece() == Piece.NONE) {
+      return false;
+    }
+    if (legalMove.isEnPassant()) {
+      return legalMove.enPassantCapturedPawnSquare() == square;
+    }
+    return legalMove.moveSpecification().toSquare() == square;
   }
 
   /**
@@ -337,14 +347,13 @@ public class TouchMoveEvaluator {
         yield false;
       }
       case OPPONENT_PIECE ->
-          // Must capture the touched opponent piece: the move must land on the obligation square and be a capture
-          legalMove.moveSpecification().toSquare() == obligation.square() && legalMove.capturedPiece() != Piece.NONE;
+          // Must capture the touched opponent piece. En passant captures the touched pawn on its square even though
+          // the moving pawn lands one rank beyond it.
+          capturesOnSquare(legalMove, obligation.square());
       case SPECIFIC_CAPTURE ->
-          // FIDE 4.3.3: must capture the touched opponent piece with the touched own piece — the move
-          // must originate from the own square, land on the opponent square, and be a capture.
+          // FIDE 4.3.3: must capture the touched opponent piece with the touched own piece.
           legalMove.moveSpecification().fromSquare() == obligation.square()
-              && legalMove.moveSpecification().toSquare() == obligation.toSquare()
-              && legalMove.capturedPiece() != Piece.NONE;
+              && capturesOnSquare(legalMove, obligation.toSquare());
       case CASTLING ->
           // Must castle on the touched rook's side. Only the matching castling move satisfies it.
           legalMove.moveSpecification().isCastling()

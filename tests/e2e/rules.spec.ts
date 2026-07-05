@@ -244,6 +244,24 @@ test('en passant capture is accepted', async ({ browser }) => {
   await expectPiece(black, 'd6', 'WHITE_PAWN');
 });
 
+test('en passant capture is accepted when the captured pawn is removed first', async ({ browser }) => {
+  // White Pc5 can capture b6 e.p.; the black pawn on b5 is also normally attacked by Nd4,
+  // so touching/removing b5 creates an opponent-piece touch obligation that the e.p. move must satisfy.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1' });
+  const { white, black } = game;
+
+  await removePiece(white, 'b5');
+  await dragPiece(white, 'c5', 'b6');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expectPiece(white, 'b6', 'WHITE_PAWN');
+  await expectEmpty(white, 'c5');
+  await expectEmpty(white, 'b5');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expectPiece(black, 'b6', 'WHITE_PAWN');
+});
+
 test('the board does not mark the king in check (no red frame)', async ({ browser }) => {
   // White: Ra1, Ke1. Black: lone Ke8. Ra1-a8+ gives check along the 8th rank. The board must
   // not inform the checked player — no red frame on the king square, then or after it moves.

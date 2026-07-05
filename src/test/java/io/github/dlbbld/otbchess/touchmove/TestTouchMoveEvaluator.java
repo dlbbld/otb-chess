@@ -218,6 +218,20 @@ class TestTouchMoveEvaluator {
   }
 
   @Test
+  void testEnPassantSatisfiesOpponentPieceObligationOnCapturedPawnSquare() {
+    final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.OPPONENT_PIECE, Square.B5,
+        Piece.BLACK_PAWN);
+
+    final var cxb6ep = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.C5 && m.moveSpecification().toSquare() == Square.B6)
+        .findFirst().orElseThrow();
+
+    assertTrue(cxb6ep.isEnPassant());
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation, cxb6ep));
+  }
+
+  @Test
   void testTouchOwnThenCapturableOpponentBindsSpecificCapture() {
     // FIDE 4.3.3: after 1.e4 d5, touching the white pawn on e4 and then the black pawn on d5 (which
     // the e4 pawn can capture) binds the specific capture exd5.
@@ -246,6 +260,29 @@ class TestTouchMoveEvaluator {
     // Only the specific capture satisfies it; another legal move of the touched pawn does not.
     assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation.get(), exd5));
     assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation.get(), e5));
+  }
+
+  @Test
+  void testTouchOwnThenOpponentBindsSpecificEnPassantCapture() {
+    final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.C5, Piece.WHITE_PAWN, 0));
+    sequence.addEvent(BoardEvent.click(Square.B5, Piece.BLACK_PAWN, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.SPECIFIC_CAPTURE, obligation.get().type());
+    assertEquals(Square.C5, obligation.get().square());
+    assertEquals(Square.B5, obligation.get().toSquare());
+
+    final var cxb6ep = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.C5 && m.moveSpecification().toSquare() == Square.B6)
+        .findFirst().orElseThrow();
+
+    assertTrue(cxb6ep.isEnPassant());
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation.get(), cxb6ep));
   }
 
   @Test
