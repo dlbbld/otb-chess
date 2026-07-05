@@ -226,6 +226,30 @@ test('castling by two king moves (king released on g1, then moved on) asks to co
   await expect(white.locator('#arbiterMessage')).not.toContainText(/released-piece/i);
 });
 
+test('incomplete castling has no Revert button and informs the opponent passively', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'e1', 'g1'); // king released on g1 -> starts legal kingside castling
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Castling has been started. Because the king was released on g1 and kingside castling is legal,'
+      + ' you must complete the castling move by moving the rook from h1 to f1.');
+  await expect(white.getByRole('button', { name: 'Revert' })).toBeHidden();
+
+  await expect(black.locator('#arbiterMessage')).not.toContainText(/started castling/i);
+  await expect(black.locator('#opponentInfoPanel')).toContainText('Your opponent started castling');
+
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
 test('rook-first castling attempt keeps the rook move and restores the king', async ({ browser }) => {
   game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
   const { white, black } = game;

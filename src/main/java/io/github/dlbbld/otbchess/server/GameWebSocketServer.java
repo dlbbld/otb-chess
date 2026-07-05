@@ -576,7 +576,7 @@ public class GameWebSocketServer extends WebSocketServer {
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     sendArbiterResponse(room, side, response);
 
-    sendOpponentArbiterMessage(room, side, response);
+    sendOpponentArbiterNotification(room, side, response);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       sendClockUpdate(room);
@@ -592,8 +592,14 @@ public class GameWebSocketServer extends WebSocketServer {
         sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
       }
     } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
-      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
-          response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
+      final BitboardPosition restorePosition = response.restorePosition()
+          .orElse(room.getSession().getPositionBeforeTurn());
+      if (restorePosition.equals(afterPosition)) {
+        room.getSession().continueWithoutRestoration();
+        sendClockUpdate(room);
+      } else {
+        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error", restorePosition);
+      }
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
     } else if (response.type() == ArbiterResponseType.INCOMPLETE_MOVE && side == room.getSession().getHavingMove()
@@ -1195,9 +1201,16 @@ public class GameWebSocketServer extends WebSocketServer {
     room.sendToSide(side, GSON.toJson(msg));
   }
 
-  private void sendOpponentArbiterMessage(GameRoom room, Side side, ArbiterResponse response) {
+  private void sendOpponentArbiterNotification(GameRoom room, Side side, ArbiterResponse response) {
     final Optional<String> opponentMessage = response.renderedOpponentMessage();
     if (opponentMessage.isEmpty()) {
+      return;
+    }
+    if (isPassiveOpponentNotification(response.type())) {
+      final JsonObject info = new JsonObject();
+      info.addProperty("type", "opponentInfo");
+      info.addProperty("message", opponentMessage.get());
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
       return;
     }
     final JsonObject opponentMsg = new JsonObject();
@@ -1205,6 +1218,13 @@ public class GameWebSocketServer extends WebSocketServer {
     opponentMsg.addProperty("message", opponentMessage.get());
     opponentMsg.addProperty("style", response.style());
     room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
+  }
+
+  private static boolean isPassiveOpponentNotification(ArbiterResponseType type) {
+    return switch (type) {
+      case ILLEGAL_MOVE, TOUCH_MOVE_VIOLATION, RELEASED_PIECE_VIOLATION, INCOMPLETE_MOVE -> true;
+      default -> false;
+    };
   }
 
   private void forwardBoardEventToOpponent(GameRoom room, Side side, JsonObject eventData) {

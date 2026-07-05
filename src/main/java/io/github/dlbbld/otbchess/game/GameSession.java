@@ -1007,6 +1007,18 @@ public class GameSession {
   }
 
   /**
+   * Continues after an intervention where the required reference position already matches the physical board. The
+   * action sequence is deliberately preserved: for an incomplete castling move, the king release still binds the player
+   * to finish castling by moving the rook.
+   */
+  public synchronized void continueWithoutRestoration() {
+    if (state == GameState.IN_PROGRESS && !waitingForReady && !waitingForRestoration) {
+      restorationResumePending = false;
+      clock.startClock(board.getSideToMove());
+    }
+  }
+
+  /**
    * A player signals readiness to continue after an arbiter intervention.
    *
    * @return true if both players are now ready and the game should continue

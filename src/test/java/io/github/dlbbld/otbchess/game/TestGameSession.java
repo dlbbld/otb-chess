@@ -1128,6 +1128,36 @@ class TestGameSession {
   }
 
   @Test
+  void testIncompleteCastlingCanContinueWithoutRestoration() {
+    final Board startingBoard = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+    final GameSession session = new GameSession(TEST_TIME,
+        io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true, startingBoard);
+    session.startGame();
+
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    final BitboardPosition kingOnly = BitboardPositions.from(startingBoard.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_KING).build();
+
+    final ArbiterResponse incomplete = session.pressClockButton(Side.WHITE, kingOnly);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, incomplete.type());
+    assertEquals(kingOnly, incomplete.restorePosition().get());
+    assertEquals(Side.NONE, session.getClock().getRunningFor());
+
+    session.continueWithoutRestoration();
+
+    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
+    final BitboardPosition castled = BitboardPositions.from(kingOnly).createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
+
+    final ArbiterResponse accepted = session.pressClockButton(Side.WHITE, castled);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, accepted.type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+  }
+
+  @Test
   void testMustExecuteMoveWrongPosition() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();

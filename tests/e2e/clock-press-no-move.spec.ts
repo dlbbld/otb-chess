@@ -26,7 +26,8 @@ test('a clock press without a move is an illegal move; the game continues with a
     'the clock was pressed without a move being made (FIDE 7.5.3)');
   await expect(white.locator('#arbiterMessage')).toContainText('Please make a move.');
   await expect(white.locator('#arbiterMessage')).not.toContainText('restore');
-  await expect(black.locator('#arbiterMessage')).toContainText('Your opponent made an illegal move');
+  await expect(black.locator('#arbiterMessage')).not.toContainText('Your opponent made an illegal move');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('Your opponent made an illegal move');
 
   // The standard illegal-move penalty: Black gains 2 minutes (3:00 -> 5:00, clock not running).
   await expect(white.locator('#topClockTime')).toHaveText('5:00', { timeout: 10_000 });
