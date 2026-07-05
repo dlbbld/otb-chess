@@ -72,7 +72,8 @@ public class GameSession {
 
   // FIDE 9.2 / 9.3: a player may make at most one draw claim per move. Set when a claim
   // attempt is processed (accepted or rejected, but not when the SAN was invalid — the
-  // player hasn't actually completed an attempt yet). Reset on startNewTurn().
+  // player presented no legal intended move, so the claim is not considered). Reset on
+  // startNewTurn().
   private boolean claimMadeThisTurn;
 
   // Claims while NOT having the move (FIDE 9.2/9.3 require the move). Teaching philosophy: the
@@ -605,8 +606,9 @@ public class GameSession {
 
     final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
 
-    // An invalid SAN doesn't constitute a completed claim attempt — the player can re-prompt.
-    // Any other outcome counts and locks claims for the rest of this turn.
+    // An invalid SAN doesn't constitute a completed claim attempt: no legal intended move was
+    // presented, so the claim is not considered. Any other outcome counts and locks claims for
+    // the rest of this turn.
     if (!claimResult.invalidMove()) {
       claimMadeThisTurn = true;
     }
@@ -627,7 +629,8 @@ public class GameSession {
     } else if (!claimResult.invalidMove()) {
       // FIDE 9.5.3: an incorrect (i.e. completed but rejected) claim adds 2 minutes to the
       // opponent's clock. Both rejected on-board claims and rejectedWithMove claims qualify;
-      // invalid-SAN doesn't (the player hasn't actually claimed yet — they can re-prompt).
+      // invalid-SAN doesn't because no legal intended move was presented and the claim was not
+      // considered.
       clock.addPenaltyTime(side.getOppositeSide(), INCORRECT_CLAIM_PENALTY_MS);
       if (claimResult.moveToPerform().isPresent()) {
         mustExecuteMove = claimResult.moveToPerform().get();

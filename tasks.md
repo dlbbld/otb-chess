@@ -288,11 +288,10 @@ public launch. Released as **v0.1.1** (still beta).
   black e7 pawn to e5; Revert keeps the white pawn on e4 and restores only the black pawn to e7.
   Unit + focused e2e replay the reported journey.
 - [x] **Claim move validation hides parser internals + grouped board controls.** Claim-with-move
-  validation now says e.g. "The move 'c2' is invalid: A pawn cannot move backwards..." instead of
-  exposing the lenient SAN parser. Board controls are split into three rows: Offer Draw/Resign,
-  a labeled Claim row with four icon-led claim buttons, and bottom-row utilities (Request Piece,
-  Display PGN, Flip Board). Unit + focused e2e pin the message; focused e2e pins the control
-  grouping and text fit.
+  validation now hides the lenient SAN parser instead of leaking parser internals. Board controls
+  are split into three rows: Offer Draw/Resign, a claim row with four icon-led claim buttons, and
+  bottom-row utilities (Request Piece, Display PGN, Flip Board). Unit + focused e2e pin the
+  message; focused e2e pins the control grouping and text fit.
 - [x] **Rematch offer expires when the offering player leaves.** If a player offers a rematch after
   a finished game and then closes the browser before the opponent accepts, the remaining player is
   told the opponent disconnected, the Rematch button becomes unavailable, and a crafted accept/
@@ -306,6 +305,11 @@ public launch. Released as **v0.1.1** (still beta).
 - [x] **Display PGN button toggles the PGN panel.** Clicking Display PGN now closes the PGN panel
   when it is already open, while the panel's Close button still works. Focused controls e2e pins
   open, button-toggle close, reopen, and Close-button close.
+- [x] **Invalid SAN draw claims are not considered.** If a claim-with-move SAN cannot be resolved
+  to a legal move, the arbiter now says the claim was not considered because the presented move is
+  not legal, closes the SAN panel, and leaves the player free to make any legal move. Legal SAN
+  that fails the draw condition still rejects the claim and forces the specified move. Unit +
+  focused claims e2e pin both sides.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

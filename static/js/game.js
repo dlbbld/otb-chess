@@ -561,11 +561,11 @@ class Game {
     this.ws.on('drawClaimResult', (data) => {
       this.showArbiterMessage(data.message, data.invalidMove || data.wrongTime || data.repeatClaim ? 'error' : null);
       if (data.invalidMove) {
-        const input = document.getElementById('sanInput');
-        if (input) {
-          input.value = '';
-          input.focus();
-        }
+        // No legal intended move was presented, so the draw claim is not considered. Return
+        // the player to normal move play instead of keeping them in a SAN correction loop.
+        this.claimMadeThisTurn = false;
+        this.pendingClaimWithMoveType = null;
+        this.hideSanInput();
       } else if (data.wrongTime) {
         // Claim while not having the move: not a completed claim — the once-per-move flag stays
         // off (also covers the race where the client thought it was on move but the server

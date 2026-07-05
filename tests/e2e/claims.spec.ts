@@ -273,14 +273,20 @@ test('an unsuccessful with-move claim names the owed move and offers a Revert', 
 
 test('50-move claim with an invalid SAN reports a validation message', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
-  const { white } = game;
+  const { white, black } = game;
 
   await claimFiftyMoveWithMove(white, 'c2');
 
   await expect(white.locator('#arbiterMessage')).toHaveText(
-    "The move 'c2' is invalid: A pawn cannot move backwards. Please enter a legal move for the claim.");
+    "The claim was not considered because the presented move 'c2' is not legal: A pawn cannot move backwards."
+      + " You may make any legal move.");
   await expect(white.locator('#arbiterMessage')).not.toContainText('lenient SAN parser');
+  await expect(white.locator('#sanInputPanel')).toBeHidden();
   await expect(white.locator('#gameResultPanel')).toBeHidden();
+
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await expectPiece(black, 'e4', 'WHITE_PAWN');
 });
 
 test('rejected on-board 50-move claim announces the claim and the offer to the opponent', async ({ browser }) => {
@@ -352,8 +358,10 @@ test('threefold claim with an invalid SAN reports a validation message', async (
 
   await claimThreefoldWithMove(white, 'Zz9');
 
-  await expect(white.locator('#arbiterMessage')).toContainText("The move 'Zz9' is invalid:");
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    "The claim was not considered because the presented move 'Zz9' is not legal:");
   await expect(white.locator('#arbiterMessage')).not.toContainText('lenient SAN parser');
+  await expect(white.locator('#sanInputPanel')).toBeHidden();
 });
 
 test('threefold claim with a legal move that creates no repetition is rejected and informs the opponent', async ({

@@ -65,8 +65,8 @@ class TestDrawClaimManager {
     final DrawClaimResult result = manager.processClaim(board, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "c2");
 
     assertTrue(result.invalidMove());
-    assertEquals("The move 'c2' is invalid: A pawn cannot move backwards."
-        + " Please enter a legal move for the claim.", result.message());
+    assertEquals("The claim was not considered because the presented move 'c2' is not legal:"
+        + " A pawn cannot move backwards. You may make any legal move.", result.message());
     assertFalse(result.message().contains("lenient SAN parser"));
   }
 }

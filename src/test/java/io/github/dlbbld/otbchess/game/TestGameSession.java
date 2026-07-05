@@ -1091,14 +1091,14 @@ class TestGameSession {
     shuffleKnightsToReachThreefoldClaimable(session);
 
     // SAN "e9" is structurally invalid (no rank 9). Ashlar Chess rejects it; we surface the
-    // reason via invalidMove so the SAN-input panel re-prompts.
+    // reason via invalidMove and do not consider the draw claim.
     final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove(),
         "Illegal SAN must be reported via the invalidMove flag, not as a regular rejection");
     assertTrue(result.moveToPerform().isEmpty());
-    assertTrue(result.message().startsWith("The move 'e9' is invalid:"),
+    assertTrue(result.message().startsWith("The claim was not considered because the presented move 'e9' is not legal:"),
         "Message should surface the Ashlar Chess validation reason: " + result.message());
     assertFalse(result.message().contains("lenient SAN parser"));
 
@@ -1238,7 +1238,7 @@ class TestGameSession {
 
   /**
    * SAN validation must precede the short-circuit: even when no move could satisfy the claim, an invalid SAN is
-   * reported as invalidMove first so the player can correct it.
+   * reported as invalidMove first so the claim is not considered.
    */
   @Test
   void testInvalidSanReportedBeforeShortCircuitForThreefold() {
@@ -1249,7 +1249,7 @@ class TestGameSession {
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove());
-    assertTrue(result.message().startsWith("The move 'e9' is invalid:"));
+    assertTrue(result.message().startsWith("The claim was not considered because the presented move 'e9' is not legal:"));
     assertFalse(result.message().contains("lenient SAN parser"));
   }
 
@@ -1262,7 +1262,7 @@ class TestGameSession {
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove());
-    assertTrue(result.message().startsWith("The move 'Kz9' is invalid:"));
+    assertTrue(result.message().startsWith("The claim was not considered because the presented move 'Kz9' is not legal:"));
     assertFalse(result.message().contains("lenient SAN parser"));
   }
 
@@ -1411,19 +1411,39 @@ class TestGameSession {
   }
 
   @Test
-  void testInvalidSanDoesNotLockClaimsForThisTurn() {
+  void testInvalidSanClaimIsNotConsideredAndDoesNotLockClaimsForThisTurn() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
-    // Invalid SAN on a with-move claim does not constitute a completed claim attempt — the
-    // player is re-prompted and may try another claim with a legal SAN.
+    // Invalid SAN on a with-move claim presents no legal intended move, so the claim is not
+    // considered and the player remains free to make any legal move.
     final DrawClaimResult invalid = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
     assertTrue(invalid.invalidMove());
+    assertTrue(invalid.message().contains("The claim was not considered"));
+    assertTrue(invalid.opponentMessage().isEmpty());
+    assertFalse(invalid.convertsToDrawOffer());
+    assertTrue(invalid.moveToPerform().isEmpty());
+    assertFalse(session.getDrawOfferManager().isDrawOffered());
 
     final DrawClaimResult onBoard = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
     // A normal rejection (the position has not occurred 3 times), NOT the
     // "already-made-a-claim" lock.
     assertFalse(onBoard.accepted());
     assertFalse(onBoard.message().contains("already made a draw claim"));
+  }
+
+  @Test
+  void testInvalidSanClaimLeavesPlayerFreeToMakeAnyLegalMove() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final DrawClaimResult invalid = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e9");
+    assertTrue(invalid.invalidMove());
+
+    final ArbiterResponse response = makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+    assertEquals(Piece.WHITE_PAWN, session.getBoard().getBitboardPosition().get(Square.E4));
   }
 
   /**
@@ -1452,8 +1472,8 @@ class TestGameSession {
 
   /**
    * FIDE 9.5.3: an incorrect (i.e. completed but rejected) draw claim adds 2 minutes to the opponent's clock. Applies
-   * to rejected on-board and claim-with-move attempts; does NOT apply to invalid-SAN cases (the player can re-prompt
-   * with a correct SAN).
+   * to rejected on-board and claim-with-move attempts; does NOT apply to invalid-SAN cases where no legal intended move
+   * was presented and the claim is not considered.
    */
   @Test
   void testRejectedClaimAddsTwoMinutePenaltyToOpponentPerFide953() {
@@ -1477,8 +1497,8 @@ class TestGameSession {
   }
 
   /**
-   * Invalid-SAN claims do NOT trigger the FIDE 9.5.3 penalty — the player has not actually completed a claim; they can
-   * re-prompt with a correct SAN.
+   * Invalid-SAN claims do NOT trigger the FIDE 9.5.3 penalty — no legal intended move was presented, so the claim is
+   * not considered.
    */
   @Test
   void testInvalidSanClaimDoesNotTriggerNineFiveThreePenalty() {

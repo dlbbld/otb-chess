@@ -10,7 +10,7 @@ import io.github.dlbbld.ashlarchess.board.MoveSpecification;
  * @param accepted            whether the draw claim was accepted
  * @param message             message shown to the claiming player in the arbiter area
  * @param opponentMessage     message broadcast to the opponent ({@code null} when the opponent should not be notified —
- *                            e.g. invalid-SAN re-prompt)
+ *                            e.g. invalid SAN that means no legal intended move was presented)
  * @param gameEndDescription  short description used for the game-result panel when the claim ends the game
  *                            ({@code null} when the game continues)
  * @param moveToPerform       if a claim-with-move is rejected, the move that must still be played
@@ -50,7 +50,10 @@ public record DrawClaimResult(boolean accepted, String message, Optional<String>
         Optional.of(moveToPerform), false, true, false, false, Optional.empty());
   }
 
-  /** Player's SAN failed validation. No opponent notification, no draw-offer conversion. */
+  /**
+   * Player's SAN failed validation. No legal intended move was presented, so the claim is not considered: no opponent
+   * notification, no draw-offer conversion, no forced move.
+   */
   public static DrawClaimResult invalidMove(String message) {
     return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), true, false,
         false, false, Optional.empty());

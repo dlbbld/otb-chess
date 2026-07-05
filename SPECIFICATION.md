@@ -513,9 +513,9 @@ Each button commits immediately when pressed. There is no confirmation dialog an
 The player enters a move in **SAN notation** in an inline panel. The server processes the claim in this fixed order:
 
 1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `LenientSanParser.parse(...)` -- the lenient pipeline, which accepts canonical SAN plus the library's defined tolerances (e.g. case slips, missing or spurious check/mate marks) as long as the input uniquely identifies one legal move. The move is **not performed** for validation -- the parser leaves the board unchanged. If the SAN cannot be resolved to a legal move:
-   - Result: `invalidMove`. Message: _"Invalid move: «Ashlar Chess reason». Please enter a legal move for the claim."_
-   - The SAN-input panel stays open and is re-prompted with the input cleared and refocused.
-   - The chosen claim channel remains committed; the player cannot switch to a different claim or cancel. The invalid SAN submission is treated as typo-correction and does **not** consume the server-side once-per-turn allowance or trigger the incorrect-claim penalty.
+   - Result: `invalidMove`. Message: _"The claim was not considered because the presented move «SAN» is not legal: «Ashlar Chess reason». You may make any legal move."_
+   - The SAN-input panel closes; the player returns to normal move play.
+   - No legal intended move was presented, so the claim is **not considered**. It does **not** consume the server-side once-per-turn allowance, does **not** trigger the incorrect-claim penalty, does **not** convert to a draw offer, and creates no `mustExecuteMove`.
 2. **Feasibility short-circuit.** If the SAN is legal, ask Ashlar Chess whether **any** legal move from the current position could possibly satisfy the rule:
    - `board.canClaimThreefoldRepetitionRuleWithOwnMove()` for threefold,
    - `board.canClaimFiftyMoveRuleWithOwnMove()` for the 50-move rule.
@@ -558,7 +558,7 @@ A player **loses the right to claim** once they have touched any piece on the cu
 
 **3. Repeat claim on the same move (FIDE 9.2/9.3 allow one claim per move; policy [A-004](docs/fide-deviations.md#a-004--repeat-claim-same-move-escalation))**
 
-The first claim on a move is the legitimate one (an invalid-SAN submission does **not** consume it — the player is still completing the same claim). A second claim on the same move is a violation and — since the legitimate claim was already used — carries the warning immediately: _"You cannot make more than one draw claim on your move. You are warned: the next draw claim on a move you have already claimed on loses the game."_ (opponent: passive info). The next repeat violation — on that move or any later one — loses the game (`REPEAT_CLAIM_GAME_LOST`). A legitimate single claim on a later move is never a violation.
+The first considered claim on a move is the legitimate one (an invalid-SAN submission does **not** consume it because no legal intended move was presented). A second claim on the same move is a violation and — since the legitimate claim was already used — carries the warning immediately: _"You cannot make more than one draw claim on your move. You are warned: the next draw claim on a move you have already claimed on loses the game."_ (opponent: passive info). The next repeat violation — on that move or any later one — loses the game (`REPEAT_CLAIM_GAME_LOST`). A legitimate single claim on a later move is never a violation.
 
 #### Penalty for rejected claims (FIDE 9.5.3)
 
@@ -570,7 +570,7 @@ A claim that is **completed but incorrect** (rejected on-board, or rejected with
 It does **not** apply to:
 
 - **Accepted** claims (the player was correct).
-- **Invalid-SAN** attempts (the player hasn't completed a real claim — they can re-prompt).
+- **Invalid-SAN** attempts (no legal intended move was presented; the claim is not considered).
 - **Touched-piece** rejections under 9.4 (the claim never reached the rule machinery).
 - **Once-per-turn** rejections (the penalty already fired on the first rejected attempt).
 
@@ -582,7 +582,7 @@ A rejected claim that came through the proper FIDE channel (claim-on-board, or c
 
 - The session registers the offer via the standard `DrawOfferManager` correct-time path (no escalation penalty -- the player had the move).
 - The opponent receives the standard **drawOffered** broadcast with Accept/Reject buttons. Touch-piece invalidation works as for any other correct-time draw offer.
-- Cases that do **not** convert to a draw offer: `invalidMove` (SAN never validated), pre-claim errors (game not in progress, not on move), and second-claim-on-same-move rejections.
+- Cases that do **not** convert to a draw offer: `invalidMove` (no legal intended move was presented), pre-claim errors (game not in progress, not on move), and second-claim-on-same-move rejections.
 
 ### Draw offer (FIDE 9.1.2.1)
 
@@ -820,7 +820,7 @@ The canonical test count and per-class breakdown are in `src/test/java/...`; tha
 - `TestPositionComparator` / `...EdgeCases` -- basic move types, multi-piece moves, missing-piece and castling variants.
 - `TestTouchMoveEvaluator` -- touch-move scanning, castling-attempt detection, obligation satisfaction, failed-castling-without-legal-king-moves, king-then-rook combined touch (FIDE 4.4.a) including order-sensitivity, side-selection from touched rook, and illegal-side fall-back.
 - `TestArbiterEngine` / `...EdgeCases` -- two-layer evaluation, all response types, released-piece (castling, back-to-origin, first-release-wins, castling-specific message, rook-on-wrong-square), illegal-move count messaging, illegal-castling reason and king obligation, fumbling, counter tracking.
-- `TestGameSession` -- end-to-end game flow, checkmate, draw claims (both variants and all outcomes), resignation, custom-FEN starting position, capture-by-removal, threefold/50-move short-circuits, SAN-validation-before-short-circuit ordering, accepted-claim per-player messages + short game-end description, second-claim-on-same-move rejection, rejected-claim registers draw offer, invalid-SAN doesn't consume the server-side claim allowance.
+- `TestGameSession` -- end-to-end game flow, checkmate, draw claims (both variants and all outcomes), resignation, custom-FEN starting position, capture-by-removal, threefold/50-move short-circuits, SAN-validation-before-short-circuit ordering, accepted-claim per-player messages + short game-end description, second-claim-on-same-move rejection, rejected-claim registers draw offer, invalid-SAN claims are not considered and do not consume the server-side claim allowance.
 - `TestGameSessionFlow` -- ready-to-continue, illegal-then-valid, touch-move persistence, released-piece restoration, touch-move-after-restoration.
 - `TestMessageConverter` -- round-trip serialization, edge cases.
 - `TestGameWebSocketServer` -- typed `ArbiterResponse` rendering, opponent-message-not-derived-from-player-prose regression test.
@@ -841,7 +841,7 @@ Each row names a verification path: an automated test (where applicable) or a ma
 | Castling broadcast crash with `NonePointerException` | `MoveSpecification.from/toSquare` are `Square.NONE` for castling; `Square.NONE.getName()` throws | Manual -- safeguarded by `CastlingUtility.isCastlingMove` branch in `sendArbiterResponse` |
 | Flag-fall LCD shows `0:01` | Final `clockUpdate` was sent after `gameEnded` | Manual |
 | Auto-end incremented illegal-move counter | `evaluateForAutoEnd` was reusing `evaluateClockPress` | Automated -- `TestGameSessionFlow` (released-piece interaction tests) |
-| `Invalid move:` in claim hid the SAN panel | Frontend hid the panel on submit; rejected-with-invalid-move never re-prompted | Automated -- `TestGameSession.testClaimWithInvalidSanIsRejectedAsInvalidMove` (+ 50-move counterpart) |
+| Invalid SAN in a claim leaked parser wording or trapped the player in the SAN panel | Draw claim manager strips parser internals; client closes the SAN panel because no legal intended move was presented and the claim is not considered | Automated -- `TestDrawClaimManager.testInvalidClaimMoveMessageHidesParserInternals`, `TestGameSession.testInvalidSanClaimIsNotConsideredAndDoesNotLockClaimsForThisTurn`, focused claims e2e |
 | Misleading "put the king back" on castling-released-piece | Generic released-piece message used regardless of castling commitment | Automated -- `TestArbiterEngine.testReleasedPieceViolationCastlingRookMovedToWrongSquare` |
 | Asymmetric clock-press latency on opening | `isDeadPositionFull()` (deep CUA) ran on every legal-completing event and clock press | Automated -- replaced with `isInsufficientMaterial()`; visible speed-up in `TestGameSession` |
 | Opponent claim message derived from player text | `formatOpponentIllegalMove` did `String.replace`-based pronoun rewriting on already-rendered prose | Automated -- `TestGameWebSocketServer.testOpponentIllegalMoveMessageUsesOpponentReasonNotPlayerMessage` |

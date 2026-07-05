@@ -122,11 +122,12 @@ public class DrawClaimManager {
 
   private static String invalidClaimMoveMessage(String san, LenientSanParserValidationException exception) {
     final String reason = userFacingInvalidMoveReason(exception.getMessage());
-    final String prefix = "The move '" + san.trim() + "' is invalid";
+    final String prefix = "The claim was not considered because the presented move '" + san.trim()
+        + "' is not legal";
     if (reason.isBlank()) {
-      return prefix + ". Please enter a legal move for the claim.";
+      return prefix + ". You may make any legal move.";
     }
-    return prefix + ": " + ensureSentence(reason) + " Please enter a legal move for the claim.";
+    return prefix + ": " + ensureSentence(reason) + " You may make any legal move.";
   }
 
   private static String userFacingInvalidMoveReason(String message) {
