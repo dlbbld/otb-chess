@@ -12,9 +12,17 @@ Every feature or behavior change ships with tests at BOTH levels, in the same co
 2. **End-to-end tests (Playwright)** — `tests/e2e/*.spec.ts`: pin the user-visible flow through the
    live client — arbiter messages on BOTH boards, button states, panels, result score/reason.
 
-Long e2e runtimes are explicitly acceptable — never trim e2e coverage for speed. A feature is not
-done until `mvn test` and `npx playwright test` are both green. When a bug comes from a
-user-reported journey, the regression e2e must replay that journey literally.
+Long e2e runtimes are explicitly acceptable when the change has behavioral risk, but use judgment:
+
+- Run the full `npx playwright test` suite for changes that can affect game flow, server/client
+  state, board synchronization, clocks, restoration, claims/offers, result handling, or shared UI
+  plumbing.
+- For wording-only changes or tightly scoped low-risk edits, run focused unit/e2e coverage for the
+  touched behavior instead of the full e2e suite. Do not spend minutes on the full browser suite
+  just because a message string changed.
+- When a bug comes from a user-reported journey, the regression e2e must replay that journey
+  literally. Run broader e2e only if the implementation touches code with plausible side effects.
+- Before finishing, state which tests were run and why that scope was sufficient.
 
 ## Workflow
 
