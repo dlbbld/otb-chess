@@ -298,7 +298,13 @@ If the final board position matches the legal castled position, the move is acce
 
 ### King-first rule
 
-The king **must** be moved first. If the player moves the rook first and then the king, the move **is not accepted as castling** -- it is treated as a regular rook move (followed by a king move). If the rook move itself creates a binding touch-move or released-piece obligation, that obligation applies.
+The king **must** be moved first. If the player moves the rook first and then the king, the move **is not accepted as castling**. If the rook release is itself a legal move, that rook move is the committed move; a later king move is treated as a displaced-piece restoration problem, not as a second move or an illegal king move.
+
+Example for legal White kingside castling where the player instead plays rook first (`Rh1-f1`, then `Ke1-g1`, then clock):
+
+> _"Castling cannot be performed rook first. Because the rook was released on f1 as a legal move, the move is the rook move from h1 to f1. Please put the king back on e1 and press the clock."_
+
+The restore target is the position after the committed rook move: king on e1, rook on f1. Pressing the clock from that restored position accepts `Rf1`.
 
 ### Illegal castling attempts
 

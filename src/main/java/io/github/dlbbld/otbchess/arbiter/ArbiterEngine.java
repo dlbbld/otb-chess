@@ -108,6 +108,12 @@ public class ArbiterEngine {
         sequence);
     if (releasedPieceViolation.isPresent()) {
       final ReleasedPieceLock lock = releasedPieceViolation.get();
+      final Optional<ArbiterResponse.RookFirstCastlingContext> rookFirstCastling = findRookFirstCastlingContext(board,
+          afterPosition, lock);
+      if (rookFirstCastling.isPresent()) {
+        return ArbiterResponse.releasedPieceViolationRookFirstCastling(rookFirstCastling.get(),
+            lock.releasePosition());
+      }
       // Castling-only commitment ⇒ the player must complete the castling, not restore
       // the king. The message points them at the rook's destination instead of telling
       // them (misleadingly) to "put the king back" — the king is already on the right
@@ -221,6 +227,54 @@ public class ArbiterEngine {
       return firstReleasedLegalPosition;
     }
     return Optional.empty();
+  }
+
+  private static Optional<ArbiterResponse.RookFirstCastlingContext> findRookFirstCastlingContext(Board board,
+      BitboardPosition afterPosition, ReleasedPieceLock lock) {
+    final Side sideToMove = board.getSideToMove();
+    if (lock.piece() != Piece.of(sideToMove, PieceType.ROOK) || lock.fromSquare() == Square.NONE
+        || afterPosition.get(lock.square()) != lock.piece()) {
+      return Optional.empty();
+    }
+
+    for (final CastlingMove castlingMove : List.of(CastlingMove.KING_SIDE, CastlingMove.QUEEN_SIDE)) {
+      if (!isCastlingLegalOnSide(board, castlingMove)) {
+        continue;
+      }
+      final Square rookFrom = castlingMove.rookFromSquare(sideToMove);
+      final Square rookTo = castlingMove.rookToSquare(sideToMove);
+      if (lock.fromSquare() != rookFrom || lock.square() != rookTo) {
+        continue;
+      }
+      final Square kingFrom = castlingMove.kingFromSquare(sideToMove);
+      final Square kingTo = castlingMove.kingToSquare(sideToMove);
+      final Piece king = Piece.of(sideToMove, PieceType.KING);
+      if (lock.releasePosition().get(kingFrom) == king && lock.releasePosition().get(kingTo) == Piece.NONE
+          && afterPosition.get(kingFrom) == Piece.NONE && afterPosition.get(kingTo) == king
+          && differsOnlyOn(lock.releasePosition(), afterPosition, kingFrom, kingTo)) {
+        return Optional.of(new ArbiterResponse.RookFirstCastlingContext(lock.piece(), rookFrom, rookTo, kingFrom));
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static boolean isCastlingLegalOnSide(Board board, CastlingMove castlingMove) {
+    return board.getLegalMoves().stream()
+        .anyMatch(move -> move.moveSpecification().isCastling()
+            && move.moveSpecification().castlingMove() == castlingMove);
+  }
+
+  private static boolean differsOnlyOn(BitboardPosition first, BitboardPosition second, Square firstSquare,
+      Square secondSquare) {
+    for (final Square square : Square.values()) {
+      if (square == Square.NONE || square == firstSquare || square == secondSquare) {
+        continue;
+      }
+      if (first.get(square) != second.get(square)) {
+        return false;
+      }
+    }
+    return first.get(firstSquare) != second.get(firstSquare) && first.get(secondSquare) != second.get(secondSquare);
   }
 
   /**

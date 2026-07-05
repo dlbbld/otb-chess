@@ -85,6 +85,13 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
       Square rookTo) {
   }
 
+  /**
+   * FIDE 4.4.2: a player who moves the rook before the king may not castle on that side. If the rook release is itself
+   * a legal rook move, the move is fixed as that rook move and the later king displacement must be restored.
+   */
+  public record RookFirstCastlingContext(Piece piece, Square rookFrom, Square rookTo, Square kingFrom) {
+  }
+
   public static ArbiterResponse moveAccepted(LegalMove move) {
     return new ArbiterResponse(ArbiterResponseType.MOVE_ACCEPTED, MessageKey.ARBITER_MOVE_ACCEPTED, List.of(),
         Optional.empty(), List.of(), Optional.of(move), Optional.empty(), Optional.empty(), Optional.empty(),
@@ -171,6 +178,18 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
         MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, args,
         Optional.of(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_OPPONENT), args, Optional.empty(), Optional.empty(),
         Optional.ofNullable(restorePosition), Optional.empty(), Optional.of(releasedContext));
+  }
+
+  public static ArbiterResponse releasedPieceViolationRookFirstCastling(RookFirstCastlingContext context,
+      BitboardPosition restorePosition) {
+    final List<Object> args = List.of(context.rookFrom().getName(), context.rookTo().getName(),
+        context.kingFrom().getName());
+    final ReleasedPieceContext releasedContext = new ReleasedPieceContext(context.piece(), context.rookTo(),
+        context.rookFrom());
+    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION,
+        MessageKey.ARBITER_RELEASED_PIECE_ROOK_FIRST_CASTLING_PLAYER, args,
+        Optional.of(MessageKey.ARBITER_RELEASED_PIECE_ROOK_FIRST_CASTLING_OPPONENT), args, Optional.empty(),
+        Optional.empty(), Optional.ofNullable(restorePosition), Optional.empty(), Optional.of(releasedContext));
   }
 
   public static ArbiterResponse illegalMove(IllegalMoveDetail detail) {

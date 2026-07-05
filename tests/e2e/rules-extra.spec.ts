@@ -226,6 +226,32 @@ test('castling by two king moves (king released on g1, then moved on) asks to co
   await expect(white.locator('#arbiterMessage')).not.toContainText(/released-piece/i);
 });
 
+test('rook-first castling attempt keeps the rook move and restores the king', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'h1', 'f1'); // legal rook move; rook-first castling is not allowed
+  await dragPiece(white, 'e1', 'g1'); // king displacement after the rook move
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Castling cannot be performed rook first. Because the rook was released on f1 as a legal move,'
+      + ' the move is the rook move from h1 to f1. Please put the king back on e1 and press the clock.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText(/illegal move/i);
+  await expect(white.locator('#arbiterMessage')).not.toContainText(/put the rook back/i);
+
+  await clickRestore(white);
+  await expectPiece(white, 'e1', 'WHITE_KING');
+  await expectPiece(white, 'f1', 'WHITE_ROOK');
+  await expectEmpty(white, 'g1');
+  await expectEmpty(white, 'h1');
+  await expect(white.locator('#arbiterMessage')).toContainText('Clock restarted', { timeout: 15_000 });
+
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
 test('moving two pieces (a knight shuffle around a pin) is an illegal move', async ({ browser }) => {
   // Black Nc6 is pinned (blocks Qb5 -> Ke8). Moving Nc6->d4 and then Ne5->c6 to re-block is two
   // moves; no single legal move produces it.

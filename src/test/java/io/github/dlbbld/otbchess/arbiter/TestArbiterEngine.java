@@ -411,6 +411,37 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testRookFirstCastlingAttemptCommitsTheRookMoveAndRestoresTheKing() {
+    // FIDE 4.4.2: if the rook is deliberately moved before the king, castling on that side
+    // is no longer available on this move. The legal rook release is the move; the later king
+    // displacement is restored, not counted as an illegal king move.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
+
+    final BitboardPosition afterRookFirstCastlingAttempt = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.H1, Piece.NONE).createChangedPosition(Square.F1, Piece.WHITE_ROOK)
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_KING).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterRookFirstCastlingAttempt, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_ROOK_FIRST_CASTLING_PLAYER, response.playerMessageKey());
+    assertEquals("Castling cannot be performed rook first. Because the rook was released on f1 as a legal move,"
+        + " the move is the rook move from h1 to f1. Please put the king back on e1 and press the clock.",
+        response.message());
+    assertFalse(response.message().contains("Illegal move"));
+    assertFalse(response.message().contains("Please put the rook back"));
+    assertTrue(response.restorePosition().isPresent());
+    assertEquals(BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build(), response.restorePosition().get());
+    assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  @Test
   void testTwoKnightShuffleAroundPinIsIllegalMove() {
     // Black Nc6 is pinned (it blocks Qb5 -> Ke8). Black moves Nc6->d4 (illegally exposing the king)
     // and then Ne5->c6 to re-block, in one turn. Two moves; no single legal move produces the
@@ -771,7 +802,8 @@ class TestArbiterEngine {
     board.moveStrict("Nf6");
 
     // Rook first produces the same final position as castling, but the move may not be
-    // accepted as O-O because castling is a king move.
+    // accepted as O-O because castling cannot be performed rook first. The rook move
+    // is committed and the king must be restored.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
@@ -783,7 +815,10 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
-    assertTrue(response.message().contains("rook on f1"));
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_ROOK_FIRST_CASTLING_PLAYER, response.playerMessageKey());
+    assertEquals("Castling cannot be performed rook first. Because the rook was released on f1 as a legal move,"
+        + " the move is the rook move from h1 to f1. Please put the king back on e1 and press the clock.",
+        response.message());
   }
 
   @Test

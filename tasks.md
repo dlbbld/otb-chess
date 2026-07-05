@@ -259,6 +259,11 @@ public launch. Released as **v0.1.1** (still beta).
   "Released-piece violation"; it now explains the FIDE 4.7.2 obligation directly:
   "Castling has been started..." plus the required rook move. Unit tests pin the exact player
   text and absence of the old label; e2e pins the live arbiter message.
+- [x] **Rook-first castling restoration.** A rook-first castling attempt is no longer treated as
+  castling or as an illegal king move. If the rook release is legal (`Rh1-f1`), that rook move is
+  committed; the later king displacement is restored (`Ke1`), with a specific FIDE 4.4.2 message.
+  Unit + e2e pin the message, restore target, Revert board state, and final clock press accepting
+  the rook move.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.
