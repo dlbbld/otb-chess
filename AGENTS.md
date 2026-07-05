@@ -1,6 +1,6 @@
 # Project instructions
 
-(Keep this file in sync with `AGENTS.md` — same content, two filenames because different
+(Keep this file in sync with `CLAUDE.md` — same content, two filenames because different
 coding agents read different conventional files.)
 
 ## Testing policy (non-negotiable)
