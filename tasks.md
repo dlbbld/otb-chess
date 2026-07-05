@@ -299,6 +299,10 @@ public launch. Released as **v0.1.1** (still beta).
   rematch message is refused instead of starting a one-player rematch with the absent player's
   clock ticking. Unit coverage pins connected-seat state; focused rematch + abandonment e2e cover
   the reported flow and the existing running-game disconnect behavior.
+- [x] **Board controls are icon-only with hover tooltips.** Removed visible text labels from the
+  below-board control buttons while keeping accessible names and consistent hover tooltips. The
+  resign icon is now a sideways king, matching the physical act of tipping the king over. Focused
+  e2e pins the icon-only grouping, tooltip text, and compact button sizing.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

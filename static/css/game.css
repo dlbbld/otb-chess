@@ -557,6 +557,7 @@ body:has(.game-layout) {
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
+  position: relative;
 }
 
 .game-actions {
@@ -571,32 +572,21 @@ body:has(.game-layout) {
   padding-bottom: 1px;
 }
 
-.control-label {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  padding: 0 9px 0 3px;
-  border-right: 1px solid #d2c7bc;
-  color: #6f665e;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
 .control-btn {
-  min-height: 36px;
-  padding: 5px 9px;
+  width: 42px;
+  height: 36px;
+  padding: 5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  position: relative;
   background: #fffdfa;
   border-color: #c8beb3;
   border-radius: 6px;
   color: #302e2c;
   box-shadow: 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px rgba(55,45,36,0.10);
   white-space: nowrap;
+  overflow: visible;
 }
 
 .control-btn:hover:not(:disabled) {
@@ -604,22 +594,48 @@ body:has(.game-layout) {
   border-color: #b89d83;
 }
 
-.game-actions .control-btn {
-  min-width: 128px;
+.control-btn::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(2px);
+  max-width: 230px;
+  padding: 6px 8px;
+  background: #302e2c;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: normal;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+  z-index: 120;
 }
 
-.claim-btn {
-  min-width: 144px;
-  justify-content: flex-start;
+.control-btn::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  transform: translateX(-50%) translateY(2px);
+  border: 5px solid transparent;
+  border-top-color: #302e2c;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+  z-index: 119;
 }
 
-.utility-btn {
-  min-width: 126px;
-}
-
-.btn-label {
-  font-size: 11.5px;
-  line-height: 1;
+.control-btn:hover::before,
+.control-btn:focus-visible::before,
+.control-btn:hover::after,
+.control-btn:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .btn-icon {
@@ -645,14 +661,15 @@ body:has(.game-layout) {
 
 .icon-resign {
   font-family: "Segoe UI Symbol", "Noto Sans Symbols", serif;
+  overflow: hidden;
 }
 
 .icon-resign::before {
   content: "♔";
   display: block;
   font-size: 18px;
-  transform: rotate(62deg);
-  transform-origin: 50% 70%;
+  transform: rotate(90deg) translateY(1px);
+  transform-origin: 50% 56%;
 }
 
 .icon-stop {
@@ -734,16 +751,6 @@ body:has(.game-layout) {
 .icon-move {
   font-family: "Courier New", monospace;
   font-size: 10px;
-}
-
-@media (max-width: 900px) {
-  .control-label {
-    flex-basis: 100%;
-    justify-content: center;
-    min-height: 18px;
-    padding: 0;
-    border-right: 0;
-  }
 }
 
 /* === Inline panels === */
