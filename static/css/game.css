@@ -524,14 +524,6 @@ body:has(.game-layout) {
   margin-bottom: 10px;
 }
 
-/* === Action Buttons (below the board) === */
-.action-buttons {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
 .action-btn {
   padding: 6px 14px;
   border: 1px solid #ccc;
@@ -551,16 +543,207 @@ body:has(.game-layout) {
   cursor: not-allowed;
 }
 
-.claim-buttons {
+/* === Board controls (below the board) === */
+.board-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.control-row {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: center;
 }
 
-.small-btn {
+.game-actions {
+  padding-top: 2px;
+}
+
+.claim-section {
+  padding: 2px 0;
+}
+
+.utility-actions {
+  padding-bottom: 1px;
+}
+
+.control-label {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 9px 0 3px;
+  border-right: 1px solid #d2c7bc;
+  color: #6f665e;
   font-size: 11px;
-  padding: 4px 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.control-btn {
+  min-height: 36px;
+  padding: 5px 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #fffdfa;
+  border-color: #c8beb3;
+  border-radius: 6px;
+  color: #302e2c;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px rgba(55,45,36,0.10);
+  white-space: nowrap;
+}
+
+.control-btn:hover:not(:disabled) {
+  background: #f2e8dc;
+  border-color: #b89d83;
+}
+
+.game-actions .control-btn {
+  min-width: 128px;
+}
+
+.claim-btn {
+  min-width: 144px;
+  justify-content: flex-start;
+}
+
+.utility-btn {
+  min-width: 126px;
+}
+
+.btn-label {
+  font-size: 11.5px;
+  line-height: 1;
+}
+
+.btn-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-radius: 4px;
+  background: #ede6dd;
+  color: #433a32;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.icon-draw {
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+}
+
+.icon-resign {
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols", serif;
+}
+
+.icon-resign::before {
+  content: "♔";
+  display: block;
+  font-size: 18px;
+  transform: rotate(62deg);
+  transform-origin: 50% 70%;
+}
+
+.icon-stop {
+  color: #8f2f29;
+}
+
+.icon-piece {
+  font-size: 18px;
+}
+
+.icon-pgn {
+  align-items: flex-start;
+  padding-top: 4px;
+  font-size: 8px;
+  letter-spacing: 0;
+}
+
+.icon-pgn::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 5px;
+  height: 1px;
+  background: currentColor;
+  box-shadow: 0 -4px 0 currentColor;
+  opacity: 0.65;
+}
+
+.icon-flip::before,
+.icon-flip::after {
+  position: absolute;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.icon-flip::before {
+  content: "<";
+  left: 5px;
+}
+
+.icon-flip::after {
+  content: ">";
+  right: 5px;
+}
+
+.claim-icon {
+  width: 30px;
+  flex-basis: 30px;
+  gap: 2px;
+  background: #ece4d9;
+}
+
+.claim-rule {
+  width: 14px;
+  text-align: center;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.claim-kind {
+  width: 11px;
+  height: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-board {
+  border: 1px solid #5f554b;
+  background:
+    linear-gradient(45deg, #5f554b 25%, transparent 25%, transparent 75%, #5f554b 75%),
+    linear-gradient(45deg, #5f554b 25%, transparent 25%, transparent 75%, #5f554b 75%);
+  background-color: #f8f1e7;
+  background-position: 0 0, 5px 5px;
+  background-size: 10px 10px;
+}
+
+.icon-move {
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .control-label {
+    flex-basis: 100%;
+    justify-content: center;
+    min-height: 18px;
+    padding: 0;
+    border-right: 0;
+  }
 }
 
 /* === Inline panels === */

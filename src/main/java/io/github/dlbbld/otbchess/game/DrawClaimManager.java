@@ -48,8 +48,7 @@ public class DrawClaimManager {
     try {
       moveSpec = LenientSanParser.parse(san, board).moveSpecification();
     } catch (final LenientSanParserValidationException e) {
-      return DrawClaimResult
-          .invalidMove("Invalid move: " + e.getMessage() + " Please enter a legal move for the claim.");
+      return DrawClaimResult.invalidMove(invalidClaimMoveMessage(san, e));
     }
 
     if (!board.canClaimThreefoldRepetitionRuleWithOwnMove()) {
@@ -95,8 +94,7 @@ public class DrawClaimManager {
     try {
       moveSpec = LenientSanParser.parse(san, board).moveSpecification();
     } catch (final LenientSanParserValidationException e) {
-      return DrawClaimResult
-          .invalidMove("Invalid move: " + e.getMessage() + " Please enter a legal move for the claim.");
+      return DrawClaimResult.invalidMove(invalidClaimMoveMessage(san, e));
     }
 
     if (!board.canClaimFiftyMoveRuleWithOwnMove()) {
@@ -120,5 +118,38 @@ public class DrawClaimManager {
         "Your opponent claimed a draw by the 50-move rule with the move " + san + ", but the claim is not valid."
             + " It still counts as a draw offer. Do you accept the draw?",
         moveSpec);
+  }
+
+  private static String invalidClaimMoveMessage(String san, LenientSanParserValidationException exception) {
+    final String reason = userFacingInvalidMoveReason(exception.getMessage());
+    final String prefix = "The move '" + san.trim() + "' is invalid";
+    if (reason.isBlank()) {
+      return prefix + ". Please enter a legal move for the claim.";
+    }
+    return prefix + ": " + ensureSentence(reason) + " Please enter a legal move for the claim.";
+  }
+
+  private static String userFacingInvalidMoveReason(String message) {
+    if (message == null || message.isBlank()) {
+      return "";
+    }
+    final String trimmed = message.trim();
+    final String parserPrefix = "The lenient SAN parser could not parse";
+    if (trimmed.startsWith(parserPrefix)) {
+      final int colon = trimmed.indexOf(':');
+      if (colon >= 0 && colon + 1 < trimmed.length()) {
+        return trimmed.substring(colon + 1).trim();
+      }
+      return "";
+    }
+    return trimmed;
+  }
+
+  private static String ensureSentence(String text) {
+    final String trimmed = text.trim();
+    if (trimmed.endsWith(".") || trimmed.endsWith("!") || trimmed.endsWith("?")) {
+      return trimmed;
+    }
+    return trimmed + ".";
   }
 }

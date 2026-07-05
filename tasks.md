@@ -287,6 +287,12 @@ public launch. Released as **v0.1.1** (still beta).
   the completed-move position, not the turn start. Example pinned: White plays e2-e4, then drags the
   black e7 pawn to e5; Revert keeps the white pawn on e4 and restores only the black pawn to e7.
   Unit + focused e2e replay the reported journey.
+- [x] **Claim move validation hides parser internals + grouped board controls.** Claim-with-move
+  validation now says e.g. "The move 'c2' is invalid: A pawn cannot move backwards..." instead of
+  exposing the lenient SAN parser. Board controls are split into three rows: Offer Draw/Resign,
+  a labeled Claim row with four icon-led claim buttons, and bottom-row utilities (Request Piece,
+  Display PGN, Flip Board). Unit + focused e2e pin the message; focused e2e pins the control
+  grouping and text fit.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

@@ -3,6 +3,7 @@
 package io.github.dlbbld.otbchess.game;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -55,5 +56,17 @@ class TestDrawClaimManager {
       // Merit rejections speak through the offer message, not the passive info window.
       assertTrue(result.opponentInfo().isEmpty());
     }
+  }
+
+  @Test
+  void testInvalidClaimMoveMessageHidesParserInternals() {
+    final Board board = new Board();
+
+    final DrawClaimResult result = manager.processClaim(board, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "c2");
+
+    assertTrue(result.invalidMove());
+    assertEquals("The move 'c2' is invalid: A pawn cannot move backwards."
+        + " Please enter a legal move for the claim.", result.message());
+    assertFalse(result.message().contains("lenient SAN parser"));
   }
 }

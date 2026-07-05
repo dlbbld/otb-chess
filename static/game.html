@@ -31,21 +31,73 @@
         <div class="game-banner" id="gameBanner" style="display:none;"></div>
       </div>
 
-      <!-- Action buttons below the board -->
-      <div class="action-buttons">
-        <button id="abortBtn" class="action-btn" style="display:none;">Abort Game</button>
-        <button id="offerDrawBtn" class="action-btn" disabled>Offer Draw</button>
-        <button id="resignBtn" class="action-btn" disabled>Resign</button>
-        <button id="requestPieceBtn" class="action-btn" disabled>Request Piece</button>
-      </div>
+      <!-- Controls below the board -->
+      <div class="board-controls">
+        <div class="control-row game-actions" aria-label="Game actions">
+          <button id="abortBtn" class="action-btn control-btn" style="display:none;">
+            <span class="btn-icon icon-stop" aria-hidden="true">!</span>
+            <span class="btn-label">Abort Game</span>
+          </button>
+          <button id="offerDrawBtn" class="action-btn control-btn" disabled title="Offer Draw">
+            <span class="btn-icon icon-draw" aria-hidden="true">1/2</span>
+            <span class="btn-label">Offer Draw</span>
+          </button>
+          <button id="resignBtn" class="action-btn control-btn" disabled title="Resign">
+            <span class="btn-icon icon-resign" aria-hidden="true"></span>
+            <span class="btn-label">Resign</span>
+          </button>
+        </div>
 
-      <div class="claim-buttons">
-        <button id="claimThreefoldOnBoardBtn" class="action-btn small-btn" disabled>Claim Threefold Position</button>
-        <button id="claimThreefoldWithMoveBtn" class="action-btn small-btn" disabled>Claim Threefold Move</button>
-        <button id="claimFiftyMoveOnBoardBtn" class="action-btn small-btn" disabled>Claim 50-Move Position</button>
-        <button id="claimFiftyMoveWithMoveBtn" class="action-btn small-btn" disabled>Claim 50-Move Move</button>
-        <button id="exportPgnBtn" class="action-btn small-btn">Display PGN</button>
-        <button id="flipBoardBtn" class="action-btn small-btn">Flip Board</button>
+        <div class="control-row claim-section" aria-label="Draw claims">
+          <div class="control-label">Claim</div>
+          <button id="claimThreefoldOnBoardBtn" class="action-btn control-btn claim-btn" disabled
+              title="Claim threefold repetition on the current position">
+            <span class="btn-icon claim-icon" aria-hidden="true">
+              <span class="claim-rule">3x</span>
+              <span class="claim-kind icon-board"></span>
+            </span>
+            <span class="btn-label">Threefold Position</span>
+          </button>
+          <button id="claimThreefoldWithMoveBtn" class="action-btn control-btn claim-btn" disabled
+              title="Claim threefold repetition with a move">
+            <span class="btn-icon claim-icon" aria-hidden="true">
+              <span class="claim-rule">3x</span>
+              <span class="claim-kind icon-move">-></span>
+            </span>
+            <span class="btn-label">Threefold Move</span>
+          </button>
+          <button id="claimFiftyMoveOnBoardBtn" class="action-btn control-btn claim-btn" disabled
+              title="Claim the 50-move rule on the current position">
+            <span class="btn-icon claim-icon" aria-hidden="true">
+              <span class="claim-rule">50</span>
+              <span class="claim-kind icon-board"></span>
+            </span>
+            <span class="btn-label">50-Move Position</span>
+          </button>
+          <button id="claimFiftyMoveWithMoveBtn" class="action-btn control-btn claim-btn" disabled
+              title="Claim the 50-move rule with a move">
+            <span class="btn-icon claim-icon" aria-hidden="true">
+              <span class="claim-rule">50</span>
+              <span class="claim-kind icon-move">-></span>
+            </span>
+            <span class="btn-label">50-Move Move</span>
+          </button>
+        </div>
+
+        <div class="control-row utility-actions" aria-label="Board utilities">
+          <button id="requestPieceBtn" class="action-btn control-btn utility-btn" disabled title="Request Piece">
+            <span class="btn-icon icon-piece" aria-hidden="true">+</span>
+            <span class="btn-label">Request Piece</span>
+          </button>
+          <button id="exportPgnBtn" class="action-btn control-btn utility-btn" title="Display PGN">
+            <span class="btn-icon icon-pgn" aria-hidden="true">PGN</span>
+            <span class="btn-label">Display PGN</span>
+          </button>
+          <button id="flipBoardBtn" class="action-btn control-btn utility-btn" title="Flip Board">
+            <span class="btn-icon icon-flip" aria-hidden="true"></span>
+            <span class="btn-label">Flip Board</span>
+          </button>
+        </div>
       </div>
       <div class="app-version board-version" data-app-version></div>
     </div>

@@ -1098,8 +1098,9 @@ class TestGameSession {
     assertTrue(result.invalidMove(),
         "Illegal SAN must be reported via the invalidMove flag, not as a regular rejection");
     assertTrue(result.moveToPerform().isEmpty());
-    assertTrue(result.message().startsWith("Invalid move:"),
+    assertTrue(result.message().startsWith("The move 'e9' is invalid:"),
         "Message should surface the Ashlar Chess validation reason: " + result.message());
+    assertFalse(result.message().contains("lenient SAN parser"));
 
     // Game state is unchanged: no must-execute move was set, white still has the move.
     assertNull(session.getMustExecuteMove());
@@ -1248,7 +1249,8 @@ class TestGameSession {
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove());
-    assertTrue(result.message().startsWith("Invalid move:"));
+    assertTrue(result.message().startsWith("The move 'e9' is invalid:"));
+    assertFalse(result.message().contains("lenient SAN parser"));
   }
 
   @Test
@@ -1260,7 +1262,8 @@ class TestGameSession {
 
     assertFalse(result.accepted());
     assertTrue(result.invalidMove());
-    assertTrue(result.message().startsWith("Invalid move:"));
+    assertTrue(result.message().startsWith("The move 'Kz9' is invalid:"));
+    assertFalse(result.message().contains("lenient SAN parser"));
   }
 
   @Test
