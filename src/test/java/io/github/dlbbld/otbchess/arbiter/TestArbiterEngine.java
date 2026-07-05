@@ -385,9 +385,8 @@ class TestArbiterEngine {
     // the castling by moving the rook from h1 to f1. The message must NOT mislead the
     // player into "putting the king back" since the king is already where it belongs.
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, response.playerMessageKey());
-    assertTrue(response.message().contains("king on g1"));
-    assertTrue(response.message().contains("kingside castling"));
-    assertTrue(response.message().contains("from h1 to f1"));
+    assertEquals("Castling has been started. Because the king was released on g1 and kingside castling is legal,"
+        + " you must complete the castling move by moving the rook from h1 to f1.", response.message());
   }
 
   @Test
@@ -461,12 +460,12 @@ class TestArbiterEngine {
 
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, response.playerMessageKey());
-    assertTrue(response.message().contains("king on g1"));
-    assertTrue(response.message().contains("kingside castling"));
-    assertTrue(response.message().contains("from h1 to f1"));
+    assertEquals("Castling has been started. Because the king was released on g1 and kingside castling is legal,"
+        + " you must complete the castling move by moving the rook from h1 to f1.", response.message());
     // The misleading "put the king back" wording from the generic released-piece message
     // must NOT appear — the king is already correctly placed.
     assertFalse(response.message().contains("Please put the king back"));
+    assertFalse(response.message().contains("Released-piece violation"));
   }
 
   /**

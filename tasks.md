@@ -255,6 +255,10 @@ public launch. Released as **v0.1.1** (still beta).
   of bailing with "no game code". Stale sessions resolve via the existing resumeFailed →
   friendly-message → Back-to-lobby flow (which clears them, so no loop). e2e: new-tab reconnect
   flow + no banner without a session (client-only change — no Java to unit-test).
+- [x] **Castling obligation wording.** The castling-in-progress message no longer says
+  "Released-piece violation"; it now explains the FIDE 4.7.2 obligation directly:
+  "Castling has been started..." plus the required rook move. Unit tests pin the exact player
+  text and absence of the old label; e2e pins the live arbiter message.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

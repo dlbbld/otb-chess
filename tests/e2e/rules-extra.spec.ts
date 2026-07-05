@@ -210,7 +210,7 @@ test('changing a completed promotion is a released-piece violation, not an illeg
   await expect(white.locator('#arbiterMessage')).toContainText(/queen/i);
 });
 
-test('castling by two king moves (king released on g1, then moved on) is a released-piece violation', async ({
+test('castling by two king moves (king released on g1, then moved on) asks to complete castling', async ({
   browser,
 }) => {
   game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
@@ -220,8 +220,10 @@ test('castling by two king moves (king released on g1, then moved on) is a relea
   await dragPiece(white, 'g1', 'f1'); // then moved on to f1
   await pressClock(white);
 
-  await expect(white.locator('#arbiterMessage')).toContainText(/released-piece/i);
-  await expect(white.locator('#arbiterMessage')).toContainText(/castling/i);
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Castling has been started. Because the king was released on g1 and kingside castling is legal,'
+      + ' you must complete the castling move by moving the rook from h1 to f1.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText(/released-piece/i);
 });
 
 test('moving two pieces (a knight shuffle around a pin) is an illegal move', async ({ browser }) => {

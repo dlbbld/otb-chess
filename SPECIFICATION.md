@@ -332,11 +332,11 @@ To avoid double-punishment for a failed castling attempt, the released-piece rul
 
 In every other case the released-piece rule applies normally.
 
-### Castling-specific released-piece message
+### Castling-specific incomplete-castling message
 
-When the king's release on its castled square commits the player to a castling that **is** legal but the rook hasn't been moved (or was placed wrongly), the released-piece message is castling-specific rather than the generic "put the piece back" wording. Example for kingside white:
+When the king's release on its castled square commits the player to a castling that **is** legal but the rook hasn't been moved (or was placed wrongly), the message is castling-specific rather than the generic "put the piece back" or "released-piece violation" wording. Example for kingside white:
 
-> _"Released-piece violation: You released the king on g1, which initiates kingside castling, and castling is legal. Under the released-piece rule, the king must stay on g1. Please complete the castling by moving the rook from h1 to f1 and pressing the clock."_
+> _"Castling has been started. Because the king was released on g1 and kingside castling is legal, you must complete the castling move by moving the rook from h1 to f1."_
 
 The king is not moved back -- it stays on the castled square because that's where it belongs in the committed move. The player is told exactly which rook move completes the castling.
 
