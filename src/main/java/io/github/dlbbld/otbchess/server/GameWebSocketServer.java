@@ -127,6 +127,14 @@ public class GameWebSocketServer extends WebSocketServer {
     // abandonment adjudication so the client can show a countdown and the Claim-victory button.
     maintenance.schedule(() -> {
       if (room.getSocket(side) == conn) {
+        if (room.getSession().getState() == GameState.ENDED) {
+          synchronized (room) {
+            room.setRematchOfferedBy(Side.NONE);
+          }
+          sendRematchUnavailable(room, side.getOppositeSide(),
+              "Your opponent has disconnected. A rematch is no longer available.");
+          return;
+        }
         final JsonObject msg = new JsonObject();
         msg.addProperty("type", "opponentDisconnected");
         msg.addProperty("message", "Your opponent has disconnected.");
@@ -941,6 +949,11 @@ public class GameWebSocketServer extends WebSocketServer {
       if (side == Side.NONE) {
         return;
       }
+      if (!room.isConnected(side.getOppositeSide())) {
+        room.setRematchOfferedBy(Side.NONE);
+        sendRematchUnavailable(conn, "A rematch is no longer available - your opponent left the game.");
+        return;
+      }
       final Side offeredBy = room.getRematchOfferedBy();
       if (offeredBy == side) {
         return; // repeated click on an already-sent offer — idempotent
@@ -955,6 +968,11 @@ public class GameWebSocketServer extends WebSocketServer {
         offer.addProperty("type", "rematchOffered");
         offer.addProperty("message", "Your opponent offers a rematch.");
         room.sendToSide(side.getOppositeSide(), GSON.toJson(offer));
+        return;
+      }
+      if (!room.isConnected(offeredBy)) {
+        room.setRematchOfferedBy(Side.NONE);
+        sendRematchUnavailable(conn, "A rematch is no longer available - your opponent left the game.");
         return;
       }
       // The other side had already offered — this press accepts: start the rematch.
@@ -1659,6 +1677,22 @@ public class GameWebSocketServer extends WebSocketServer {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "joinFailed");
     msg.addProperty("reason", reason);
+    msg.addProperty("message", message);
+    if (conn != null && conn.isOpen()) {
+      conn.send(GSON.toJson(msg));
+    }
+  }
+
+  private void sendRematchUnavailable(GameRoom room, Side side, String message) {
+    final WebSocket socket = room.getSocket(side);
+    if (socket != null && socket.isOpen()) {
+      sendRematchUnavailable(socket, message);
+    }
+  }
+
+  private void sendRematchUnavailable(WebSocket conn, String message) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "rematchUnavailable");
     msg.addProperty("message", message);
     if (conn != null && conn.isOpen()) {
       conn.send(GSON.toJson(msg));

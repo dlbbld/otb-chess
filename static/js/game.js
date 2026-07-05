@@ -719,6 +719,10 @@ class Game {
       this.showArbiterMessage(data.message);
     });
 
+    this.ws.on('rematchUnavailable', (data) => {
+      this.markRematchUnavailable(data.message);
+    });
+
     // Rematch accepted: a fresh game in the same room — same time control and starting
     // position, colours swapped. Reset the whole client state as a combined created+started.
     this.ws.on('rematchStarted', (data) => {
@@ -770,6 +774,10 @@ class Game {
     this.ws.on('opponentDisconnected', (data) => {
       // Drop any in-flight opponent drag visualisation — no more events will arrive.
       this.board.clearOpponentDragVisuals();
+      if (!this.gameActive) {
+        this.markRematchUnavailable(data.message || 'Your opponent has disconnected.');
+        return;
+      }
       // Countdown to the abandonment adjudication (Lichess-style), plus the option to end it
       // now: "Claim victory" applies the same adjudication immediately (win — or draw when no
       // mate is possible). A reconnect (opponentReconnected) or the game end clears all of it.
@@ -1149,6 +1157,16 @@ class Game {
   hideConfirmation() {
     document.getElementById('confirmPanel').style.display = 'none';
     this._confirmCallback = null;
+  }
+
+  markRematchUnavailable(message) {
+    const btn = document.getElementById('rematchBtn');
+    if (btn) {
+      btn.classList.remove('rematch-blink');
+      btn.disabled = true;
+      btn.textContent = 'Rematch unavailable';
+    }
+    this.showArbiterMessage(message, 'info');
   }
 
   // === Clock display ===

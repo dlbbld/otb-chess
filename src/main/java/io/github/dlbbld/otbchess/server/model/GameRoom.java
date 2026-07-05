@@ -115,6 +115,11 @@ public class GameRoom {
     };
   }
 
+  public boolean isConnected(Side side) {
+    final WebSocket socket = getSocket(side);
+    return socket != null && socket.isOpen() && getDisconnectedAt(side) == null;
+  }
+
   public Side getSide(WebSocket conn) {
     if (conn == whitePlayer) {
       return Side.WHITE;
@@ -229,6 +234,8 @@ public class GameRoom {
     blackPlayer = previousWhite;
     whiteToken = null;
     blackToken = null;
+    whiteDisconnectedAtMs = null;
+    blackDisconnectedAtMs = null;
     rematchOfferedBy = Side.NONE;
     session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore,
         new Board(session.getBoard().getInitialFen()));

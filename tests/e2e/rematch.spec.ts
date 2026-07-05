@@ -115,3 +115,31 @@ test('a rematch offer during a running game is rejected', async ({ browser }) =>
   await expect(white.locator('#arbiterMessage')).toContainText(
     'A rematch can only be offered after the game has ended');
 });
+
+test('a pending rematch becomes unavailable when the offering player closes the browser', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await resign(black);
+  await expectGameResult(white, '1-0');
+
+  // Black offers the rematch and then leaves before White accepts.
+  await black.locator('#rematchBtn').click();
+  await expect(white.locator('#rematchBtn')).toHaveClass(/rematch-blink/);
+  await black.context().close();
+
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Your opponent has disconnected. A rematch is no longer available',
+    { timeout: 10_000 });
+  await expect(white.locator('#rematchBtn')).toBeDisabled();
+  await expect(white.locator('#rematchBtn')).toHaveText('Rematch unavailable');
+  await expect(white.locator('#gameResultPanel')).toBeVisible();
+
+  // A crafted click/message after the opponent is gone must not start a new one-player rematch.
+  await white.evaluate(() => (window as any).game.ws.send({ type: 'rematchOffer' }));
+  await expect(white.locator('#arbiterMessage')).toContainText('rematch is no longer available');
+  await expect(white.locator('#gameResultPanel')).toBeVisible();
+  await expect(white.locator('#gameBanner')).not.toHaveText('Rematch started');
+});

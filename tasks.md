@@ -293,6 +293,12 @@ public launch. Released as **v0.1.1** (still beta).
   a labeled Claim row with four icon-led claim buttons, and bottom-row utilities (Request Piece,
   Display PGN, Flip Board). Unit + focused e2e pin the message; focused e2e pins the control
   grouping and text fit.
+- [x] **Rematch offer expires when the offering player leaves.** If a player offers a rematch after
+  a finished game and then closes the browser before the opponent accepts, the remaining player is
+  told the opponent disconnected, the Rematch button becomes unavailable, and a crafted accept/
+  rematch message is refused instead of starting a one-player rematch with the absent player's
+  clock ticking. Unit coverage pins connected-seat state; focused rematch + abandonment e2e cover
+  the reported flow and the existing running-game disconnect behavior.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

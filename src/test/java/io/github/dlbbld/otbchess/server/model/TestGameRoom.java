@@ -3,8 +3,10 @@
 package io.github.dlbbld.otbchess.server.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Proxy;
 
@@ -25,9 +27,13 @@ class TestGameRoom {
 
   /** Minimal stand-in socket: identity-distinct, never open (so sendToBoth/sendToSide no-op). */
   private static WebSocket fakeSocket() {
+    return fakeSocket(false);
+  }
+
+  private static WebSocket fakeSocket(boolean open) {
     return (WebSocket) Proxy.newProxyInstance(WebSocket.class.getClassLoader(), new Class<?>[] { WebSocket.class },
         (proxy, method, args) -> switch (method.getName()) {
-          case "isOpen" -> false;
+          case "isOpen" -> open;
           case "equals" -> proxy == args[0];
           case "hashCode" -> System.identityHashCode(proxy);
           case "toString" -> "fakeSocket";
@@ -64,6 +70,35 @@ class TestGameRoom {
     assertEquals(GameState.WAITING_FOR_PLAYERS, room.getSession().getState());
     assertEquals(TEST_TIME, room.getTimeControl());
     assertEquals(TEST_TIME.initialTimeMs(), room.getSession().getClock().getRemainingTimeMs(Side.WHITE));
+  }
+
+  @Test
+  void testConnectedSeatRequiresOpenSocketAndNoDisconnectTimestamp() {
+    final GameRoom room = new GameRoom("TESTGAME", TEST_TIME);
+    room.setWhitePlayer(fakeSocket(true));
+    room.setBlackPlayer(fakeSocket(false));
+
+    assertTrue(room.isConnected(Side.WHITE));
+    assertFalse(room.isConnected(Side.BLACK));
+
+    room.setDisconnectedAt(Side.WHITE, 123L);
+    assertFalse(room.isConnected(Side.WHITE));
+  }
+
+  @Test
+  void testStartRematchClearsStaleDisconnectTimestamps() {
+    final GameRoom room = new GameRoom("TESTGAME", TEST_TIME);
+    room.setWhitePlayer(fakeSocket(true));
+    room.setBlackPlayer(fakeSocket(true));
+    room.setDisconnectedAt(Side.WHITE, 123L);
+    room.setDisconnectedAt(Side.BLACK, 456L);
+    room.getSession().startGame();
+    room.getSession().resign(Side.WHITE);
+
+    room.startRematch();
+
+    assertEquals(null, room.getDisconnectedAt(Side.WHITE));
+    assertEquals(null, room.getDisconnectedAt(Side.BLACK));
   }
 
   /** A standard game's rematch restarts from the NORMAL starting position, not from where the game ended. */
