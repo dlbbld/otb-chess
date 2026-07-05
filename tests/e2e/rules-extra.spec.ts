@@ -170,6 +170,19 @@ test('en passant that would expose the own king is rejected', async ({ browser }
   await expectPiece(white, 'e5', 'WHITE_PAWN'); // position restored
 });
 
+test('illegal move while in check says it leaves the own king in check', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k3r3/8/8/8/8/8/8/4K2R w - - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'h1', 'h2'); // does not answer the check from the black rook on e8
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move because it leaves the own king in check.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('would leave');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('it leaves the own king in check');
+});
+
 test('moving an opponent piece is rejected immediately', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white } = game;

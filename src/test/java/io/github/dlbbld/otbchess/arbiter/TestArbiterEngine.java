@@ -64,6 +64,26 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testIllegalMoveLeavingKingInCheckUsesNaturalWording() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/8/4K2R w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.H2, Piece.WHITE_ROOK, 0));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.H1, Piece.NONE).createChangedPosition(Square.H2, Piece.WHITE_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertEquals("because it leaves the own king in check", response.illegalMoveDetail().get().playerReason().get());
+    assertEquals("it leaves the own king in check", response.illegalMoveDetail().get().opponentReason().get());
+    assertTrue(response.message().startsWith("Illegal move because it leaves the own king in check."));
+    assertFalse(response.message().contains("would leave"));
+  }
+
+  @Test
   void testIllegalMoveWithoutSimpleAttemptKeepsGenericMessage() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();

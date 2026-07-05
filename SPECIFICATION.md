@@ -430,6 +430,8 @@ To match the experience of a real board, certain game-ending moves end the game 
   > _"This is your 3rd illegal move. Your 5th illegal move will lose the game."_ (limit 5)
 - When the limit is reached, the message is _"You have made N illegal moves. You lose the game."_
 - When the limit is **Unlimited**, the message stops at the count and never threatens game loss.
+- If a move does not answer an existing check (or otherwise leaves the moving side's king in check), the player-facing reason is phrased naturally:
+  > _"Illegal move because it leaves the own king in check."_
 
 ---
 

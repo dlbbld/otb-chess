@@ -48,6 +48,9 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
       int maxIllegalMoves, boolean unlimited, boolean noMoveMade) {
 
     String playerReasonPrefix() {
+      if (playerReason.isPresent() && playerReason.get().startsWith("because ")) {
+        return "Illegal move " + ensureSentence(playerReason.get()) + " ";
+      }
       return playerReason.map(reason -> "Illegal move: " + ensureSentence(reason) + " ").orElse("Illegal move. ");
     }
 

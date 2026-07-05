@@ -269,6 +269,10 @@ public launch. Released as **v0.1.1** (still beta).
   position, no Revert button is shown; the mover's clock resumes and the player completes castling
   by moving the rook. Opponent clock-press intervention notices now go to `opponentInfo` below the
   clock unless they are action-relevant.
+- [x] **Natural king-in-check illegal-move wording.** The Ashlar validation reason
+  "it would leave the own king in check" is normalized at the arbiter boundary to
+  "Illegal move because it leaves the own king in check." Unit + e2e pin the player text and the
+  absence of the old "would leave" wording.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

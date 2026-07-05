@@ -413,6 +413,9 @@ public class ArbiterEngine {
   private record IllegalMoveReason(String playerReason, String opponentReason) {
   }
 
+  private record NormalizedReason(String playerReason, String opponentReason) {
+  }
+
   private static Optional<IllegalMoveReason> explainSimpleIllegalMove(Board board, BitboardPosition afterPosition,
       ActionSequence sequence) {
     final Optional<AttemptedMove> attemptedMove = inferAttemptedMove(board, afterPosition, sequence);
@@ -549,15 +552,30 @@ public class ArbiterEngine {
 
   private static IllegalMoveReason formatIllegalMoveExplanation(String reason, Board board, ActionSequence sequence,
       AttemptedMove attemptedMove) {
-    final String formattedReason;
+    final NormalizedReason normalizedReason = normalizeIllegalMoveReason(reason, attemptedMove.castlingAttempt());
+    final String formattedPlayerReason;
+    final String formattedOpponentReason;
     if (attemptedMove.castlingAttempt() && !reason.startsWith("castling is not possible")) {
-      formattedReason = "castling is not possible: " + reason;
+      formattedPlayerReason = "castling is not possible: " + normalizedReason.playerReason();
+      formattedOpponentReason = "castling is not possible: " + normalizedReason.opponentReason();
     } else {
-      formattedReason = reason;
+      formattedPlayerReason = normalizedReason.playerReason();
+      formattedOpponentReason = normalizedReason.opponentReason();
     }
     return new IllegalMoveReason(
-        formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, false),
-        formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, true));
+        formattedPlayerReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, false),
+        formattedOpponentReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, true));
+  }
+
+  private static NormalizedReason normalizeIllegalMoveReason(String reason, boolean castlingAttempt) {
+    if (!reason.equals("it would leave the own king in check")) {
+      return new NormalizedReason(reason, reason);
+    }
+    final String naturalReason = "it leaves the own king in check";
+    if (castlingAttempt) {
+      return new NormalizedReason(naturalReason, naturalReason);
+    }
+    return new NormalizedReason("because " + naturalReason, naturalReason);
   }
 
   private static String formatCastlingTouchMoveConsequence(Board board, ActionSequence sequence,
