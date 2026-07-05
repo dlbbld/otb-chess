@@ -185,7 +185,18 @@ public launch. Released as **v0.1.1** (still beta).
   pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
 - [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
   same commit; long e2e runtimes explicitly acceptable) + memory updated.
-- [x] **Bug fix: promotion-square tampering deadlocked the game (released-piece misread).** After
+- [x] **Wrong-time draw offers: per-move escalation, second offer "not considered" (A-001
+  reworked).** Unlike the claim ladders, a wrong-time offer is only *semi*-illegal (FIDE 9.1.2.1:
+  the offer is valid, the timing admonishable), so the count is **per move and never carries
+  over**. 1st wrong-time offer of the move → a REAL offer (forwarded, opponent can accept/reject)
+  + procedural note; 2nd on the same move → **not considered** (not forwarded), offerer warned
+  ("your next draw offer on this move loses the game"), opponent informed passively; 3rd →
+  **loss** (`WRONG_TIME_OFFER_GAME_LOST`, personalised messages; also fixes the old mislabeled
+  `DRAW_AGREEMENT` loss result that never broadcast `gameEnded`). Docs: A-001 + SPECIFICATION
+  wrong-time-offers section rewritten. Unit (full ladder incl. forwarded/not-forwarded state,
+  per-move reset) + e2e (ladder on live boards with panel visibility + passive info; reset across
+  a move pair). NOTE: the implementation itself was accidentally committed together with the
+  promotion fix (`3b3c411`) via `git add -A`; this entry's commit adds the tests + docs. After
   b2xa1 (pawn parked on a1, promotion pending), dragging the a8 rook onto a1 + clock press was
   misread as a "legal release" — via BOTH matcher branches: the promotion match accepted the
   promoted piece from ANY square, and the normal match accepted Ra8xa1 from the turn-start

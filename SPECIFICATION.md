@@ -579,12 +579,12 @@ A rejected claim that came through the proper FIDE channel (claim-on-board, or c
 #### Wrong-time offers
 
 - Made at any other moment (opponent's turn, or the player's own turn before they've made a move).
-- The offer **still counts** per FIDE 9.1.2.1, but **escalating penalties** apply:
-  1. **First wrong-time offer (info):** message worded depending on whether the offerer has the move:
+- Escalation is **counted per player PER MOVE** and never carries over to the next move (policy [A-001](docs/fide-deviations.md#a-001--draw-offer-abuse-threshold)): a wrong-time offer is only *semi*-illegal — per FIDE 9.1.2.1 the offer itself is valid, only the timing is admonishable — unlike the explicitly forbidden wrong-time *claims* (A-003), whose counts persist across moves.
+  1. **First wrong-time offer of the move:** a REAL offer, forwarded to the opponent (Accept/Reject panel). The offerer's message is worded depending on whether they have the move:
      - If the offerer has the move (case A): _"...the draw offer should be made after making your move and before pressing the clock. Not following this procedure could lead to a warning. The offer still counts as a draw offer."_
      - If not on move (case B): _"...the draw offer should be made on your own turn. Not following this procedure could lead to a warning. The offer still counts as a draw offer."_
-  2. **Second wrong-time offer (warning):** _"You are offering a draw at the wrong time. The next wrong-time draw offer will lose the game."_
-  3. **Third wrong-time offer:** game lost. _"You have repeatedly offered a draw at the wrong time. You lose the game."_
+  2. **Second on the same move:** **not considered** — NOT forwarded (the opponent already had the first one). Offerer: _"You are again offering a draw at the wrong time. This offer was not considered. Warning: your next draw offer on this move loses the game."_ The opponent sees it passively (info window below the clock): offered again, not considered, warned.
+  3. **Third on the same move:** game lost (`WRONG_TIME_OFFER_GAME_LOST`), with personalised messages via `gameEnded` — offerer: _"You have been warned that you will lose the game when you offer a draw again on this move. As you have offered again, you lose the game."_; opponent: _"Your opponent has, despite the warnings, repeatedly offered a draw at the wrong time, and so has lost the game."_
 
 #### Repeated offers
 

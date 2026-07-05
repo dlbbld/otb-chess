@@ -780,6 +780,69 @@ class TestGameSession {
     assertEquals("You cannot claim a draw when not having the move.", whiteFirst.message());
   }
 
+  // ===== Wrong-time draw offers (A-001): per-move escalation =====
+
+  /**
+   * A-001 ladder within ONE move: the first wrong-time offer is a real offer; the second is not considered (not
+   * forwarded) and carries the warning; the third loses the game.
+   */
+  @Test
+  void testWrongTimeOfferEscalatesWithinTheMove() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame(); // White to move — Black's offers are wrong-time
+
+    final var first = session.offerDrawWrongTime(Side.BLACK);
+    assertTrue(first.accepted()); // a REAL offer — forwarded, the opponent can accept it
+    assertTrue(first.arbiterMessage().contains("The offer still counts as a draw offer"));
+    assertTrue(session.getDrawOfferManager().isDrawOffered());
+
+    // The opponent rejects; Black offers again on the same move: NOT considered, warned.
+    session.rejectDraw(Side.WHITE);
+    final var second = session.offerDrawWrongTime(Side.BLACK);
+    assertFalse(second.accepted());
+    assertFalse(second.gameLost());
+    assertTrue(second.arbiterMessage().contains("This offer was not considered"));
+    assertTrue(second.arbiterMessage().contains("Warning: your next draw offer on this move loses the game"));
+    assertTrue(second.opponentInfo().contains("not considered"));
+    assertTrue(second.opponentInfo().contains("been warned"));
+    assertFalse(session.getDrawOfferManager().isDrawOffered()); // nothing was forwarded
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    // Third on the same move: the game is lost.
+    final var third = session.offerDrawWrongTime(Side.BLACK);
+    assertTrue(third.gameLost());
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(GameResultType.WRONG_TIME_OFFER_GAME_LOST, session.getResult().type());
+    assertEquals(Side.WHITE, session.getResult().winner());
+    assertEquals(Side.BLACK, session.getTerminationActor());
+    assertEquals("Black loses the game by repeatedly offering a draw at the wrong time.",
+        session.getResult().description());
+  }
+
+  /**
+   * Unlike the claim ladders, the wrong-time OFFER count is per move (an offer is only semi-illegal): after a move
+   * pair the first wrong-time offer of the new move is a real offer again — no carried-over warning.
+   */
+  @Test
+  void testWrongTimeOfferCountResetsEveryMove() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    session.offerDrawWrongTime(Side.BLACK);
+    session.rejectDraw(Side.WHITE);
+    assertTrue(session.offerDrawWrongTime(Side.BLACK).arbiterMessage().contains("Warning")); // warned on this move
+
+    makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN); // 1. e4
+    makeMove(session, Square.E7, Square.E5, Piece.BLACK_PAWN); // 1... e5
+
+    // White is on move again; Black's wrong-time offer is the FIRST of this move — real again.
+    final var fresh = session.offerDrawWrongTime(Side.BLACK);
+    assertTrue(fresh.accepted());
+    assertTrue(fresh.arbiterMessage().contains("The offer still counts as a draw offer"));
+    assertTrue(session.getDrawOfferManager().isDrawOffered());
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+  }
+
   // ===== Clock press without a move (FIDE 7.5.3) =====
 
   /**
