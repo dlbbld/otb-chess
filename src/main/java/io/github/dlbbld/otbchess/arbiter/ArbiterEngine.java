@@ -104,6 +104,13 @@ public class ArbiterEngine {
   public ArbiterResponse evaluateClockPress(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
     final Side sideToMove = board.getSideToMove();
 
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+    final Optional<ArbiterResponse> unfinishedCastlingTouch = evaluateUnfinishedCastlingTouch(board, afterPosition,
+        sequence, obligation);
+    if (unfinishedCastlingTouch.isPresent()) {
+      return unfinishedCastlingTouch.get();
+    }
+
     final Optional<ReleasedPieceLock> releasedPieceViolation = findReleasedPieceViolation(board, afterPosition,
         sequence);
     if (releasedPieceViolation.isPresent()) {
@@ -160,8 +167,6 @@ public class ArbiterEngine {
     final LegalMove matchedMove = matchingMoves.iterator().next();
 
     // Layer 2: Touch-Move Check
-    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
-
     if (obligation.isPresent()) {
       if (!TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
         return handleTouchMoveViolation(obligation.get());
@@ -194,6 +199,68 @@ public class ArbiterEngine {
       }
       return Optional.empty();
     }
+  }
+
+  private static Optional<ArbiterResponse> evaluateUnfinishedCastlingTouch(Board board, BitboardPosition afterPosition,
+      ActionSequence sequence, Optional<TouchMoveObligation> obligation) {
+    if (board.getBitboardPosition().equals(afterPosition)) {
+      return Optional.empty();
+    }
+    if (obligation.isEmpty() || obligation.get().type() != TouchMoveType.CASTLING) {
+      return Optional.empty();
+    }
+    final CastlingMove castlingMove = obligation.get().castlingMove();
+    if (!hasExplicitKingThenRookTouch(sequence, board.getSideToMove(), castlingMove)) {
+      return Optional.empty();
+    }
+    final Optional<LegalMove> legalCastlingMove = board.getLegalMoves().stream()
+        .filter(move -> move.moveSpecification().isCastling())
+        .filter(move -> move.moveSpecification().castlingMove() == castlingMove)
+        .findFirst();
+    if (legalCastlingMove.isEmpty()) {
+      return Optional.empty();
+    }
+    final BitboardPosition castledPosition = board.getBitboardPosition()
+        .afterMove(legalCastlingMove.get().moveSpecification(), board.getSideToMove());
+    if (afterPosition.equals(castledPosition)) {
+      return Optional.empty();
+    }
+    return Optional.of(ArbiterResponse.touchMoveViolation(obligation.get(),
+        castlingIntermediatePosition(board, castlingMove).filter(afterPosition::equals).orElse(null)));
+  }
+
+  private static boolean hasExplicitKingThenRookTouch(ActionSequence sequence, Side sideToMove,
+      CastlingMove castlingMove) {
+    final Square kingFrom = castlingMove.kingFromSquare(sideToMove);
+    final Square rookFrom = castlingMove.rookFromSquare(sideToMove);
+    final Piece king = Piece.of(sideToMove, PieceType.KING);
+    final Piece rook = Piece.of(sideToMove, PieceType.ROOK);
+    boolean kingClicked = false;
+    for (final BoardEvent event : sequence.getEvents()) {
+      if (event.type() != BoardEventType.CLICK) {
+        continue;
+      }
+      if (!kingClicked) {
+        kingClicked = event.piece() == king && event.square() == kingFrom;
+      } else if (event.piece() == rook && event.square() == rookFrom) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static Optional<BitboardPosition> castlingIntermediatePosition(Board board, CastlingMove castlingMove) {
+    final Side sideToMove = board.getSideToMove();
+    final Square kingFrom = castlingMove.kingFromSquare(sideToMove);
+    final Square kingTo = castlingMove.kingToSquare(sideToMove);
+    final Piece king = Piece.of(sideToMove, PieceType.KING);
+    if (board.getBitboardPosition().get(kingFrom) != king || board.getBitboardPosition().get(kingTo) != Piece.NONE) {
+      return Optional.empty();
+    }
+    return Optional.of(BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(kingFrom, Piece.NONE)
+        .createChangedPosition(kingTo, king)
+        .build());
   }
 
   private static Optional<ReleasedPieceLock> findReleasedPieceViolation(Board board, BitboardPosition afterPosition,

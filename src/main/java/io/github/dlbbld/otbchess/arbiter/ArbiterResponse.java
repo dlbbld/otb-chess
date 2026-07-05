@@ -102,6 +102,10 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
   }
 
   public static ArbiterResponse touchMoveViolation(TouchMoveObligation obligation) {
+    return touchMoveViolation(obligation, null);
+  }
+
+  public static ArbiterResponse touchMoveViolation(TouchMoveObligation obligation, BitboardPosition restorePosition) {
     final MessageKey playerKey;
     final MessageKey opponentKey;
     final List<Object> args;
@@ -138,7 +142,8 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
       default -> throw new IllegalStateException("Unhandled obligation type: " + obligation.type());
     }
     return new ArbiterResponse(ArbiterResponseType.TOUCH_MOVE_VIOLATION, playerKey, args, Optional.of(opponentKey),
-        args, Optional.empty(), Optional.of(obligation), Optional.empty(), Optional.empty(), Optional.empty());
+        args, Optional.empty(), Optional.of(obligation), Optional.ofNullable(restorePosition), Optional.empty(),
+        Optional.empty());
   }
 
   /**

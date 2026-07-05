@@ -344,6 +344,10 @@ When the king's release on its castled square commits the player to a castling t
 
 > _"Castling has been started. Because the king was released on g1 and kingside castling is legal, you must complete the castling move by moving the rook from h1 to f1."_
 
+If the same incomplete physical position follows an earlier king-then-rook touch sequence, the earlier FIDE 4.4.a commitment supplies the reason instead:
+
+> _"Because you touched the king and the rook, and castling is legal, please perform the castling move."_
+
 The king is not moved back -- it stays on the castled square because that's where it belongs in the committed move. The player is told exactly which rook move completes the castling. If the physical board already equals that required intermediate position (king on g1, rook still on h1), no **Revert** button is shown: there is nothing to restore, the player's clock resumes, and the player must complete castling by moving the rook and pressing the clock. If the player has also moved another piece after the king release, **Revert** restores the board to the required intermediate position.
 
 Opponent-side castling-start notices are passive information only. They are shown in the opponent info panel below the clock, not in the opponent's main arbiter message above the clock.

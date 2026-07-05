@@ -273,6 +273,11 @@ public launch. Released as **v0.1.1** (still beta).
   "it would leave the own king in check" is normalized at the arbiter boundary to
   "Illegal move because it leaves the own king in check." Unit + e2e pin the player text and the
   absence of the old "would leave" wording.
+- [x] **King-then-rook touch explains incomplete castling by touch obligation.** When a player
+  touches king, then rook, then moves only the king to the castling square and presses the clock,
+  the arbiter now uses the FIDE 4.4.a touch-castling reason instead of the later released-king
+  reason. Unit + e2e pin the exact wording, hidden Revert button, passive opponent notice, and
+  completion by moving the rook.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

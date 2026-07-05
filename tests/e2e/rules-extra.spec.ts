@@ -15,6 +15,7 @@ import {
   pressOpponentClock,
   pressOwnClock,
   flipBoard,
+  clickSquare,
   expectPiece,
   expectEmpty,
 } from './helpers/board';
@@ -255,6 +256,31 @@ test('incomplete castling has no Revert button and informs the opponent passivel
 
   await expect(black.locator('#arbiterMessage')).not.toContainText(/started castling/i);
   await expect(black.locator('#opponentInfoPanel')).toContainText('Your opponent started castling');
+
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
+test('king-then-rook touch before incomplete castling uses the touch-castling reason', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white, black } = game;
+
+  await clickSquare(white, 'e1');
+  await clickSquare(white, 'h1');
+  await dragPiece(white, 'e1', 'g1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Because you touched the king and the rook, and castling is legal, please perform the castling move.');
+  await expect(white.getByRole('button', { name: 'Revert' })).toBeHidden();
+  await expect(black.locator('#arbiterMessage')).not.toContainText(/touched the king and the rook/i);
+  await expect(black.locator('#opponentInfoPanel')).toContainText(
+    'Your opponent touched the king and the rook, and castling is legal.');
 
   await dragPiece(white, 'h1', 'f1');
   await pressClock(white);

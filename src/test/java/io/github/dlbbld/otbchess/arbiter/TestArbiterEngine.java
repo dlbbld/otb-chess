@@ -410,6 +410,44 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testKingThenRookTouchThenKingMoveUsesCastlingTouchMessage() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 2));
+
+    final BitboardPosition afterKingOnly = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_KING).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterKingOnly, sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_TOUCH_MOVE_CASTLING_PLAYER, response.playerMessageKey());
+    assertEquals("Because you touched the king and the rook, and castling is legal,"
+        + " please perform the castling move.", response.message());
+    assertTrue(response.restorePosition().isPresent());
+    assertEquals(afterKingOnly, response.restorePosition().get());
+  }
+
+  @Test
+  void testKingThenRookTouchWithoutMoveStillCountsAsClockPressWithoutMove() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 1));
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.illegalMoveDetail().get().noMoveMade());
+  }
+
+  @Test
   void testReleasedPieceViolationCastlingKingReleasedThenMovedToF1() {
     // User scenario: O-O is legal; the king is released on g1 (which commits to castling), then
     // moved on to f1. Pressing the clock must be a released-piece violation (the king is committed
