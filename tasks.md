@@ -282,6 +282,11 @@ public launch. Released as **v0.1.1** (still beta).
   pawn before moving the capturing pawn now satisfies the opponent-piece/specific-capture obligation
   by checking the legal move's captured square, not only its destination square. Unit + focused e2e
   pin the c5xb6 e.p. journey.
+- [x] **Revert after a completed move preserves the completed move.** If a player completes a legal
+  move on the board and then displaces another piece before pressing the clock, the Revert target is
+  the completed-move position, not the turn start. Example pinned: White plays e2-e4, then drags the
+  black e7 pawn to e5; Revert keeps the white pawn on e4 and restores only the black pawn to e7.
+  Unit + focused e2e replay the reported journey.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

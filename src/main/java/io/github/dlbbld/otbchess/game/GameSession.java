@@ -183,9 +183,17 @@ public class GameSession {
     }
 
     // Check mid-play validation
-    final Optional<ArbiterResponse> midPlayResponse = MidPlayValidator.validate(event, side, positionBeforeTurn,
+    Optional<ArbiterResponse> midPlayResponse = MidPlayValidator.validate(event, side, positionBeforeTurn,
         removedSquaresThisTurn);
     if (midPlayResponse.isPresent()) {
+      final Optional<BitboardPosition> committedReleasePosition = arbiter.findReleasedPieceCommitmentPosition(board,
+          currentSequence);
+      if (committedReleasePosition.isPresent()) {
+        midPlayResponse = Optional.of(midPlayResponse.get().withRestorePosition(committedReleasePosition.get()));
+        restorationFromReleasedPiece = true;
+      } else {
+        restorationFromReleasedPiece = false;
+      }
       clock.stopClock();
       // Moving an OPPONENT's piece escalates like the other misconducts (A-007): notice,
       // notice + warning, loss of the game on the third time — counted across the whole game.
@@ -703,9 +711,10 @@ public class GameSession {
     if (count == MOVED_OPPONENT_PIECE_LIMIT - 1) {
       pendingOpponentInfo = "Your opponent again moved one of your pieces and has been warned: the next time"
           + " they move one of your pieces, they lose the game. The position must be restored.";
-      return ArbiterResponse.positionChange(
+      final ArbiterResponse warning = ArbiterResponse.positionChange(
           "Position change: You moved an opponent's piece. That is not allowed. Please restore the position."
               + " Warning: the next time you move an opponent's piece, you lose the game.");
+      return original.restorePosition().map(warning::withRestorePosition).orElse(warning);
     }
     pendingOpponentInfo = "Your opponent moved one of your pieces. The game is paused until the position"
         + " has been restored.";

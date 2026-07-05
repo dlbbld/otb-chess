@@ -499,7 +499,8 @@ public class GameWebSocketServer extends WebSocketServer {
         return;
       }
       if (response.type() == ArbiterResponseType.POSITION_CHANGE) {
-        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
+            response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
       } else {
         sendArbiterResponse(room, side, response);
       }

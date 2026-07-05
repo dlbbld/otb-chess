@@ -285,6 +285,11 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
     return severity().style();
   }
 
+  public ArbiterResponse withRestorePosition(BitboardPosition restorePosition) {
+    return new ArbiterResponse(type, playerMessageKey, playerMessageArgs, opponentMessageKey, opponentMessageArgs,
+        acceptedMove, obligation, Optional.ofNullable(restorePosition), illegalMoveDetail, releasedPieceContext);
+  }
+
   private static ArbiterResponse custom(ArbiterResponseType type, MessageKey key, String message) {
     return new ArbiterResponse(type, key, List.of(message), Optional.empty(), List.of(), Optional.empty(),
         Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());

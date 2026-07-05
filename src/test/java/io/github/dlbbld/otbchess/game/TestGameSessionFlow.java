@@ -253,6 +253,30 @@ class TestGameSessionFlow {
     // released-piece violation does not contribute to it.)
   }
 
+  @Test
+  void testMidPlayPositionChangeAfterCommittedMoveRestoresOnlyLaterDisplacement() {
+    final GameSession session = new GameSession(TEST_TIME, 2, false);
+    session.startGame();
+
+    final BitboardPosition initial = session.getBoard().getBitboardPosition();
+    final BitboardPosition afterE4 = BitboardPositions.from(initial)
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+
+    assertTrue(session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0))
+        .isEmpty());
+
+    final ArbiterResponse response = session
+        .recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E7, Square.E5, Piece.BLACK_PAWN, 1)).orElseThrow();
+    assertEquals(ArbiterResponseType.POSITION_CHANGE, response.type());
+    assertTrue(response.restorePosition().isPresent());
+    assertEquals(afterE4, response.restorePosition().get());
+    assertTrue(session.isRestorationFromReleasedPiece());
+
+    session.enterWaitingForRestoration(response.restorePosition().get());
+    assertTrue(session.isRestoredPosition(afterE4));
+    assertFalse(session.isRestoredPosition(initial));
+  }
+
   private void makeSimpleMove(GameSession session, Square from, Square to, Piece piece) {
     final Side side = session.getHavingMove();
     session.recordEvent(side, BoardEvent.dragMove(from, to, piece, System.currentTimeMillis()));

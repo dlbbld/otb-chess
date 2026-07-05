@@ -79,6 +79,15 @@ public class ArbiterEngine {
    * FIDE 4.7?" without comparing against any particular {@code afterPosition}.
    */
   public boolean hasReleasedPieceCommitment(Board board, ActionSequence sequence) {
+    return findReleasedPieceCommitmentPosition(board, sequence).isPresent();
+  }
+
+  /**
+   * Returns the physical position after the first release that committed the player to a legal move from the turn
+   * start. Mid-play interventions use this as their restoration target: if the player already completed a legal move
+   * and then disturbed the board, Revert must undo only the later disturbance.
+   */
+  public Optional<BitboardPosition> findReleasedPieceCommitmentPosition(Board board, ActionSequence sequence) {
     BitboardPosition currentPosition = board.getBitboardPosition();
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
       final BitboardPosition beforeEvent = currentPosition;
@@ -86,11 +95,11 @@ public class ArbiterEngine {
       if (isReleaseOnBoard(event)) {
         final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
         if (!commitment.allowedFinalPositions().isEmpty()) {
-          return true;
+          return Optional.of(currentPosition);
         }
       }
     }
-    return false;
+    return Optional.empty();
   }
 
   /**
