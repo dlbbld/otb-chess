@@ -71,11 +71,13 @@ FIDE's Article 11.5 and 12.9 give the arbiter judgment over distraction, annoyin
 
 **FIDE**: Article 11.5 forbids "unreasonable offers of a draw"; Article 12.9 lists penalties (warning → time penalty → opponent point increase → game lost), with the choice and threshold left to the arbiter.
 
-**Our policy**: Three presses of the draw-offer button at a non-recommended moment (i.e., outside the gap between making one's own move and pressing the clock) result in **loss of the game** for the offending player.
+**Our policy**: Wrong-time presses of the draw-offer button (i.e., outside the gap between making one's own move and pressing the clock) escalate — **counted per player PER MOVE**, never carrying over to the next move (a wrong-time offer is only *semi*-illegal: per FIDE 9.1.2.1 the offer itself is valid, only the timing is admonishable — unlike the explicitly forbidden wrong-time *claims* of A-003, whose counts persist):
 
-The first two presses trigger an inline message to the offender ("offered out of protocol — repeated infractions count as annoyance under Art. 11.5") and a corresponding note to the opponent. The third triggers the loss.
+1. **First wrong-time offer of the move**: a REAL offer — forwarded to the opponent (who can accept or reject it), with a procedural note to the offerer ("…The offer still counts as a draw offer.").
+2. **Second on the same move**: **not considered** — NOT forwarded (the opponent already had the first one). Offerer: *"You are again offering a draw at the wrong time. This offer was not considered. Warning: your next draw offer on this move loses the game."* The opponent sees it passively (info window): offered again, not considered, warned.
+3. **Third on the same move**: **loss of the game** (`WRONG_TIME_OFFER_GAME_LOST`), with the A-00x-style personalised messages.
 
-**Rationale**: Arbiter judgment must be encoded into a digital system; an explicit threshold is more transparent than a fuzzy heuristic. Three is small enough to feel like a real limit, large enough to forgive a single mistake.
+**Rationale**: Arbiter judgment must be encoded into a digital system; an explicit threshold is more transparent than a fuzzy heuristic. The per-move reset reflects the semi-legal nature of the offence: every move starts with a fresh, genuine right to offer.
 
 **Note**: This policy applies only to wrong-time offers. Repeated offers at the recommended time are not currently penalized — see [E-002](enhancements.md#e-002) for the open question of whether they should be.
 

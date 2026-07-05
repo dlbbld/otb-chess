@@ -687,6 +687,13 @@ public class GameWebSocketServer extends WebSocketServer {
   private void handleWrongTimeDrawOffer(GameRoom room, WebSocket conn, Side side) {
     final var result = room.getSession().offerDrawWrongTime(side);
 
+    if (result.gameLost()) {
+      // Third wrong-time offer on this move: the session ended the game — the personalised
+      // messages travel via gameEnded (actor).
+      checkGameEnded(room);
+      return;
+    }
+
     if (result.arbiterMessage() != null) {
       final JsonObject arbiterMsg = new JsonObject();
       arbiterMsg.addProperty("type", result.isWrongTime() ? "wrongTimeDrawOffer" : "repeatedDrawOffer");
@@ -696,9 +703,17 @@ public class GameWebSocketServer extends WebSocketServer {
       // Per FIDE the offer is informational and the clock keeps running on whoever has the move.
     }
 
-    // Forward the offer to the opponent (still valid even at the wrong time, unless the
-    // offering side just hit the game-loss penalty or this was a duplicate from the same side).
-    if (result.accepted() && !result.gameLost()) {
+    // A not-considered second offer: the opponent sees what happened passively (info window).
+    if (result.opponentInfo() != null) {
+      final JsonObject info = new JsonObject();
+      info.addProperty("type", "opponentInfo");
+      info.addProperty("message", result.opponentInfo());
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
+    }
+
+    // Forward the offer to the opponent — only a REAL registered offer (the first wrong-time
+    // offer of the move); a not-considered repeat or a duplicate from the same side is not.
+    if (result.accepted()) {
       sendDrawOfferToOpponent(room, side);
     }
   }
@@ -1548,6 +1563,7 @@ public class GameWebSocketServer extends WebSocketServer {
     // the message in the second person. Resignation / flag-fall additionally carry the draw reason.
     if (result.type() == GameResultType.ABANDONMENT || result.type() == GameResultType.WRONG_CLOCK_PRESS_GAME_LOST
         || result.type() == GameResultType.MOVED_OPPONENT_PIECE_GAME_LOST
+        || result.type() == GameResultType.WRONG_TIME_OFFER_GAME_LOST
         || result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
             || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
       msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());

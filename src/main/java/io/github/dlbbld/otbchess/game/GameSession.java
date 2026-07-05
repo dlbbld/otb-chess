@@ -462,7 +462,9 @@ public class GameSession {
     final boolean offererHasMove = side == board.getSideToMove();
     final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
     if (result.gameLost()) {
-      endGame(new GameResult(GameResultType.DRAW_AGREEMENT, side.getOppositeSide(), result.arbiterMessage()));
+      terminationActor = side;
+      endGame(new GameResult(GameResultType.WRONG_TIME_OFFER_GAME_LOST, side.getOppositeSide(),
+          sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
     }
     return result;
   }
@@ -906,6 +908,9 @@ public class GameSession {
     this.mustExecuteMoveSan = null;
     this.claimMadeThisTurn = false;
     this.restorationFromReleasedPiece = false;
+    // The wrong-time offer escalation is per move (a draw offer is only semi-illegal) — the
+    // count never carries over, unlike the claim ladders.
+    drawOfferManager.resetWrongTimeCountsForNewMove();
   }
 
   private void endGame(GameResult gameResult) {

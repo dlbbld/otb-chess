@@ -255,6 +255,77 @@ class TestArbiterEngine {
     assertEquals(Square.A8, response.releasedPieceContext().get().square());
   }
 
+  private static final String BLACK_PROMOTION_FEN = "r3k3/8/8/8/8/8/1p6/R3K3 b - - 0 1"; // b2xa1 promotes
+
+  /**
+   * Reported bug: Black plays b2xa1 (pawn parked on a1, promotion pending), then drags the a8 rook onto a1 and
+   * presses the clock. That is neither a promotion completion (the promoted piece must come from the side area) nor
+   * Ra8xa1 (the "capture" took Black's OWN pawn) — it is a plain illegal move. It must NOT create a released-piece
+   * commitment: that demanded a "restore" to the tampered position itself, and Revert + clock-press looped forever.
+   */
+  @Test
+  void testDraggedBoardPieceOntoPromotionSquareIsIllegalMoveNotReleasedPiece() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict(BLACK_PROMOTION_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B2, Square.A1, Piece.BLACK_PAWN, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragCapture(Square.A8, Square.A1, Piece.BLACK_ROOK, Piece.BLACK_PAWN, 1));
+
+    final BitboardPosition after = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B2, Piece.NONE).createChangedPosition(Square.A8, Piece.NONE)
+        .createChangedPosition(Square.A1, Piece.BLACK_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, after, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.releasedPieceContext().isEmpty());
+  }
+
+  /**
+   * The legitimate completion of the same promotion stays accepted: pawn captures a1, the pawn is removed, and the
+   * ROOK arrives from the side area (a RESTORE event — no source square). b2xa1=R.
+   */
+  @Test
+  void testPromotionCompletedFromSideAreaOnA1IsAccepted() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict(BLACK_PROMOTION_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B2, Square.A1, Piece.BLACK_PAWN, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.remove(Square.A1, Piece.BLACK_PAWN, 1));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A1, Piece.BLACK_ROOK, 2));
+
+    final BitboardPosition after = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B2, Piece.NONE).createChangedPosition(Square.A1, Piece.BLACK_ROOK).build();
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, engine.evaluateClockPress(board, after, sequence).type());
+  }
+
+  /**
+   * Guard: without any tampering, a plain capture release on the same square still binds — the destination check
+   * must not weaken normal released-piece commitments.
+   */
+  @Test
+  void testUntamperedRookCaptureReleaseStillBinds() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict(BLACK_PROMOTION_FEN);
+
+    // Black releases Ra8xa1 (legal), then drags the rook onward to a4.
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragCapture(Square.A8, Square.A1, Piece.BLACK_ROOK, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.A1, Square.A4, Piece.BLACK_ROOK, 1));
+
+    final BitboardPosition after = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.A8, Piece.NONE).createChangedPosition(Square.A1, Piece.NONE)
+        .createChangedPosition(Square.A4, Piece.BLACK_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, after, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(Square.A1, response.releasedPieceContext().get().square());
+  }
+
   /**
    * FIDE 4.7: the FIRST legal release in the turn is the one that binds — even if a later drop is also a legal move.
    */

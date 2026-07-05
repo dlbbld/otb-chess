@@ -185,7 +185,19 @@ public launch. Released as **v0.1.1** (still beta).
   pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
 - [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
   same commit; long e2e runtimes explicitly acceptable) + memory updated.
-- [x] **Game-start message restructured and shortened.** "Game started" is now a transient
+- [x] **Bug fix: promotion-square tampering deadlocked the game (released-piece misread).** After
+  b2xa1 (pawn parked on a1, promotion pending), dragging the a8 rook onto a1 + clock press was
+  misread as a "legal release" — via BOTH matcher branches: the promotion match accepted the
+  promoted piece from ANY square, and the normal match accepted Ra8xa1 from the turn-start
+  legal moves although a1 held the player's own pawn. The resulting commitment's restore target
+  was the tampered position itself → Revert did nothing, violation looped forever. Fix in
+  `ArbiterEngine.isReleasePartOfLegalMove`: (1) a promotion completion must arrive from OFF the
+  board (RESTORE_* events, no source square); (2) a normal release binds only if the destination
+  square was untouched earlier in the turn (turn-start comparison — keeps captures/en passant/
+  castling commitments intact). The tampering now adjudicates as a plain **illegal move** with a
+  working Revert. Unit (regression + side-area completion accepted + untampered release still
+  binds) and e2e (the literal reported journey incl. Revert + proper b2xa1=Q continuation, and a
+  clean b2xa1=R with the rook from the side area). "Game started" is now a transient
   Lichess-style **banner** centered over the board (also used for "Rematch started"); the arbiter
   message keeps only the two short facts: who joined — the creator sees the opponent's colour
   ("Black joined."), the joiner keeps "You joined the game." — and whose clock runs ("Your clock

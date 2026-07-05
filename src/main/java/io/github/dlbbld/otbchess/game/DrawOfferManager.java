@@ -39,7 +39,10 @@ public class DrawOfferManager {
   private int whiteRepeatCount;
   private int blackRepeatCount;
 
-  // Wrong-time offer tracking (per side, cumulative across the game)
+  // Wrong-time offer tracking — per side, PER MOVE (reset when a new turn starts, see
+  // resetWrongTimeCountsForNewMove). A wrong-time offer is only semi-illegal (FIDE 9.1.2.1: the
+  // offer is valid, the timing is admonishable), so unlike the claim ladders the count does NOT
+  // carry over to the next move: the first wrong-time offer of every move is a real offer.
   private int whiteWrongTimeCount;
   private int blackWrongTimeCount;
 
@@ -56,27 +59,37 @@ public class DrawOfferManager {
 
   /**
    * Result of a draw offer attempt.
+   *
+   * @param accepted     true iff a real offer was registered (and must be forwarded to the opponent)
+   * @param opponentInfo passive information for the opponent (info window below the clock), or {@code null}: set when
+   *                     a wrong-time offer was NOT considered (the second on the same move, carrying the warning)
    */
-  public record DrawOfferResult(boolean accepted, boolean gameLost, boolean isWrongTime, String arbiterMessage) {
+  public record DrawOfferResult(boolean accepted, boolean gameLost, boolean isWrongTime, String arbiterMessage,
+      String opponentInfo) {
 
     public static DrawOfferResult ok() {
-      return new DrawOfferResult(true, false, false, null);
+      return new DrawOfferResult(true, false, false, null, null);
     }
 
     public static DrawOfferResult wrongTime(String message) {
-      return new DrawOfferResult(true, false, true, message);
+      return new DrawOfferResult(true, false, true, message, null);
+    }
+
+    /** Wrong-time offer NOT considered (second on the same move): not forwarded; both players informed. */
+    public static DrawOfferResult wrongTimeNotConsidered(String message, String opponentInfo) {
+      return new DrawOfferResult(false, false, true, message, opponentInfo);
     }
 
     public static DrawOfferResult wrongTimeGameLost(String message) {
-      return new DrawOfferResult(false, true, true, message);
+      return new DrawOfferResult(false, true, true, message, null);
     }
 
     public static DrawOfferResult repeated(String message) {
-      return new DrawOfferResult(false, false, false, message);
+      return new DrawOfferResult(false, false, false, message, null);
     }
 
     public static DrawOfferResult repeatedGameLost(String message) {
-      return new DrawOfferResult(false, true, false, message);
+      return new DrawOfferResult(false, true, false, message, null);
     }
   }
 
@@ -106,29 +119,38 @@ public class DrawOfferManager {
    *                       on move (case B: opponent's turn). Used only to choose the wording of the first-info message.
    */
   public DrawOfferResult offerDrawWrongTime(Side side, boolean offererHasMove) {
-    // Check for repeated offer first
+    // Check for repeated offer first (the previous offer is still pending)
     if (drawOffered && offeringSide == side) {
       return handleRepeatedOffer(side);
     }
 
     final int count = incrementWrongTimeCount(side);
 
-    // Set up the offer (it IS valid, just penalized). Wrong-time → release-piece-based
-    // invalidation, see wasOfferedAtCorrectTime field doc.
+    if (count >= PENALTY_GAME_LOST) {
+      return DrawOfferResult.wrongTimeGameLost(
+          "You have been warned that you will lose the game when you offer a draw again on this move."
+              + " As you have offered again, you lose the game.");
+    }
+    if (count == PENALTY_WARNING) {
+      // The second wrong-time offer on the same move is NOT considered (not forwarded): the
+      // opponent already answered the first one. Both players are informed; the offerer is
+      // warned that the next one loses the game.
+      return DrawOfferResult.wrongTimeNotConsidered(
+          "You are again offering a draw at the wrong time. This offer was not considered."
+              + " Warning: your next draw offer on this move loses the game.",
+          "Your opponent again offered a draw at the wrong time. This offer was not considered, and they"
+              + " have been warned: their next draw offer on this move loses them the game.");
+    }
+
+    // count == PENALTY_INFO: the FIRST wrong-time offer of the move is a real offer (FIDE
+    // 9.1.2.1 — valid, only the timing is admonishable). Set it up; wrong-time →
+    // release-piece-based invalidation, see wasOfferedAtCorrectTime field doc.
     this.drawOffered = true;
     this.offeringSide = side;
     this.opponentTouchedPiece = false;
     this.wasOfferedAtCorrectTime = false;
 
-    if (count >= PENALTY_GAME_LOST) {
-      return DrawOfferResult
-          .wrongTimeGameLost("You have repeatedly offered a draw at the wrong time. You lose the game.");
-    }
-    if (count == PENALTY_WARNING) {
-      return DrawOfferResult.wrongTime(
-          "You are offering a draw at the wrong time. " + "The next wrong-time draw offer will lose the game.");
-    }
-    // count == PENALTY_INFO — wording depends on whether the offerer has the move.
+    // Wording depends on whether the offerer has the move.
     if (offererHasMove) {
       return DrawOfferResult.wrongTime("""
           Please note that when having the move, the draw offer should be made after making\
@@ -138,6 +160,15 @@ public class DrawOfferManager {
     return DrawOfferResult
         .wrongTime("Please note that the draw offer should be made on your own turn. Not following this"
             + " procedure could lead to a warning. The offer still counts as a draw offer.");
+  }
+
+  /**
+   * Resets the per-move wrong-time offer counts — called when a new turn starts. A wrong-time offer is semi-legal
+   * (the offer itself is valid), so the escalation never carries over to the next move.
+   */
+  public void resetWrongTimeCountsForNewMove() {
+    this.whiteWrongTimeCount = 0;
+    this.blackWrongTimeCount = 0;
   }
 
   private DrawOfferResult handleRepeatedOffer(Side side) {

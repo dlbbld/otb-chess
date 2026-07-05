@@ -681,6 +681,13 @@ class Game {
           ? 'You have been warned that you will lose the game when you press your opponent\'s clock again.'
             + ' As you have pressed it again, you lose the game.'
           : 'Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game.');
+      } else if (data.resultType === 'WRONG_TIME_OFFER_GAME_LOST') {
+        // Third wrong-time draw offer on the same move despite the warning (see A-001).
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You have been warned that you will lose the game when you offer a draw again on this move.'
+            + ' As you have offered again, you lose the game.'
+          : 'Your opponent has, despite the warnings, repeatedly offered a draw at the wrong time,'
+            + ' and so has lost the game.');
       } else if (data.resultType === 'MOVED_OPPONENT_PIECE_GAME_LOST') {
         // Third moved opponent piece despite the warning (see A-007).
         this.showArbiterMessage(data.actor === this.side

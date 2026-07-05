@@ -81,9 +81,10 @@ public class ArbiterEngine {
   public boolean hasReleasedPieceCommitment(Board board, ActionSequence sequence) {
     BitboardPosition currentPosition = board.getBitboardPosition();
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
+      final BitboardPosition beforeEvent = currentPosition;
       currentPosition = applyEvent(currentPosition, event);
       if (isReleaseOnBoard(event)) {
-        final ReleaseCommitment commitment = findCommitmentForRelease(board, event);
+        final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
         if (!commitment.allowedFinalPositions().isEmpty()) {
           return true;
         }
@@ -202,10 +203,11 @@ public class ArbiterEngine {
     Optional<ReleasedPieceLock> firstReleasedLegalPosition = Optional.empty();
 
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
+      final BitboardPosition beforeEvent = currentPosition;
       currentPosition = applyEvent(currentPosition, event);
 
       if (firstReleasedLegalPosition.isEmpty() && isReleaseOnBoard(event)) {
-        final ReleaseCommitment commitment = findCommitmentForRelease(board, event);
+        final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
         if (!commitment.allowedFinalPositions().isEmpty()) {
           firstReleasedLegalPosition = Optional.of(new ReleasedPieceLock(currentPosition,
               commitment.allowedFinalPositions(), commitment.committedMoves(), event.piece(), event.targetSquare(),
@@ -229,11 +231,13 @@ public class ArbiterEngine {
   private record ReleaseCommitment(Set<BitboardPosition> allowedFinalPositions, Set<LegalMove> committedMoves) {
   }
 
-  private static ReleaseCommitment findCommitmentForRelease(Board board, BoardEvent event) {
+  private static ReleaseCommitment findCommitmentForRelease(Board board, BoardEvent event,
+      BitboardPosition positionBeforeEvent) {
     final Set<BitboardPosition> positions = new HashSet<>();
     final Set<LegalMove> moves = new HashSet<>();
     for (final LegalMove legalMove : board.getLegalMoves()) {
-      if (isReleasePartOfLegalMove(board.getSideToMove(), event, legalMove)) {
+      if (isReleasePartOfLegalMove(board.getSideToMove(), event, legalMove, positionBeforeEvent,
+          board.getBitboardPosition())) {
         moves.add(legalMove);
         positions.add(board.getBitboardPosition().afterMove(legalMove.moveSpecification(), board.getSideToMove()));
       }
@@ -260,7 +264,8 @@ public class ArbiterEngine {
         .distinct().count() > 1;
   }
 
-  private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove) {
+  private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove,
+      BitboardPosition positionBeforeEvent, BitboardPosition turnStartPosition) {
     final MoveSpecification spec = legalMove.moveSpecification();
     if (spec.isCastling()) {
       return event.piece() == Piece.of(havingMove, PieceType.KING)
@@ -272,13 +277,28 @@ public class ArbiterEngine {
       // placed on the promotion square. A pawn landing on the last rank is an incomplete move, never
       // a legal release — so it must not start a released-piece commitment. The commitment (and the
       // restore message) then correctly names the promoted piece, not the pawn.
+      // The promoted piece must arrive from OFF the board: side-area placements are RESTORE_*
+      // events, which carry no source square. Dragging an already-on-board piece of the same type
+      // onto the promotion square is NOT a promotion completion — it is position tampering,
+      // adjudicated as an illegal move at the clock press.
       final Piece promotedPiece = Piece.of(havingMove, spec.promotionPieceType().getPieceType());
-      return event.piece() == promotedPiece && event.targetSquare() == spec.toSquare();
+      return event.piece() == promotedPiece && event.targetSquare() == spec.toSquare()
+          && event.square() == Square.NONE;
     }
     if (event.piece() != legalMove.movingPiece()) {
       return false;
     }
-    return event.square() == spec.fromSquare() && event.targetSquare() == spec.toSquare();
+    if (event.square() != spec.fromSquare() || event.targetSquare() != spec.toSquare()) {
+      return false;
+    }
+    // The release physically IS this move only if the destination square was not tampered with
+    // earlier in the turn. Example: after b2xa1 (own pawn parked on a1 mid-promotion), dragging
+    // the a8 rook onto a1 used to match the legal Ra8xa1 of the turn-start position — but the
+    // physical act captured the player's OWN pawn, which is no move at all (and produced an
+    // unsatisfiable commitment: restore target = the tampered position itself). Comparing the
+    // destination's content at release time with the turn start rejects that, while normal
+    // moves, captures, and en passant (whose destination square is untouched) stay committed.
+    return positionBeforeEvent.get(spec.toSquare()) == turnStartPosition.get(spec.toSquare());
   }
 
   private static BitboardPosition applyEvent(BitboardPosition position, BoardEvent event) {
