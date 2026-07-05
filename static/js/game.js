@@ -901,6 +901,11 @@ class Game {
     });
 
     document.getElementById('exportPgnBtn').addEventListener('click', () => {
+      const pgnDialog = document.getElementById('pgnDialog');
+      if (pgnDialog.style.display !== 'none') {
+        pgnDialog.style.display = 'none';
+        return;
+      }
       this.ws.sendRequestPgn();
     });
 

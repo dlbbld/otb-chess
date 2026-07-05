@@ -303,6 +303,9 @@ public launch. Released as **v0.1.1** (still beta).
   below-board control buttons while keeping accessible names and consistent hover tooltips. The
   resign icon is now a sideways king, matching the physical act of tipping the king over. Focused
   e2e pins the icon-only grouping, tooltip text, and compact button sizing.
+- [x] **Display PGN button toggles the PGN panel.** Clicking Display PGN now closes the PGN panel
+  when it is already open, while the panel's Close button still works. Focused controls e2e pins
+  open, button-toggle close, reopen, and Close-button close.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

@@ -63,3 +63,23 @@ test('board controls are grouped as game actions, draw claims, and utilities', a
       .map((button) => button.id));
   expect(tooWide).toEqual([]);
 });
+
+test('display PGN button toggles the PGN panel', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white } = game;
+
+  const pgnPanel = white.locator('#pgnDialog');
+  await expect(pgnPanel).toBeHidden();
+
+  await white.locator('#exportPgnBtn').click();
+  await expect(pgnPanel).toBeVisible();
+
+  await white.locator('#exportPgnBtn').click();
+  await expect(pgnPanel).toBeHidden();
+
+  await white.locator('#exportPgnBtn').click();
+  await expect(pgnPanel).toBeVisible();
+
+  await white.locator('#closePgnBtn').click();
+  await expect(pgnPanel).toBeHidden();
+});
