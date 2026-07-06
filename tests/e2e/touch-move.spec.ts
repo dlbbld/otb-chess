@@ -126,6 +126,55 @@ test('opponent pawn then own rook specific-capture message preserves touch order
     'You touched your rook on g6 and then the opponent');
 });
 
+test('opponent-piece obligation narrows to the own capturer touched after revert', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/1n6/PPP1P3/4K3 w - - 0 1', autoResume: false });
+  const { white, black } = game;
+
+  await clickSquare(white, 'b3');
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText("opponent's knight on b3");
+  await expect(white.locator('#arbiterMessage')).toContainText('must be captured');
+
+  await clickRestore(white);
+  await clickReadyToContinue(white);
+  await clickReadyToContinue(black);
+  await expectGameResumed(white);
+
+  await clickSquare(white, 'c2');
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText("first touched the opponent's knight on b3");
+  await expect(white.locator('#arbiterMessage')).toContainText('then your pawn on c2');
+  await expect(white.locator('#arbiterMessage')).toContainText('Because the pawn on c2 can capture the knight on b3');
+
+  await clickRestore(white);
+  await clickReadyToContinue(white);
+  await clickReadyToContinue(black);
+  await expectGameResumed(white);
+
+  await dragPiece(white, 'a2', 'b3');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('pawn on c2');
+  await expect(white.locator('#arbiterMessage')).toContainText('must make that capture');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Move accepted');
+
+  await clickRestore(white);
+  await clickReadyToContinue(white);
+  await clickReadyToContinue(black);
+  await expectGameResumed(white);
+
+  await dragPiece(white, 'c2', 'b3');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expectPiece(black, 'b3', 'WHITE_PAWN');
+  await expectEmpty(black, 'c2');
+});
+
 // Cases 5/6: the touch-move obligation survives an illegal move + restore. These also exercise the
 // full restore + both-players-ready handshake (autoResume off).
 test('after an illegal move and restore, the touched piece stays bound (different piece is a violation)', async ({

@@ -282,6 +282,26 @@ class TestTouchMoveEvaluator {
   }
 
   @Test
+  void testOpponentFirstIgnoresEarlierNonCapturingOwnTouchWhenLaterOwnPieceCanCapture() {
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/1n6/PPP1P3/4K3 w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.B3, Piece.BLACK_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
+    sequence.addEvent(BoardEvent.click(Square.C2, Piece.WHITE_PAWN, 2));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.SPECIFIC_CAPTURE, obligation.get().type());
+    assertEquals(Square.C2, obligation.get().square());
+    assertEquals(Piece.WHITE_PAWN, obligation.get().piece());
+    assertEquals(Square.B3, obligation.get().toSquare());
+    assertEquals(Piece.BLACK_KNIGHT, obligation.get().capturedPiece());
+    assertTrue(obligation.get().opponentTouchedFirst());
+  }
+
+  @Test
   void testTouchOwnThenOpponentBindsSpecificEnPassantCapture() {
     final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
 

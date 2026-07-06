@@ -324,6 +324,11 @@ public launch. Released as **v0.1.1** (still beta).
   piece and then their own piece that can capture it, the touch-move message now says opponent
   first, own piece second, while still requiring the specific capture. Unit + focused e2e pin the
   rook/pawn order reported at g6/g7.
+- [x] **Opponent-piece obligations can narrow after Revert.** If the player first touches a
+  capturable opponent piece, restores after a violation, and then touches an own piece that can
+  capture it, the obligation narrows to that specific capture. Other pieces that could also
+  capture the opponent piece are then rejected. Unit + focused e2e pin the b3 knight/c2 pawn
+  journey.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

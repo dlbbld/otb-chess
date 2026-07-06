@@ -238,11 +238,14 @@ The two obligations co-exist independently. At clock press, the arbiter checks t
 - **Both obligations, and the touched own piece can capture the touched opponent piece:** the matched move must be that specific capture (touched own piece captures touched opponent piece).
 - **Both obligations, and the touched own piece cannot capture the touched opponent piece:** the move must satisfy the own-piece obligation (move the touched own piece). The opponent-piece obligation is dropped because it cannot be satisfied without violating the own-piece one.
 
-When the opponent piece is touched first and a later touched own piece can capture it, the obligation is still the
-specific capture, but the message preserves the actual order: opponent piece first, own piece second. A later own-piece
-release on a legal square does not convert the case into a released-piece violation if the touched opponent piece still
-was not captured. Example: White rook b3, black rook b6, White removes the rook on b6 and releases the rook on b5; the
-clock press is a touch-move violation requiring the rook capture on b6, not a released-piece commitment to b5.
+When the opponent piece is touched first, the opponent-piece obligation can later narrow to a specific capture: the
+first subsequently touched own piece that can capture that opponent piece must make the capture. This applies across
+restore/ready cycles inside the same move; unrelated own-piece touches that cannot capture the touched opponent piece do
+not prevent the later narrowing. The message preserves the actual order: opponent piece first, own piece second. A later
+own-piece release on a legal square does not convert the case into a released-piece violation if the touched opponent
+piece still was not captured. Example: White rook b3, black rook b6, White removes the rook on b6 and releases the rook
+on b5; the clock press is a touch-move violation requiring the rook capture on b6, not a released-piece commitment to
+b5.
 
 ### Violation message
 

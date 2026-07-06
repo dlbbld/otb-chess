@@ -227,11 +227,40 @@ public class TouchMoveEvaluator {
     if (ownSquare == Square.NONE || opponentSquare == Square.NONE) {
       return Optional.empty();
     }
-    if (!canCapture(legalMoves, ownSquare, opponentSquare)) {
+    if (ownIndex < opponentIndex) {
+      if (!canCapture(legalMoves, ownSquare, opponentSquare)) {
+        return Optional.empty();
+      }
+      return Optional.of(TouchMoveObligation.specificCapture(ownSquare, ownPiece, opponentSquare, opponentPiece,
+          false));
+    }
+
+    final Optional<TouchMoveObligation> firstOwnPieceThatCanCapture = findFirstOwnCaptureAfterOpponentTouch(events,
+        sideToMove, legalMoves, opponentSquare, opponentPiece, opponentIndex);
+    if (firstOwnPieceThatCanCapture.isEmpty()) {
       return Optional.empty();
     }
-    return Optional.of(TouchMoveObligation.specificCapture(ownSquare, ownPiece, opponentSquare, opponentPiece,
-        opponentIndex < ownIndex));
+    return firstOwnPieceThatCanCapture;
+  }
+
+  private static Optional<TouchMoveObligation> findFirstOwnCaptureAfterOpponentTouch(List<BoardEvent> events,
+      Side sideToMove, Set<LegalMove> legalMoves, Square opponentSquare, Piece opponentPiece, int opponentIndex) {
+    for (int i = opponentIndex + 1; i < events.size(); i++) {
+      final BoardEvent event = events.get(i);
+      final Piece piece = event.piece();
+      if (piece == Piece.NONE || piece.getSide() != sideToMove) {
+        continue;
+      }
+      final Square touchedSquare = determineTouchedSquare(event);
+      if (touchedSquare == Square.NONE) {
+        continue;
+      }
+      if (hasLegalMovesFromSquare(legalMoves, touchedSquare) && canCapture(legalMoves, touchedSquare, opponentSquare)) {
+        return Optional.of(TouchMoveObligation.specificCapture(touchedSquare, piece, opponentSquare, opponentPiece,
+            true));
+      }
+    }
+    return Optional.empty();
   }
 
   /** Whether there is a legal move from {@code fromSquare} to {@code toSquare} that captures a piece. */
