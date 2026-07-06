@@ -120,6 +120,12 @@ public class ArbiterEngine {
       return unfinishedCastlingTouch.get();
     }
 
+    final Optional<ArbiterResponse> opponentCaptureTouchViolation = evaluateOpponentCaptureTouchBeforeRelease(board,
+        afterPosition, obligation);
+    if (opponentCaptureTouchViolation.isPresent()) {
+      return opponentCaptureTouchViolation.get();
+    }
+
     final Optional<ReleasedPieceLock> releasedPieceViolation = findReleasedPieceViolation(board, afterPosition,
         sequence);
     if (releasedPieceViolation.isPresent()) {
@@ -184,6 +190,40 @@ public class ArbiterEngine {
 
     // Move accepted
     return ArbiterResponse.moveAccepted(matchedMove);
+  }
+
+  private Optional<ArbiterResponse> evaluateOpponentCaptureTouchBeforeRelease(Board board,
+      BitboardPosition afterPosition, Optional<TouchMoveObligation> obligation) {
+    if (obligation.isEmpty()) {
+      return Optional.empty();
+    }
+    if (obligation.get().type() != TouchMoveType.OPPONENT_PIECE
+        && obligation.get().type() != TouchMoveType.SPECIFIC_CAPTURE) {
+      return Optional.empty();
+    }
+    final BitboardPosition comparisonPosition = restoreTouchedOpponentPieceIfRemoved(afterPosition, obligation.get());
+    final Set<LegalMove> matchingMoves = PositionComparator.findMatchingMoves(board, comparisonPosition);
+    if (matchingMoves.isEmpty()) {
+      return Optional.empty();
+    }
+    for (final LegalMove matchedMove : matchingMoves) {
+      if (TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
+        return Optional.empty();
+      }
+    }
+    return Optional.of(handleTouchMoveViolation(obligation.get()));
+  }
+
+  private static BitboardPosition restoreTouchedOpponentPieceIfRemoved(BitboardPosition afterPosition,
+      TouchMoveObligation obligation) {
+    final Square square = obligation.type() == TouchMoveType.SPECIFIC_CAPTURE ? obligation.toSquare()
+        : obligation.square();
+    final Piece piece = obligation.type() == TouchMoveType.SPECIFIC_CAPTURE ? obligation.capturedPiece()
+        : obligation.piece();
+    if (square == Square.NONE || piece == Piece.NONE || afterPosition.get(square) != Piece.NONE) {
+      return afterPosition;
+    }
+    return BitboardPositions.from(afterPosition).createChangedPosition(square, piece).build();
   }
 
   private record ReleasedPieceLock(BitboardPosition releasePosition, Set<BitboardPosition> allowedFinalPositions,

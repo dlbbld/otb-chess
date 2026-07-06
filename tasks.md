@@ -315,6 +315,11 @@ public launch. Released as **v0.1.1** (still beta).
   considered, closes the panel, creates no draw offer/penalty/forced move, but consumes the
   player's one claim on that move so the next claim triggers the repeat-claim ladder. Unit +
   focused claims e2e pin the server semantics and live UI flow.
+- [x] **Opponent-piece touch beats later released-piece-looking moves.** Fixed the case with White
+  rook b3 / black rook b6: removing the capturable opponent rook and then releasing the own rook
+  on b5 is now a touch-move violation requiring capture on b6, not a released-piece commitment to
+  b5. Revert returns to the turn start and the required capture can then be completed. Unit +
+  focused touch-move e2e pin the reported journey.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

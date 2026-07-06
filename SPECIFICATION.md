@@ -238,6 +238,8 @@ The two obligations co-exist independently. At clock press, the arbiter checks t
 - **Both obligations, and the touched own piece can capture the touched opponent piece:** the matched move must be that specific capture (touched own piece captures touched opponent piece).
 - **Both obligations, and the touched own piece cannot capture the touched opponent piece:** the move must satisfy the own-piece obligation (move the touched own piece). The opponent-piece obligation is dropped because it cannot be satisfied without violating the own-piece one.
 
+When the opponent piece is touched first, the message and obligation remain the opponent-piece form. A later own-piece release on a legal square does not convert the case into a released-piece violation if the touched opponent piece still was not captured. Example: White rook b3, black rook b6, White removes the rook on b6 and releases the rook on b5; the clock press is a touch-move violation requiring capture on b6, not a released-piece commitment to b5.
+
 ### Violation message
 
 When the player presses the clock without satisfying the obligation(s), the message names the **piece type and square** that was touched, e.g.
@@ -277,6 +279,7 @@ Touching is one step short of committing. **Releasing a piece on a legal target 
 - Restoration after a released-piece violation restores the board to the **release position** (not the start of the turn) -- the player must complete a legal move from the committed set.
 - A castling attempt is treated as a multi-step legal move: the king's release on its castled square commits to castling; the rook drag then completes the move.
 - The committed-release detection is scoped per turn: it resets at the start of each turn and after any restoration that legitimately rewinds back to the start of the turn.
+- Released-piece does not override an earlier opponent-piece touch obligation. If the player touched a capturable opponent piece and later released their own piece on a legal non-capturing square, the arbiter reports the unsatisfied touch-move obligation.
 
 ### Draw claims and touch-move
 

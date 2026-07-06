@@ -786,6 +786,32 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testOpponentPieceTouchObligationPreemptsLaterReleasedPieceCommitment() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/1r6/8/8/1R6/8/4K3 w - - 0 1");
+
+    // White first removes/touches the capturable black rook on b6, then releases the white rook
+    // on b5 and presses the clock. Rb3-b5 is a legal rook move only after the black rook was
+    // lifted, but the earlier opponent-piece touch obliges White to capture the rook on b6.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.remove(Square.B6, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B3, Square.B5, Piece.WHITE_ROOK, 1));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B6, Piece.NONE)
+        .createChangedPosition(Square.B3, Piece.NONE)
+        .createChangedPosition(Square.B5, Piece.WHITE_ROOK)
+        .build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_TOUCH_MOVE_OPPONENT_PLAYER, response.playerMessageKey());
+    assertTrue(response.message().contains("opponent's rook on b6"));
+    assertFalse(response.message().contains("Released-piece"));
+  }
+
+  @Test
   void testTouchMoveViolationDoesNotCountAsIllegalMove() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();

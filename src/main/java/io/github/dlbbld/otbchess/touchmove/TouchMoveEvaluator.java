@@ -213,7 +213,8 @@ public class TouchMoveEvaluator {
           ownSquare = touchedSquare;
           ownPiece = piece;
         }
-      } else if (opponentSquare == Square.NONE && canBeCapturedOnSquare(legalMoves, touchedSquare)) {
+      } else if (ownSquare != Square.NONE && opponentSquare == Square.NONE
+          && canBeCapturedOnSquare(legalMoves, touchedSquare)) {
         opponentSquare = touchedSquare;
         opponentPiece = piece;
       }

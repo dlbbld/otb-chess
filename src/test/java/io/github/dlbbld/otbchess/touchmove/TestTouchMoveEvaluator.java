@@ -263,6 +263,22 @@ class TestTouchMoveEvaluator {
   }
 
   @Test
+  void testTouchOpponentThenOwnFallsBackToOpponentPieceObligation() {
+    final Board board = Board.fromFenStrict("4k3/8/1r6/8/8/1R6/8/4K3 w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.remove(Square.B6, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B3, Square.B5, Piece.WHITE_ROOK, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OPPONENT_PIECE, obligation.get().type());
+    assertEquals(Square.B6, obligation.get().square());
+    assertEquals(Piece.BLACK_ROOK, obligation.get().piece());
+  }
+
+  @Test
   void testTouchOwnThenOpponentBindsSpecificEnPassantCapture() {
     final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
 
