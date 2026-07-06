@@ -320,6 +320,10 @@ public launch. Released as **v0.1.1** (still beta).
   on b5 is now a touch-move violation requiring capture on b6, not a released-piece commitment to
   b5. Revert returns to the turn start and the required capture can then be completed. Unit +
   focused touch-move e2e pin the reported journey.
+- [x] **Specific-capture messages preserve touch order.** If the player first touches the opponent
+  piece and then their own piece that can capture it, the touch-move message now says opponent
+  first, own piece second, while still requiring the specific capture. Unit + focused e2e pin the
+  rook/pawn order reported at g6/g7.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

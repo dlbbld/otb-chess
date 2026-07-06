@@ -90,8 +90,9 @@ test('opponent rook removed first then own rook released short of capture is tou
   await dragPiece(white, 'b3', 'b5');
   await pressClock(white);
 
-  await expect(white.locator('#arbiterMessage')).toContainText("opponent's rook on b6");
-  await expect(white.locator('#arbiterMessage')).toContainText('must be captured');
+  await expect(white.locator('#arbiterMessage')).toContainText("first touched the opponent's rook on b6");
+  await expect(white.locator('#arbiterMessage')).toContainText('then your rook on b3');
+  await expect(white.locator('#arbiterMessage')).toContainText('must make that capture');
   await expect(white.locator('#arbiterMessage')).not.toContainText(/released-piece/i);
 
   await clickRestore(white);
@@ -107,6 +108,22 @@ test('opponent rook removed first then own rook released short of capture is tou
   await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expectPiece(black, 'b6', 'WHITE_ROOK');
   await expectEmpty(black, 'b3');
+});
+
+test('opponent pawn then own rook specific-capture message preserves touch order', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/6p1/6R1/8/8/8/8/4K3 w - - 0 1' });
+  const { white } = game;
+
+  await clickSquare(white, 'g7');
+  await clickSquare(white, 'g6');
+  await dragPiece(white, 'g6', 'g5');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    "You first touched the opponent's pawn on g7 and then your rook on g6");
+  await expect(white.locator('#arbiterMessage')).toContainText('Because the rook on g6 can capture the pawn on g7');
+  await expect(white.locator('#arbiterMessage')).not.toContainText(
+    'You touched your rook on g6 and then the opponent');
 });
 
 // Cases 5/6: the touch-move obligation survives an illegal move + restore. These also exercise the

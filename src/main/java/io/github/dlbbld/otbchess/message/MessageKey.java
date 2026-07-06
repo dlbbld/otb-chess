@@ -18,6 +18,10 @@ public enum MessageKey {
   ARBITER_TOUCH_MOVE_CASTLING_OPPONENT("arbiter.touch_move.castling.opponent", MessageSeverity.ERROR),
   ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_PLAYER("arbiter.touch_move.specific_capture.player", MessageSeverity.ERROR),
   ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT("arbiter.touch_move.specific_capture.opponent", MessageSeverity.ERROR),
+  ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT_FIRST_PLAYER(
+      "arbiter.touch_move.specific_capture.opponent_first.player", MessageSeverity.ERROR),
+  ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT_FIRST_OPPONENT(
+      "arbiter.touch_move.specific_capture.opponent_first.opponent", MessageSeverity.ERROR),
   ARBITER_RELEASED_PIECE_PLAYER("arbiter.released_piece.player", MessageSeverity.ERROR),
   ARBITER_RELEASED_PIECE_OPPONENT("arbiter.released_piece.opponent", MessageSeverity.ERROR),
   ARBITER_RELEASED_PIECE_FROM_PLAYER("arbiter.released_piece.from.player", MessageSeverity.ERROR),

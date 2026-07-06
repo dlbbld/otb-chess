@@ -273,9 +273,12 @@ class TestTouchMoveEvaluator {
     final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
 
     assertTrue(obligation.isPresent());
-    assertEquals(TouchMoveType.OPPONENT_PIECE, obligation.get().type());
-    assertEquals(Square.B6, obligation.get().square());
-    assertEquals(Piece.BLACK_ROOK, obligation.get().piece());
+    assertEquals(TouchMoveType.SPECIFIC_CAPTURE, obligation.get().type());
+    assertEquals(Square.B3, obligation.get().square());
+    assertEquals(Piece.WHITE_ROOK, obligation.get().piece());
+    assertEquals(Square.B6, obligation.get().toSquare());
+    assertEquals(Piece.BLACK_ROOK, obligation.get().capturedPiece());
+    assertTrue(obligation.get().opponentTouchedFirst());
   }
 
   @Test

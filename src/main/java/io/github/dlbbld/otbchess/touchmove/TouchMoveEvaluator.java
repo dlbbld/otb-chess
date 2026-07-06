@@ -198,8 +198,11 @@ public class TouchMoveEvaluator {
     Piece ownPiece = Piece.NONE;
     Square opponentSquare = Square.NONE;
     Piece opponentPiece = Piece.NONE;
+    int ownIndex = -1;
+    int opponentIndex = -1;
 
-    for (final BoardEvent event : events) {
+    for (int i = 0; i < events.size(); i++) {
+      final BoardEvent event = events.get(i);
       final Piece piece = event.piece();
       if (piece == Piece.NONE) {
         continue;
@@ -212,11 +215,12 @@ public class TouchMoveEvaluator {
         if (ownSquare == Square.NONE && hasLegalMovesFromSquare(legalMoves, touchedSquare)) {
           ownSquare = touchedSquare;
           ownPiece = piece;
+          ownIndex = i;
         }
-      } else if (ownSquare != Square.NONE && opponentSquare == Square.NONE
-          && canBeCapturedOnSquare(legalMoves, touchedSquare)) {
+      } else if (opponentSquare == Square.NONE && canBeCapturedOnSquare(legalMoves, touchedSquare)) {
         opponentSquare = touchedSquare;
         opponentPiece = piece;
+        opponentIndex = i;
       }
     }
 
@@ -226,7 +230,8 @@ public class TouchMoveEvaluator {
     if (!canCapture(legalMoves, ownSquare, opponentSquare)) {
       return Optional.empty();
     }
-    return Optional.of(TouchMoveObligation.specificCapture(ownSquare, ownPiece, opponentSquare, opponentPiece));
+    return Optional.of(TouchMoveObligation.specificCapture(ownSquare, ownPiece, opponentSquare, opponentPiece,
+        opponentIndex < ownIndex));
   }
 
   /** Whether there is a legal move from {@code fromSquare} to {@code toSquare} that captures a piece. */

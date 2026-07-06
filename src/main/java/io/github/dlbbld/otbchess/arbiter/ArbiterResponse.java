@@ -134,8 +134,13 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
         args = List.of();
       }
       case SPECIFIC_CAPTURE -> {
-        playerKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_PLAYER;
-        opponentKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT;
+        if (obligation.opponentTouchedFirst()) {
+          playerKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT_FIRST_PLAYER;
+          opponentKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT_FIRST_OPPONENT;
+        } else {
+          playerKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_PLAYER;
+          opponentKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT;
+        }
         args = List.of(formatPieceName(obligation.piece()), obligation.square().getName(),
             formatPieceName(obligation.capturedPiece()), obligation.toSquare().getName());
       }

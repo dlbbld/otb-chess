@@ -806,8 +806,9 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
     assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
-    assertEquals(MessageKey.ARBITER_TOUCH_MOVE_OPPONENT_PLAYER, response.playerMessageKey());
-    assertTrue(response.message().contains("opponent's rook on b6"));
+    assertEquals(MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT_FIRST_PLAYER, response.playerMessageKey());
+    assertTrue(response.message().contains("first touched the opponent's rook on b6"));
+    assertTrue(response.message().contains("then your rook on b3"));
     assertFalse(response.message().contains("Released-piece"));
   }
 
