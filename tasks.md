@@ -310,6 +310,11 @@ public launch. Released as **v0.1.1** (still beta).
   not legal, closes the SAN panel, and leaves the player free to make any legal move. Legal SAN
   that fails the draw condition still rejects the claim and forces the specified move. Unit +
   focused claims e2e pin both sides.
+- [x] **Claim-with-move cancellation counts as the move's claim.** The claim SAN panel now has
+  short **Submit** and **Cancel** buttons. Cancel retracts the started claim, says it was not
+  considered, closes the panel, creates no draw offer/penalty/forced move, but consumes the
+  player's one claim on that move so the next claim triggers the repeat-claim ladder. Unit +
+  focused claims e2e pin the server semantics and live UI flow.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

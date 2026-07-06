@@ -894,6 +894,11 @@ class Game {
       this.ws.sendClaimDraw(this.pendingClaimWithMoveType, san);
     });
 
+    document.getElementById('cancelClaimMoveBtn').addEventListener('click', () => {
+      if (!this.pendingClaimWithMoveType) return;
+      this.ws.sendCancelDrawClaim();
+    });
+
     document.getElementById('sanInput').addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') return;
       event.preventDefault();

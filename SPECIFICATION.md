@@ -501,7 +501,7 @@ The claim action itself is made through four top-level buttons:
 - **Claim 50-Move Position**
 - **Claim 50-Move Move**
 
-Each button commits immediately when pressed. There is no confirmation dialog and no cancel/back-out step. For the two **Move** variants, pressing the button opens an inline SAN input for the claimed move; the player must complete that already-committed claim by entering a legal SAN.
+Claim-on-board buttons commit immediately when pressed. For the two **Move** variants, pressing the button opens an inline SAN input for the claimed move with **Submit** and **Cancel** buttons.
 
 #### "Claim on board"
 
@@ -516,11 +516,12 @@ The player enters a move in **SAN notation** in an inline panel. The server proc
    - Result: `invalidMove`. Message: _"The claim was not considered because the presented move «SAN» is not legal: «Ashlar Chess reason». You may make any legal move."_
    - The SAN-input panel closes; the player returns to normal move play.
    - No legal intended move was presented, so the claim is **not considered**. It does **not** consume the server-side once-per-turn allowance, does **not** trigger the incorrect-claim penalty, does **not** convert to a draw offer, and creates no `mustExecuteMove`.
-2. **Feasibility short-circuit.** If the SAN is legal, ask Ashlar Chess whether **any** legal move from the current position could possibly satisfy the rule:
+2. **Cancel before submitting SAN.** If the player clicks **Cancel**, the player has retracted the started claim. Message: _"You retracted your draw claim. The claim was not considered, but it counts as your claim on this move."_ The SAN panel closes. There is no 9.5.3 penalty, no draw offer, and no `mustExecuteMove`, but the move's one claim is consumed; a further claim on the same move goes through the repeat-claim ladder.
+3. **Feasibility short-circuit.** If the SAN is legal, ask Ashlar Chess whether **any** legal move from the current position could possibly satisfy the rule:
    - `board.canClaimThreefoldRepetitionRuleWithOwnMove()` for threefold,
    - `board.canClaimFiftyMoveRuleWithOwnMove()` for the 50-move rule.
    If neither -> reject the claim immediately, without performing the player's move. Message: _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ (or the 50-move equivalent).
-3. **Per-move check.** Otherwise, perform the move speculatively on the internal board, check the rule, and unperform -- the board state is restored regardless of outcome.
+4. **Per-move check.** Otherwise, perform the move speculatively on the internal board, check the rule, and unperform -- the board state is restored regardless of outcome.
 
 #### Outcomes (after both filters pass)
 
@@ -582,7 +583,7 @@ A rejected claim that came through the proper FIDE channel (claim-on-board, or c
 
 - The session registers the offer via the standard `DrawOfferManager` correct-time path (no escalation penalty -- the player had the move).
 - The opponent receives the standard **drawOffered** broadcast with Accept/Reject buttons. Touch-piece invalidation works as for any other correct-time draw offer.
-- Cases that do **not** convert to a draw offer: `invalidMove` (no legal intended move was presented), pre-claim errors (game not in progress, not on move), and second-claim-on-same-move rejections.
+- Cases that do **not** convert to a draw offer: `invalidMove` (no legal intended move was presented), retracted claims, pre-claim errors (game not in progress, not on move), and second-claim-on-same-move rejections.
 
 ### Draw offer (FIDE 9.1.2.1)
 
@@ -725,7 +726,7 @@ Tracked in **Spec-driven implementation follow-ups** below.
 
 ### Inbound (client -> server)
 
-`createGame`, `joinGame`, `boardEvent` (incl. cosmetic `DRAG_START` / `DRAG_HOVER`), `clockPress`, `opponentClockPressed` (the player pressed the OPPONENT's lever — see *Wrong clock press*), `offerDraw`, `acceptDraw`, `rejectDraw`, `claimDraw`, `resign`, `claimVictory` (see *Abandonment*), `rematchOffer`, `requestPgn`, `restorePosition`, `readyToContinue`.
+`createGame`, `joinGame`, `boardEvent` (incl. cosmetic `DRAG_START` / `DRAG_HOVER`), `clockPress`, `opponentClockPressed` (the player pressed the OPPONENT's lever — see *Wrong clock press*), `offerDraw`, `acceptDraw`, `rejectDraw`, `claimDraw`, `cancelDrawClaim`, `resign`, `claimVictory` (see *Abandonment*), `rematchOffer`, `requestPgn`, `restorePosition`, `readyToContinue`.
 
 ### Outbound (server -> client)
 

@@ -1446,6 +1446,31 @@ class TestGameSession {
     assertEquals(Piece.WHITE_PAWN, session.getBoard().getBitboardPosition().get(Square.E4));
   }
 
+  @Test
+  void testRetractedClaimIsNotConsideredButCountsForThisMove() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final long blackBefore = session.getClock().getRemainingTimeMs(Side.BLACK);
+
+    final DrawClaimResult retracted = session.retractDrawClaim(Side.WHITE);
+
+    assertFalse(retracted.accepted());
+    assertFalse(retracted.invalidMove());
+    assertFalse(retracted.convertsToDrawOffer());
+    assertTrue(retracted.moveToPerform().isEmpty());
+    assertTrue(retracted.opponentInfo().isPresent());
+    assertTrue(retracted.message().contains("retracted your draw claim"));
+    assertTrue(retracted.message().contains("counts as your claim on this move"));
+    assertFalse(session.getDrawOfferManager().isDrawOffered());
+    assertNull(session.getMustExecuteMove());
+    assertEquals(blackBefore, session.getClock().getRemainingTimeMs(Side.BLACK));
+
+    final DrawClaimResult repeat = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(repeat.repeatClaim());
+    assertTrue(repeat.message().contains("You cannot make more than one draw claim on your move"));
+  }
+
   /**
    * FIDE 9.4: a player loses the right to claim under 9.2/9.3 once any piece has been touched on this move. The session
    * must reject claims after a CLICK, DRAG_*, or REMOVE event in the current turn, before processing the claim.

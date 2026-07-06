@@ -176,6 +176,10 @@ class GameWebSocket {
     this.send(msg);
   }
 
+  sendCancelDrawClaim() {
+    this.send({ type: 'cancelDrawClaim' });
+  }
+
   sendResign() {
     this.send({ type: 'resign' });
   }

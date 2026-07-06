@@ -59,6 +59,12 @@ public record DrawClaimResult(boolean accepted, String message, Optional<String>
         false, false, Optional.empty());
   }
 
+  /** A started claim was retracted. It is not considered, but it still uses the player's claim on this move. */
+  public static DrawClaimResult retracted(String message, String opponentInfo) {
+    return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), false, false,
+        false, false, Optional.of(opponentInfo));
+  }
+
   /**
    * Used for non-FIDE-claim error paths (e.g. a game-ending violation): rejection without converting to a draw offer.
    */

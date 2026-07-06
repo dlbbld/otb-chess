@@ -200,6 +200,7 @@ public class GameWebSocketServer extends WebSocketServer {
         case "acceptDraw" -> handleAcceptDraw(conn);
         case "rejectDraw" -> handleRejectDraw(conn);
         case "claimDraw" -> handleClaimDraw(conn, json);
+        case "cancelDrawClaim" -> handleCancelDrawClaim(conn);
         case "resign" -> handleResign(conn);
         case "claimVictory" -> handleClaimVictory(conn);
         case "rematchOffer" -> handleRematchOffer(conn);
@@ -833,7 +834,21 @@ public class GameWebSocketServer extends WebSocketServer {
     final String san = optString(json, "san");
 
     final DrawClaimResult result = room.getSession().claimDraw(side, claimType, san);
+    sendDrawClaimResult(room, conn, side, result);
+  }
 
+  private void handleCancelDrawClaim(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null) {
+      return;
+    }
+
+    final Side side = room.getSide(conn);
+    final DrawClaimResult result = room.getSession().retractDrawClaim(side);
+    sendDrawClaimResult(room, conn, side, result);
+  }
+
+  private void sendDrawClaimResult(GameRoom room, WebSocket conn, Side side, DrawClaimResult result) {
     // Per-player feedback for the claim event itself (claimer's arbiter panel).
     final JsonObject response = new JsonObject();
     response.addProperty("type", "drawClaimResult");

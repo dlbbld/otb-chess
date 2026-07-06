@@ -208,6 +208,32 @@ test('repeat claims on the same move escalate: warning, then loss of the game', 
   await expect(black.locator('#opponentInfoPanel')).toBeHidden();
 });
 
+test('canceling a with-move claim retracts it but consumes the claim for this move', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await white.locator('#claimThreefoldWithMoveBtn').click();
+  await expect(white.locator('#sanInputPanel')).toBeVisible();
+  await expect(white.locator('#submitClaimMoveBtn')).toHaveText('Submit');
+  await expect(white.locator('#cancelClaimMoveBtn')).toHaveText('Cancel');
+
+  await white.locator('#cancelClaimMoveBtn').click();
+
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'You retracted your draw claim. The claim was not considered, but it counts as your claim on this move.');
+  await expect(white.locator('#sanInputPanel')).toBeHidden();
+  await expect(black.locator('#opponentInfoPanel')).toContainText('retracted a draw claim');
+  await expect(black.locator('#arbiterMessage')).not.toContainText('retracted');
+  await expect(black.locator('#drawOfferPanel')).toBeHidden();
+
+  await white.locator('#claimFiftyMoveWithMoveBtn').click();
+
+  await expect(white.locator('#sanInputPanel')).toBeHidden();
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'You cannot make more than one draw claim on your move');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('second draw claim on the same move');
+});
+
 // ---- 50-move rule ------------------------------------------------------------------------------
 
 test('50-move claim on a qualifying position draws the game and informs the opponent', async ({ browser }) => {

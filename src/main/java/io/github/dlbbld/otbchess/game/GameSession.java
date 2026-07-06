@@ -526,6 +526,72 @@ public class GameSession {
    * Player claims a draw (threefold repetition or 50-move rule).
    */
   public synchronized DrawClaimResult claimDraw(Side side, DrawClaimType type, String san) {
+    final DrawClaimResult proceduralRejection = rejectClaimBeforeRuleMachinery(side);
+    if (proceduralRejection != null) {
+      return proceduralRejection;
+    }
+
+    final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
+
+    // An invalid SAN doesn't constitute a completed claim attempt: no legal intended move was
+    // presented, so the claim is not considered. Any other outcome counts and locks claims for
+    // the rest of this turn.
+    if (!claimResult.invalidMove()) {
+      claimMadeThisTurn = true;
+    }
+
+    if (claimResult.accepted()) {
+      final GameResultType resultType = (type == DrawClaimType.THREEFOLD_ON_BOARD
+          || type == DrawClaimType.THREEFOLD_WITH_MOVE) ? GameResultType.THREEFOLD_CLAIM
+              : GameResultType.FIFTY_MOVE_CLAIM;
+
+      if (claimResult.moveToPerform().isPresent()) {
+        board.move(claimResult.moveToPerform().get());
+      }
+
+      // Use the short game-end description for the result panel; the long claim-feedback
+      // line goes only to the per-player arbiter messages.
+      final String description = claimResult.gameEndDescription().orElse(claimResult.message());
+      endGame(new GameResult(resultType, Side.NONE, description));
+    } else if (!claimResult.invalidMove()) {
+      // FIDE 9.5.3: an incorrect (i.e. completed but rejected) claim adds 2 minutes to the
+      // opponent's clock. Both rejected on-board claims and rejectedWithMove claims qualify;
+      // invalid-SAN doesn't because no legal intended move was presented and the claim was not
+      // considered.
+      clock.addPenaltyTime(side.getOppositeSide(), INCORRECT_CLAIM_PENALTY_MS);
+      if (claimResult.moveToPerform().isPresent()) {
+        mustExecuteMove = claimResult.moveToPerform().get();
+        mustExecuteMoveSan = san;
+        clock.startClock(side);
+      }
+    }
+
+    // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. We register a
+    // correct-time offer (the claimer is on the move) so it follows the standard accept /
+    // reject / touch-piece-invalidation flow without going through the wrong-time escalation.
+    if (claimResult.convertsToDrawOffer()) {
+      drawOfferManager.offerDrawCorrectTime(side);
+    }
+
+    return claimResult;
+  }
+
+  /**
+   * Player started a claim-with-move and then retracted it before presenting a legal move.
+   */
+  public synchronized DrawClaimResult retractDrawClaim(Side side) {
+    final DrawClaimResult proceduralRejection = rejectClaimBeforeRuleMachinery(side);
+    if (proceduralRejection != null) {
+      return proceduralRejection;
+    }
+
+    claimMadeThisTurn = true;
+    return DrawClaimResult.retracted(
+        "You retracted your draw claim. The claim was not considered, but it counts as your claim on this move.",
+        "Your opponent retracted a draw claim. The claim was not considered.");
+  }
+
+  private DrawClaimResult rejectClaimBeforeRuleMachinery(Side side) {
     if (state != GameState.IN_PROGRESS) {
       return DrawClaimResult.error("You cannot claim a draw now.");
     }
@@ -603,50 +669,7 @@ public class GameSession {
           "Your opponent made a second draw claim on the same move. The claim was not considered, and they have"
               + " been warned: their next draw claim on a move they have already claimed on loses them the game.");
     }
-
-    final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
-
-    // An invalid SAN doesn't constitute a completed claim attempt: no legal intended move was
-    // presented, so the claim is not considered. Any other outcome counts and locks claims for
-    // the rest of this turn.
-    if (!claimResult.invalidMove()) {
-      claimMadeThisTurn = true;
-    }
-
-    if (claimResult.accepted()) {
-      final GameResultType resultType = (type == DrawClaimType.THREEFOLD_ON_BOARD
-          || type == DrawClaimType.THREEFOLD_WITH_MOVE) ? GameResultType.THREEFOLD_CLAIM
-              : GameResultType.FIFTY_MOVE_CLAIM;
-
-      if (claimResult.moveToPerform().isPresent()) {
-        board.move(claimResult.moveToPerform().get());
-      }
-
-      // Use the short game-end description for the result panel; the long claim-feedback
-      // line goes only to the per-player arbiter messages.
-      final String description = claimResult.gameEndDescription().orElse(claimResult.message());
-      endGame(new GameResult(resultType, Side.NONE, description));
-    } else if (!claimResult.invalidMove()) {
-      // FIDE 9.5.3: an incorrect (i.e. completed but rejected) claim adds 2 minutes to the
-      // opponent's clock. Both rejected on-board claims and rejectedWithMove claims qualify;
-      // invalid-SAN doesn't because no legal intended move was presented and the claim was not
-      // considered.
-      clock.addPenaltyTime(side.getOppositeSide(), INCORRECT_CLAIM_PENALTY_MS);
-      if (claimResult.moveToPerform().isPresent()) {
-        mustExecuteMove = claimResult.moveToPerform().get();
-        mustExecuteMoveSan = san;
-        clock.startClock(side);
-      }
-    }
-
-    // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. We register a
-    // correct-time offer (the claimer is on the move) so it follows the standard accept /
-    // reject / touch-piece-invalidation flow without going through the wrong-time escalation.
-    if (claimResult.convertsToDrawOffer()) {
-      drawOfferManager.offerDrawCorrectTime(side);
-    }
-
-    return claimResult;
+    return null;
   }
 
   // ===== Resignation =====
