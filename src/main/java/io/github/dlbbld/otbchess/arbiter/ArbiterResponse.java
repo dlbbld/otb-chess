@@ -75,8 +75,16 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
    * The binding release: {@code piece} was released on {@code square}, having been picked up from {@code fromSquare}.
    * {@code fromSquare} is {@link Square#NONE} when the origin is not a board square (e.g. a promotion piece placed
    * from the side area, or the castling variant where the message names its own squares).
+   * {@code releasedPieceDisplacedAfterRelease} is true when a later manipulation picked the committed piece up from
+   * its release square; then the recovery instruction says to put that piece back. If false, the released piece stayed
+   * put and the player must revert the later position change around it.
    */
-  public record ReleasedPieceContext(Piece piece, Square square, Square fromSquare) {
+  public record ReleasedPieceContext(Piece piece, Square square, Square fromSquare,
+      boolean releasedPieceDisplacedAfterRelease) {
+
+    public ReleasedPieceContext(Piece piece, Square square, Square fromSquare) {
+      this(piece, square, fromSquare, true);
+    }
   }
 
   /**
@@ -161,10 +169,19 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
   public static ArbiterResponse releasedPieceViolation(ReleasedPieceContext context, boolean ambiguousOrigin,
       BitboardPosition restorePosition) {
     final boolean nameOrigin = ambiguousOrigin && context.fromSquare() != Square.NONE;
-    final MessageKey playerKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_PLAYER
-        : MessageKey.ARBITER_RELEASED_PIECE_PLAYER;
-    final MessageKey opponentKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_OPPONENT
-        : MessageKey.ARBITER_RELEASED_PIECE_OPPONENT;
+    final MessageKey playerKey;
+    final MessageKey opponentKey;
+    if (context.releasedPieceDisplacedAfterRelease()) {
+      playerKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_PLAYER
+          : MessageKey.ARBITER_RELEASED_PIECE_PLAYER;
+      opponentKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_OPPONENT
+          : MessageKey.ARBITER_RELEASED_PIECE_OPPONENT;
+    } else {
+      playerKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_POSITION_CHANGE_PLAYER
+          : MessageKey.ARBITER_RELEASED_PIECE_POSITION_CHANGE_PLAYER;
+      opponentKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_POSITION_CHANGE_OPPONENT
+          : MessageKey.ARBITER_RELEASED_PIECE_POSITION_CHANGE_OPPONENT;
+    }
     final List<Object> args = nameOrigin
         ? List.of(formatPieceName(context.piece()), context.fromSquare().getName(), context.square().getName())
         : List.of(formatPieceName(context.piece()), context.square().getName());

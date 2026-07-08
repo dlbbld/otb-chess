@@ -151,7 +151,8 @@ public class ArbiterEngine {
             lock.piece(), lock.square(), castlingDirection, rookFrom, rookTo), lock.releasePosition());
       }
       return ArbiterResponse.releasedPieceViolation(
-          new ReleasedPieceContext(lock.piece(), lock.square(), lock.fromSquare()),
+          new ReleasedPieceContext(lock.piece(), lock.square(), lock.fromSquare(),
+              lock.releasedPieceDisplacedAfterRelease()),
           isReleaseOriginAmbiguous(board, lock), lock.releasePosition());
     }
 
@@ -227,7 +228,16 @@ public class ArbiterEngine {
   }
 
   private record ReleasedPieceLock(BitboardPosition releasePosition, Set<BitboardPosition> allowedFinalPositions,
-      Set<LegalMove> committedMoves, Piece piece, Square square, Square fromSquare) {
+      Set<LegalMove> committedMoves, Piece piece, Square square, Square fromSquare,
+      boolean releasedPieceDisplacedAfterRelease) {
+
+    ReleasedPieceLock withReleasedPieceDisplacedAfterRelease() {
+      if (releasedPieceDisplacedAfterRelease) {
+        return this;
+      }
+      return new ReleasedPieceLock(releasePosition, allowedFinalPositions, committedMoves, piece, square, fromSquare,
+          true);
+    }
 
     /**
      * True iff every legal move consistent with the release is a castling move (i.e. the release commits the player
@@ -322,27 +332,44 @@ public class ArbiterEngine {
     }
 
     BitboardPosition currentPosition = board.getBitboardPosition();
-    Optional<ReleasedPieceLock> firstReleasedLegalPosition = Optional.empty();
+    ReleasedPieceLock firstReleasedLegalPosition = null;
 
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
+      if (firstReleasedLegalPosition != null && displacesReleasedPiece(event, firstReleasedLegalPosition)) {
+        firstReleasedLegalPosition = firstReleasedLegalPosition.withReleasedPieceDisplacedAfterRelease();
+      }
+
       final BitboardPosition beforeEvent = currentPosition;
       currentPosition = applyEvent(currentPosition, event);
 
-      if (firstReleasedLegalPosition.isEmpty() && isReleaseOnBoard(event)) {
+      if (firstReleasedLegalPosition == null && isReleaseOnBoard(event)) {
         final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
         if (!commitment.allowedFinalPositions().isEmpty()) {
-          firstReleasedLegalPosition = Optional.of(new ReleasedPieceLock(currentPosition,
-              commitment.allowedFinalPositions(), commitment.committedMoves(), event.piece(), event.targetSquare(),
-              event.square()));
+          firstReleasedLegalPosition = new ReleasedPieceLock(currentPosition, commitment.allowedFinalPositions(),
+              commitment.committedMoves(), event.piece(), event.targetSquare(), event.square(), false);
         }
       }
     }
 
-    if (firstReleasedLegalPosition.isPresent()
-        && !firstReleasedLegalPosition.get().allowedFinalPositions().contains(afterPosition)) {
-      return firstReleasedLegalPosition;
+    if (firstReleasedLegalPosition != null
+        && !firstReleasedLegalPosition.allowedFinalPositions().contains(afterPosition)) {
+      return Optional.of(firstReleasedLegalPosition);
     }
     return Optional.empty();
+  }
+
+  private static boolean displacesReleasedPiece(BoardEvent event, ReleasedPieceLock lock) {
+    if (lock.square() == Square.NONE || lock.piece() == Piece.NONE) {
+      return false;
+    }
+    final boolean pickedUpFromReleaseSquare = switch (event.type()) {
+      case DRAG_MOVE, DRAG_CAPTURE, REMOVE -> event.piece() == lock.piece() && event.square() == lock.square();
+      case CLICK, RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> false;
+    };
+    if (pickedUpFromReleaseSquare) {
+      return true;
+    }
+    return event.targetSquare() == lock.square() && event.displacedPiece() == lock.piece();
   }
 
   private static Optional<ArbiterResponse.RookFirstCastlingContext> findRookFirstCastlingContext(Board board,

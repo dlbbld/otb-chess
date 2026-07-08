@@ -329,6 +329,11 @@ public launch. Released as **v0.1.1** (still beta).
   capture it, the obligation narrows to that specific capture. Other pieces that could also
   capture the opponent piece are then rejected. Unit + focused e2e pin the b3 knight/c2 pawn
   journey.
+- [x] **Released-piece recovery message distinguishes the changed piece.** If a legal release
+  stays in place but another piece is moved before the clock press, the message now asks to revert
+  the position change after that release. If the released piece itself is moved again, the message
+  still asks to put that piece back on its release square. Unit + focused e2e pin the a-pawn
+  release / h-pawn change journey.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

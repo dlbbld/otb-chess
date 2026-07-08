@@ -118,9 +118,35 @@ class TestArbiterEngine {
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_PLAYER, response.playerMessageKey());
     assertEquals(Piece.WHITE_PAWN, response.releasedPieceContext().get().piece());
     assertEquals(Square.E3, response.releasedPieceContext().get().square());
+    assertTrue(response.releasedPieceContext().get().releasedPieceDisplacedAfterRelease());
+    assertTrue(response.renderedPlayerMessage().contains("put the pawn back on e3"));
     assertTrue(response.restorePosition().isPresent());
     assertEquals(BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.E2, Piece.NONE)
         .createChangedPosition(Square.E3, Piece.WHITE_PAWN).build(), response.restorePosition().get());
+  }
+
+  @Test
+  void testReleasedPieceViolationAfterOtherPieceMoveAsksToRevertPositionChange() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.A2, Square.A4, Piece.WHITE_PAWN, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H2, Square.H3, Piece.WHITE_PAWN, 1));
+
+    final BitboardPosition afterA4AndH3 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.A2, Piece.NONE).createChangedPosition(Square.A4, Piece.WHITE_PAWN)
+        .createChangedPosition(Square.H2, Piece.NONE).createChangedPosition(Square.H3, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterA4AndH3, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_POSITION_CHANGE_PLAYER, response.playerMessageKey());
+    assertFalse(response.releasedPieceContext().get().releasedPieceDisplacedAfterRelease());
+    assertTrue(response.renderedPlayerMessage().contains("revert the position change after pawn release on a4"));
+    assertFalse(response.renderedPlayerMessage().contains("put the pawn back on a4"));
+    assertEquals(BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.A2, Piece.NONE)
+        .createChangedPosition(Square.A4, Piece.WHITE_PAWN).build(), response.restorePosition().get());
   }
 
   /** FIDE 4.7: putting the piece back to the original square does not undo a committed release. */

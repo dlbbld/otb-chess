@@ -284,6 +284,10 @@ Touching is one step short of committing. **Releasing a piece on a legal target 
 - After the player drops a piece on a square that completes a legal move, the *committed move set* is the set of legal moves that end with that piece on that square.
 - Any subsequent manipulation that would change the final position to something **not** in the committed move set is a **released-piece violation**.
 - Restoration after a released-piece violation restores the board to the **release position** (not the start of the turn) -- the player must complete a legal move from the committed set.
+- The recovery message distinguishes what must be restored: if the released piece itself was later picked up or displaced,
+  the player is told to put that piece back on its release square; if the released piece stayed on its release square
+  and some other later position change caused the violation, the player is told to revert the position change after that
+  release.
 - A castling attempt is treated as a multi-step legal move: the king's release on its castled square commits to castling; the rook drag then completes the move.
 - The committed-release detection is scoped per turn: it resets at the start of each turn and after any restoration that legitimately rewinds back to the start of the turn.
 - Released-piece does not override an earlier opponent-piece touch obligation. If the player touched a capturable opponent piece and later released their own piece on a legal non-capturing square, the arbiter reports the unsatisfied touch-move obligation.
