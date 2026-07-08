@@ -107,3 +107,24 @@ test('released-piece message distinguishes later position change from moving the
   await expect(white.locator('#arbiterMessage')).toContainText('Please put the pawn back on a4 and press the clock.');
   await expect(white.locator('#arbiterMessage')).not.toContainText('revert the position change after pawn release');
 });
+
+test('released-piece final move can be clock-pressed immediately after Revert', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'a2', 'a4');
+  await dragPiece(white, 'h2', 'h3');
+  await pressClock(white);
+
+  await clickRestore(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Position restored');
+
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expectPiece(white, 'a4', 'WHITE_PAWN');
+  await expectEmpty(white, 'a2');
+  await expectPiece(white, 'h2', 'WHITE_PAWN');
+  await expectEmpty(white, 'h3');
+});

@@ -242,6 +242,19 @@ public class GameSession {
     if (side != board.getSideToMove()) {
       return ArbiterResponse.incompleteMove("It is not your turn.");
     }
+    if (waitingForRestoration) {
+      return ArbiterResponse
+          .incompleteMove("The game is paused. Please restore the position before pressing the clock.");
+    }
+    if (waitingForReady) {
+      return ArbiterResponse.incompleteMove("The game is paused. Please wait until both players are ready.");
+    }
+    if (restorationResumePending) {
+      resumeAfterRestorationDelay();
+    }
+    if (clock.getRunningFor() == Side.NONE) {
+      return ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts.");
+    }
 
     // Special case: must execute specified move (after rejected draw claim)
     if (mustExecuteMove != null) {

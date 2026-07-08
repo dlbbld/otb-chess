@@ -78,4 +78,28 @@ class TestReleasedPieceCommitment {
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, r4.type(),
         "playing the committed move a2-a4 must finally be accepted");
   }
+
+  @Test
+  void releasedPieceFinalMoveCanBeClockPressedDuringAutoResumeGap() {
+    final GameSession s = new GameSession(TIME, 2, true);
+    s.startGame();
+    final Side w = Side.WHITE;
+    final BitboardPosition start = s.getBoard().getBitboardPosition();
+    final BitboardPosition releasedOnA4 = BitboardPositions.from(start).createChangedPosition(Square.A2, Piece.NONE)
+        .createChangedPosition(Square.A4, Piece.WHITE_PAWN).build();
+    final BitboardPosition afterA4AndH3 = BitboardPositions.from(releasedOnA4)
+        .createChangedPosition(Square.H2, Piece.NONE).createChangedPosition(Square.H3, Piece.WHITE_PAWN).build();
+
+    s.recordEvent(w, BoardEvent.dragMove(Square.A2, Square.A4, Piece.WHITE_PAWN, 0));
+    s.recordEvent(w, BoardEvent.dragMove(Square.H2, Square.H3, Piece.WHITE_PAWN, 1));
+    final ArbiterResponse violation = s.pressClockButton(w, afterA4AndH3);
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, violation.type());
+
+    s.enterWaitingForRestoration(violation.restorePosition().orElseThrow());
+    s.completeRestoration();
+
+    final ArbiterResponse accepted = s.pressClockButton(w, releasedOnA4);
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, accepted.type(),
+        "pressing immediately after Revert must auto-resume the clock before switching it");
+  }
 }

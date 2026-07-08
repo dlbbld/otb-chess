@@ -334,6 +334,11 @@ public launch. Released as **v0.1.1** (still beta).
   the position change after that release. If the released piece itself is moved again, the message
   still asks to put that piece back on its release square. Unit + focused e2e pin the a-pawn
   release / h-pawn change journey.
+- [x] **Paused-clock clock presses no longer throw internally.** If the player presses the clock
+  during the restoration auto-resume gap, the session now resumes the clock before evaluating the
+  press; if the game is paused for restoration/ready/other reasons, it returns a clean paused
+  message instead of reaching `ClockManager.switchClock()` with no running clock. Unit + focused
+  e2e pin the immediate press after released-piece Revert.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.
