@@ -6,6 +6,7 @@ import {
   offerDraw,
   acceptDraw,
   expectGameResult,
+  clickRestore,
   SCORE_DRAW,
 } from './helpers/app';
 import { dragPiece, removePiece, pressClock, expectPiece, expectEmpty } from './helpers/board';
@@ -260,6 +261,27 @@ test('en passant capture is accepted when the captured pawn is removed first', a
   await expectEmpty(white, 'b5');
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(black, 'b6', 'WHITE_PAWN');
+});
+
+test('incomplete en passant is an illegal move, not a released-piece violation', async ({ browser }) => {
+  // Beginner case: White just played c2-c4, Black has a pawn on b4 and moves b4-c3
+  // but forgets to remove the captured pawn from c4.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/1pP5/8/8/4K3 b - c3 0 1' });
+  const { black, white } = game;
+
+  await dragPiece(black, 'b4', 'c3');
+  await pressClock(black);
+
+  await expect(black.locator('#arbiterMessage')).toContainText('Illegal move');
+  await expect(black.locator('#arbiterMessage')).toContainText('en passant capture is incomplete');
+  await expect(black.locator('#arbiterMessage')).toContainText('captured pawn on c4 is still on the board');
+  await expect(black.locator('#arbiterMessage')).not.toContainText(/released-piece/i);
+  await expect(white.locator('#opponentInfoPanel')).toContainText('en passant capture is incomplete');
+
+  await clickRestore(black);
+  await expectPiece(black, 'b4', 'BLACK_PAWN');
+  await expectEmpty(black, 'c3');
+  await expectPiece(black, 'c4', 'WHITE_PAWN');
 });
 
 test('the board does not mark the king in check (no red frame)', async ({ browser }) => {

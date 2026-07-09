@@ -488,13 +488,18 @@ public class ArbiterEngine {
     if (event.square() != spec.fromSquare() || event.targetSquare() != spec.toSquare()) {
       return false;
     }
+    if (legalMove.isEnPassant()) {
+      return false;
+    }
     // The release physically IS this move only if the destination square was not tampered with
     // earlier in the turn. Example: after b2xa1 (own pawn parked on a1 mid-promotion), dragging
     // the a8 rook onto a1 used to match the legal Ra8xa1 of the turn-start position — but the
     // physical act captured the player's OWN pawn, which is no move at all (and produced an
     // unsatisfiable commitment: restore target = the tampered position itself). Comparing the
     // destination's content at release time with the turn start rejects that, while normal
-    // moves, captures, and en passant (whose destination square is untouched) stay committed.
+    // moves and captures stay committed. En passant is deliberately excluded above: physically,
+    // landing on the en-passant square is only half of the capture, and the clock-press position
+    // must decide whether the captured pawn was also removed.
     return positionBeforeEvent.get(spec.toSquare()) == turnStartPosition.get(spec.toSquare());
   }
 
@@ -568,6 +573,8 @@ public class ArbiterEngine {
 
     final MoveSpecification moveSpecification = attemptedMove.get().moveSpecification();
     final BitboardPosition beforePosition = board.getBitboardPosition();
+    final Optional<LegalMove> legalAttempt = board.getLegalMoves().stream()
+        .filter(move -> move.moveSpecification().equals(moveSpecification)).findFirst();
     try {
       // move() runs the same legality validation as the library's internal check and throws
       // InvalidMoveException for an illegal move; unmove() restores the board afterwards.
@@ -580,10 +587,35 @@ public class ArbiterEngine {
     }
     final BitboardPosition expectedPosition = beforePosition.afterMove(moveSpecification, board.getSideToMove());
     if (!expectedPosition.equals(afterPosition)) {
+      final Optional<IllegalMoveReason> enPassantReason = explainIncompleteEnPassant(legalAttempt, expectedPosition,
+          afterPosition);
+      if (enPassantReason.isPresent()) {
+        return enPassantReason;
+      }
       final String reason = "the move itself is legal, but the final board position is not correct";
       return Optional.of(new IllegalMoveReason(reason, reason));
     }
     return Optional.empty();
+  }
+
+  private static Optional<IllegalMoveReason> explainIncompleteEnPassant(Optional<LegalMove> legalAttempt,
+      BitboardPosition expectedPosition, BitboardPosition afterPosition) {
+    if (legalAttempt.isEmpty() || !legalAttempt.get().isEnPassant()) {
+      return Optional.empty();
+    }
+    final Square capturedSquare = legalAttempt.get().enPassantCapturedPawnSquare();
+    final Piece capturedPiece = legalAttempt.get().capturedPiece();
+    if (afterPosition.get(capturedSquare) != capturedPiece) {
+      return Optional.empty();
+    }
+    final BitboardPosition withCapturedPawnStillPresent = BitboardPositions.from(expectedPosition)
+        .createChangedPosition(capturedSquare, capturedPiece).build();
+    if (!withCapturedPawnStillPresent.equals(afterPosition)) {
+      return Optional.empty();
+    }
+    final String reason = "the en passant capture is incomplete: the captured pawn on "
+        + capturedSquare.getName() + " is still on the board";
+    return Optional.of(new IllegalMoveReason(reason, reason));
   }
 
   private static Optional<AttemptedMove> inferAttemptedMove(Board board, BitboardPosition afterPosition,

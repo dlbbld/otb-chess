@@ -339,6 +339,10 @@ public launch. Released as **v0.1.1** (still beta).
   press; if the game is paused for restoration/ready/other reasons, it returns a clean paused
   message instead of reaching `ClockManager.switchClock()` with no running clock. Unit + focused
   e2e pin the immediate press after released-piece Revert.
+- [x] **Incomplete en passant is illegal, not released-piece.** If Black has a pawn on b4 after
+  White's c2-c4 and moves b4-c3 without removing the captured pawn on c4, the arbiter now reports
+  an illegal incomplete en-passant capture instead of a released-piece violation. Unit + focused
+  e2e pin the beginner b4/c4/c3 journey and preserve completed en passant.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

@@ -1056,6 +1056,28 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testIncompleteEnPassantIsIllegalMoveNotReleasedPiece() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/8/1pP5/8/8/4K3 b - c3 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragMove(Square.B4, Square.C3, Piece.BLACK_PAWN, 0));
+
+    final BitboardPosition incompleteEnPassant = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B4, Piece.NONE)
+        .createChangedPosition(Square.C3, Piece.BLACK_PAWN)
+        .build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, incompleteEnPassant, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.renderedPlayerMessage().contains("en passant capture is incomplete"));
+    assertTrue(response.renderedPlayerMessage().contains("captured pawn on c4 is still on the board"));
+    assertFalse(response.renderedPlayerMessage().contains("Released-piece"));
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.BLACK));
+  }
+
+  @Test
   void testEnPassantRemovalFirstSatisfiesOpponentPawnTouch() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
