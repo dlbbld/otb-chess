@@ -406,25 +406,28 @@ class TestTouchMoveEvaluator {
   }
 
   @Test
-  void testFailedCastlingAttemptWithNoKingMovesDoesNotBindRook() {
-    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+  void testFailedCastlingAttemptWithNoKingMovesBindsRookWhenRookCanMove() {
+    final Board board = Board.fromFenStrict("k7/8/8/8/8/7b/3PPP2/3QK2R w - - 0 1");
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
 
-    // The king has no legal move. The rook h1-g1 move is part of the failed castling attempt,
-    // so it must not become the binding touch-move obligation.
-    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.F1, Piece.WHITE_KING, 0));
-    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.G1, Piece.WHITE_ROOK, 1));
+    // The king has no legal move, so the king touch creates no obligation. The later rook
+    // touch does bind, because the rook has legal moves.
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
 
     Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
 
-    assertFalse(obligation.isPresent());
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.H1, obligation.get().square());
+    assertTrue(obligation.get().precededByUnmovableOwnTouch());
 
-    sequence.addEvent(BoardEvent.dragMove(Square.A2, Square.A3, Piece.WHITE_PAWN, 2));
+    sequence.addEvent(BoardEvent.dragMove(Square.D2, Square.D3, Piece.WHITE_PAWN, 2));
     obligation = TouchMoveEvaluator.findObligation(sequence, board);
 
     assertTrue(obligation.isPresent());
     assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
-    assertEquals(Square.A2, obligation.get().square());
+    assertEquals(Square.H1, obligation.get().square());
   }
 
   // ---- King-then-rook combined touch (FIDE 4.4.a) ----

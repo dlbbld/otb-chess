@@ -386,6 +386,11 @@ public launch. Released as **v0.1.1** (still beta).
   the offer is no longer valid because they touched a piece; the panel disappears when they
   complete their move by pressing the clock. Unit coverage pins accept/reject refusal after touch;
   focused e2e covers both colours.
+- [x] **Illegal castling attempts explain the touch-move consequence.** When a player physically
+  tries to castle on a side where castling is illegal, the message no longer says "Castling
+  counts as a king move." It now follows the touch order: move the king if the first-touched king
+  has legal moves; otherwise move the touched rook if that rook has legal moves; otherwise make
+  any other legal move. Unit and focused e2e cover all three branches.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

@@ -315,6 +315,56 @@ test('rook-first castling attempt keeps the rook move and restores the king', as
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
 });
 
+test('illegal castling without the side right obliges the first-touched king when it can move', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '2k5/8/8/8/8/8/8/R3K2R w Q - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
+  await expect(white.locator('#arbiterMessage')).toContainText('there is no castling right anymore on this side');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Because you touched your king first, and the king has legal moves');
+  await expect(white.locator('#arbiterMessage')).toContainText('you must make a legal move with the king');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
+});
+
+test('illegal castling with no king moves obliges the touched rook when it can move', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k7/8/8/8/8/7b/3PPP2/3QK2R w - - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'you first touched your king, which has no legal moves');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'then touched your rook, which has legal moves');
+  await expect(white.locator('#arbiterMessage')).toContainText('you must make a legal move with the rook');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
+});
+
+test('illegal castling with no king or rook moves leaves any other legal move free', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k3r3/8/8/8/8/7b/3P1P2/3QK2R w - - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
+  await expect(white.locator('#arbiterMessage')).toContainText('you touched your king and then your rook');
+  await expect(white.locator('#arbiterMessage')).toContainText('neither piece has legal moves');
+  await expect(white.locator('#arbiterMessage')).toContainText('you may make any other legal move');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
+});
+
 test('moving two pieces (a knight shuffle around a pin) is an illegal move', async ({ browser }) => {
   // Black Nc6 is pinned (blocks Qb5 -> Ke8). Moving Nc6->d4 and then Ne5->c6 to re-block is two
   // moves; no single legal move produces it.

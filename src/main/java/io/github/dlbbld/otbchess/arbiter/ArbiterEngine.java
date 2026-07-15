@@ -759,28 +759,67 @@ public class ArbiterEngine {
       return "";
     }
 
-    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
     final Square kingFrom = attemptedMove.moveSpecification().castlingMove().kingFromSquare(board.getSideToMove());
-    final Piece kingPiece = Piece.of(board.getSideToMove(), PieceType.KING);
+    if (hasLegalMovesFromSquare(board.getLegalMoves(), kingFrom)) {
+      return opponent
+          ? " Because your opponent touched their king first, and the king has legal moves, after restoring the"
+              + " position they must make a legal move with the king."
+          : " Because you touched your king first, and the king has legal moves, after restoring the position"
+              + " you must make a legal move with the king.";
+    }
 
+    final Optional<Square> touchedRook = touchedCastlingRookSquare(sequence, board.getSideToMove(),
+        attemptedMove.moveSpecification().castlingMove());
+    if (touchedRook.isPresent() && hasLegalMovesFromSquare(board.getLegalMoves(), touchedRook.get())) {
+      return opponent
+          ? " Because your opponent first touched their king, which has no legal moves, and then touched their rook,"
+              + " which has legal moves, after restoring the position they must make a legal move with the rook."
+          : " Because you first touched your king, which has no legal moves, and then touched your rook, which has"
+              + " legal moves, after restoring the position you must make a legal move with the rook.";
+    }
+
+    if (touchedRook.isPresent()) {
+      return opponent
+          ? " Because your opponent touched their king and then their rook, but neither piece has legal moves, after"
+              + " restoring the position they may make any other legal move."
+          : " Because you touched your king and then your rook, but neither piece has legal moves, after restoring"
+              + " the position you may make any other legal move.";
+    }
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
     if (obligation.isPresent()) {
-      final TouchMoveObligation value = obligation.get();
-      if (value.type() == TouchMoveType.OWN_PIECE && value.square() == kingFrom && value.piece() == kingPiece) {
-        return opponent
-            ? " Castling counts as a king move; because the king has legal moves, after restoring the position"
-                + " they must make a legal move with the king."
-            : " Castling counts as a king move; because the king has legal moves, after restoring the position"
-                + " you must make a legal move with the king.";
-      }
       // A different first touch remains governed by the normal touch-move recovery path.
       return "";
     }
 
     return opponent
-        ? " Castling counts as a king move, but the touched king has no legal moves; after restoring the position"
-            + " they may make another legal move."
-        : " Castling counts as a king move, but the touched king has no legal moves; after restoring the position"
-            + " make another legal move.";
+        ? " Because the touched king has no legal moves, after restoring the position they may make another legal move."
+        : " Because the touched king has no legal moves, after restoring the position you may make another legal move.";
+  }
+
+  private static Optional<Square> touchedCastlingRookSquare(ActionSequence sequence, Side sideToMove,
+      CastlingMove castlingMove) {
+    final Square rookFrom = CastlingAttemptDetector.calculateRookCastlingFrom(sideToMove, castlingMove);
+    final Piece rookPiece = Piece.of(sideToMove, PieceType.ROOK);
+    for (final BoardEvent event : sequence.getEvents()) {
+      if (event.piece() == rookPiece && event.square() == rookFrom) {
+        return Optional.of(rookFrom);
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static boolean hasLegalMovesFromSquare(List<LegalMove> legalMoves, Square square) {
+    for (final LegalMove legalMove : legalMoves) {
+      if (legalMove.moveSpecification().fromSquare() == square) {
+        return true;
+      }
+      if (legalMove.moveSpecification().isCastling()
+          && legalMove.moveSpecification().castlingMove().kingFromSquare(legalMove.movingSide()) == square) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private ArbiterResponse handleTouchMoveViolation(TouchMoveObligation obligation) {
