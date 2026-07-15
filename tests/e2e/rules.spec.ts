@@ -256,6 +256,64 @@ test('a rejected draw offer after the offerer clock press names who rejected, fo
   await expect(white.locator('#gameResultPanel')).toBeHidden();
 });
 
+test('a draw offer remains visible after Black touches, but Accept is refused until clock press clears it', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await offerDraw(white);
+  await pressClock(white);
+
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+
+  await dragPiece(black, 'g8', 'f6');
+  await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+
+  await black.locator('#acceptDrawBtn').click();
+  await expect(black.locator('#arbiterMessage')).toHaveText(
+    'The draw offer is no longer valid because you touched a piece.');
+  await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await expect(white.locator('#gameResultPanel')).toBeHidden();
+
+  await pressClock(black);
+  await expect(black.locator('#drawOfferPanel')).toBeHidden();
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
+test('a draw offer remains visible after White touches, but Reject is refused until clock press clears it', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await dragPiece(black, 'e7', 'e5');
+  await offerDraw(black);
+  await pressClock(black);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(white.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+
+  await dragPiece(white, 'g1', 'f3');
+  await expect(white.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+
+  await white.locator('#rejectDrawBtn').click();
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'The draw offer is no longer valid because you touched a piece.');
+  await expect(white.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await expect(black.locator('#arbiterMessage')).not.toContainText('rejected the draw offer');
+
+  await pressClock(white);
+  await expect(white.locator('#drawOfferPanel')).toBeHidden();
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
 test('en passant capture is accepted', async ({ browser }) => {
   // White Pe5, Black Pd5, with d6 as the en-passant target (Black just played d7-d5).
   // exd6 e.p.: the white pawn goes to d6 and the captured pawn on d5 is lifted off.

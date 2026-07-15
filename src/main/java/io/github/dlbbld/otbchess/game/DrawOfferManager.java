@@ -221,7 +221,7 @@ public class DrawOfferManager {
       return Optional.of("You cannot accept your own draw offer.");
     }
     if (opponentTouchedPiece) {
-      return Optional.of("Accepting the draw offer after touching a piece is no longer valid.");
+      return Optional.of("The draw offer is no longer valid because you touched a piece.");
     }
     return Optional.empty(); // Acceptance is valid
   }

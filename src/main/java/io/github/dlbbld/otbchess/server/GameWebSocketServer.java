@@ -776,18 +776,10 @@ public class GameWebSocketServer extends WebSocketServer {
       // Acceptance was rejected (e.g. touched a piece)
       final String rejection = room.getSession().getLastAcceptDrawRejection();
       if (rejection != null) {
-        // Arbiter intervention: stop clock, explain, ready-to-continue
-        room.getSession().getClock().stopClock();
         final JsonObject msg = new JsonObject();
         msg.addProperty("type", "drawAcceptRejected");
         msg.addProperty("message", rejection);
         conn.send(GSON.toJson(msg));
-
-        room.getSession().enterWaitingForReady();
-        final JsonObject readyMsg = new JsonObject();
-        readyMsg.addProperty("type", "waitingForReady");
-        readyMsg.addProperty("message", "Are you ready to continue?");
-        room.sendToBoth(GSON.toJson(readyMsg));
       }
     }
   }
@@ -800,6 +792,14 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Side side = room.getSide(conn);
     final String offererRejectionMessage = room.getSession().rejectDraw(side);
+    final String rejection = room.getSession().getLastRejectDrawRejection();
+    if (rejection != null) {
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "drawAcceptRejected");
+      msg.addProperty("message", rejection);
+      conn.send(GSON.toJson(msg));
+      return;
+    }
 
     // Personalised per player so it is unambiguous who rejected.
     final JsonObject toRejecter = new JsonObject();

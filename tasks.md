@@ -380,6 +380,12 @@ public launch. Released as **v0.1.1** (still beta).
   the draw-offer panel from the start. The arbiter/status panel no longer duplicates the offer
   text and remains available for turn-flow messages such as "Your turn." Focused e2e covers
   ordinary offers, claim-converted offers, and wrong-time first offers.
+- [x] **Touched-piece draw offers stay visible until the clock press.** When the recipient of a
+  draw offer touches or moves a piece, the offer is no longer valid internally, but the
+  Accept/Reject panel remains visible. If the recipient then clicks either button, they are told
+  the offer is no longer valid because they touched a piece; the panel disappears when they
+  complete their move by pressing the clock. Unit coverage pins accept/reject refusal after touch;
+  focused e2e covers both colours.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

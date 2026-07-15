@@ -382,6 +382,7 @@ class Game {
       this.updateButtons();
       this.recomputeSideArea();
       this.showArbiterMessage("Move accepted. Opponent's turn.");
+      document.getElementById('drawOfferPanel').style.display = 'none';
       this.clearArbiterButtons();
       // The move closes the episode the passive info reported on.
       this.clearOpponentInfo();
@@ -525,7 +526,6 @@ class Game {
 
     this.ws.on('drawAcceptRejected', (data) => {
       this.showArbiterMessage(data.message, 'error');
-      document.getElementById('drawOfferPanel').style.display = 'none';
     });
 
     this.ws.on('drawOffered', (data) => {
@@ -547,11 +547,10 @@ class Game {
     });
 
     // The on-move player just touched a piece while a draw offer was pending.
-    // Per FIDE 9.1.2.1 the right to accept is lost; hide the Accept/Reject panel
-    // and show the explanation.
+    // Per FIDE 9.1.2.1 the right to accept is lost, but the GUI keeps the
+    // offer visible until the player tries to act on it or completes the move.
     this.ws.on('drawOfferInvalidated', (data) => {
-      document.getElementById('drawOfferPanel').style.display = 'none';
-      this.showArbiterMessage(data.message, 'error');
+      // Intentionally no visible update here.
     });
 
     this.ws.on('drawRejected', (data) => {
@@ -868,12 +867,10 @@ class Game {
 
     document.getElementById('acceptDrawBtn').addEventListener('click', () => {
       this.ws.sendAcceptDraw();
-      document.getElementById('drawOfferPanel').style.display = 'none';
     });
 
     document.getElementById('rejectDrawBtn').addEventListener('click', () => {
       this.ws.sendRejectDraw();
-      document.getElementById('drawOfferPanel').style.display = 'none';
     });
 
     document.getElementById('claimThreefoldOnBoardBtn').addEventListener('click', () => {

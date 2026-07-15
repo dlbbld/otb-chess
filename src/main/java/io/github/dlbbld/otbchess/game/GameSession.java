@@ -527,12 +527,23 @@ public class GameSession {
     return lastAcceptDrawRejection;
   }
 
+  private String lastRejectDrawRejection;
+
+  public synchronized String getLastRejectDrawRejection() {
+    return lastRejectDrawRejection;
+  }
+
   /**
    * Player rejects a draw offer.
    */
   public synchronized String rejectDraw(Side side) {
     final String offererMessage = drawOfferManager.offererRejectionMessage();
-    drawOfferManager.rejectDraw(side);
+    final Optional<String> rejection = drawOfferManager.rejectDraw(side);
+    if (rejection.isPresent()) {
+      lastRejectDrawRejection = rejection.get();
+      return offererMessage;
+    }
+    lastRejectDrawRejection = null;
     return offererMessage;
   }
 

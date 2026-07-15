@@ -480,8 +480,15 @@ class TestGameSession {
     // Black tries to accept — rejected because touched a piece
     final Optional<GameResult> result = session.acceptDraw(Side.BLACK);
     assertFalse(result.isPresent());
-    assertNotNull(session.getLastAcceptDrawRejection());
+    assertEquals("The draw offer is no longer valid because you touched a piece.",
+        session.getLastAcceptDrawRejection());
     assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    final String offererMessage = session.rejectDraw(Side.BLACK);
+    assertEquals("Your opponent rejected the draw offer.", offererMessage);
+    assertEquals("The draw offer is no longer valid because you touched a piece.",
+        session.getLastRejectDrawRejection());
+    assertTrue(session.getDrawOfferManager().isDrawOffered());
   }
 
   @Test
