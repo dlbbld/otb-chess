@@ -166,11 +166,9 @@ The two LCDs and the rocker keep the same relative placement so that "the LCD ne
 
 ### Clock-press semantics
 
-- A click **only registers when**:
-  - it lands on the player's **own** rocker side, **and**
-  - it is the player's **own turn**.
-- Otherwise the click is silently ignored -- the cursor and DOM behaviour are identical for both halves so the board cannot leak whose lever is whose. No "do not press your opponent's clock" feedback.
-- A clock press is the trigger for full move evaluation (see "Two-Layer Evaluation at Clock Press").
+- A press of the player's **own** lever on their **own turn** triggers full move evaluation (see "Two-Layer Evaluation at Clock Press").
+- **Pressing the clock without having made a move** (board unchanged at the press) is considered and penalised **as an illegal move** per FIDE 7.5.3: standard penalty time to the opponent, counts toward the illegal-move limit (default 2 → the second such press loses the game). There is nothing to restore, so the message asks the player to make a move and their clock keeps running.
+- A press of the **opponent's** lever registers only while the opponent's clock is running (their lever up) and escalates per [A-006](docs/fide-deviations.md#a-006--wrong-clock-press-pressing-the-opponents-clock-escalation): pause + admonishment, pause + warning, loss on the third press. With the opponent's lever already down (or one's own lever pressed out of turn) the press is a physical no-op — silence, like the real clock.
 
 ---
 
@@ -240,6 +238,15 @@ The two obligations co-exist independently. At clock press, the arbiter checks t
 - **Both obligations, and the touched own piece can capture the touched opponent piece:** the matched move must be that specific capture (touched own piece captures touched opponent piece).
 - **Both obligations, and the touched own piece cannot capture the touched opponent piece:** the move must satisfy the own-piece obligation (move the touched own piece). The opponent-piece obligation is dropped because it cannot be satisfied without violating the own-piece one.
 
+When the opponent piece is touched first, the opponent-piece obligation can later narrow to a specific capture: the
+first subsequently touched own piece that can capture that opponent piece must make the capture. This applies across
+restore/ready cycles inside the same move; unrelated own-piece touches that cannot capture the touched opponent piece do
+not prevent the later narrowing. The message preserves the actual order: opponent piece first, own piece second. A later
+own-piece release on a legal square does not convert the case into a released-piece violation if the touched opponent
+piece still was not captured. Example: White rook b3, black rook b6, White removes the rook on b6 and releases the rook
+on b5; the clock press is a touch-move violation requiring the rook capture on b6, not a released-piece commitment to
+b5.
+
 ### Violation message
 
 When the player presses the clock without satisfying the obligation(s), the message names the **piece type and square** that was touched, e.g.
@@ -277,8 +284,13 @@ Touching is one step short of committing. **Releasing a piece on a legal target 
 - After the player drops a piece on a square that completes a legal move, the *committed move set* is the set of legal moves that end with that piece on that square.
 - Any subsequent manipulation that would change the final position to something **not** in the committed move set is a **released-piece violation**.
 - Restoration after a released-piece violation restores the board to the **release position** (not the start of the turn) -- the player must complete a legal move from the committed set.
+- The recovery message distinguishes what must be restored: if the released piece itself was later picked up or displaced,
+  the player is told to put that piece back on its release square; if the released piece stayed on its release square
+  and some other later position change caused the violation, the player is told to revert the position change after that
+  release.
 - A castling attempt is treated as a multi-step legal move: the king's release on its castled square commits to castling; the rook drag then completes the move.
 - The committed-release detection is scoped per turn: it resets at the start of each turn and after any restoration that legitimately rewinds back to the start of the turn.
+- Released-piece does not override an earlier opponent-piece touch obligation. If the player touched a capturable opponent piece and later released their own piece on a legal non-capturing square, the arbiter reports the unsatisfied touch-move obligation.
 
 ### Draw claims and touch-move
 
@@ -300,7 +312,13 @@ If the final board position matches the legal castled position, the move is acce
 
 ### King-first rule
 
-The king **must** be moved first. If the player moves the rook first and then the king, the move **is not accepted as castling** -- it is treated as a regular rook move (followed by a king move). If the rook move itself creates a binding touch-move or released-piece obligation, that obligation applies.
+The king **must** be moved first. If the player moves the rook first and then the king, the move **is not accepted as castling**. If the rook release is itself a legal move, that rook move is the committed move; a later king move is treated as a displaced-piece restoration problem, not as a second move or an illegal king move.
+
+Example for legal White kingside castling where the player instead plays rook first (`Rh1-f1`, then `Ke1-g1`, then clock):
+
+> _"Castling cannot be performed rook first. Because the rook was released on f1 as a legal move, the move is the rook move from h1 to f1. Please put the king back on e1 and press the clock."_
+
+The restore target is the position after the committed rook move: king on e1, rook on f1. Pressing the clock from that restored position accepts `Rf1`.
 
 ### Illegal castling attempts
 
@@ -334,13 +352,19 @@ To avoid double-punishment for a failed castling attempt, the released-piece rul
 
 In every other case the released-piece rule applies normally.
 
-### Castling-specific released-piece message
+### Castling-specific incomplete-castling message
 
-When the king's release on its castled square commits the player to a castling that **is** legal but the rook hasn't been moved (or was placed wrongly), the released-piece message is castling-specific rather than the generic "put the piece back" wording. Example for kingside white:
+When the king's release on its castled square commits the player to a castling that **is** legal but the rook hasn't been moved (or was placed wrongly), the message is castling-specific rather than the generic "put the piece back" or "released-piece violation" wording. Example for kingside white:
 
-> _"Released-piece violation: You released the king on g1, which initiates kingside castling, and castling is legal. Under the released-piece rule, the king must stay on g1. Please complete the castling by moving the rook from h1 to f1 and pressing the clock."_
+> _"Castling has been started. Because the king was released on g1 and kingside castling is legal, you must complete the castling move by moving the rook from h1 to f1."_
 
-The king is not moved back -- it stays on the castled square because that's where it belongs in the committed move. The player is told exactly which rook move completes the castling.
+If the same incomplete physical position follows an earlier king-then-rook touch sequence, the earlier FIDE 4.4.a commitment supplies the reason instead:
+
+> _"Because you touched the king and the rook, and castling is legal, please perform the castling move."_
+
+The king is not moved back -- it stays on the castled square because that's where it belongs in the committed move. The player is told exactly which rook move completes the castling. If the physical board already equals that required intermediate position (king on g1, rook still on h1), no **Revert** button is shown: there is nothing to restore, the player's clock resumes, and the player must complete castling by moving the rook and pressing the clock. If the player has also moved another piece after the king release, **Revert** restores the board to the required intermediate position.
+
+Opponent-side castling-start notices are passive information only. They are shown in the opponent info panel below the clock, not in the opponent's main arbiter message above the clock.
 
 ---
 
@@ -349,6 +373,11 @@ The king is not moved back -- it stays on the castled square because that's wher
 - The player moves their pawn diagonally to the empty square behind the opponent pawn.
 - The player removes the opponent pawn from the board (drags it off the board to the side area).
 - The position check at clock press validates the en passant move; the order in which the two manipulations are made does not matter.
+- If the player moves the capturing pawn to the en-passant square but leaves the captured pawn on its square, the move is
+  an illegal move, not a released-piece violation. The pawn release alone does not create a released-piece commitment for
+  en passant because the capture is physically incomplete until the captured pawn is removed.
+- If the opponent pawn is removed first, that touch is satisfied by the en passant move because the touched pawn is the
+  captured piece even though the moving pawn lands on the en passant square.
 
 ---
 
@@ -424,6 +453,8 @@ To match the experience of a real board, certain game-ending moves end the game 
   > _"This is your 3rd illegal move. Your 5th illegal move will lose the game."_ (limit 5)
 - When the limit is reached, the message is _"You have made N illegal moves. You lose the game."_
 - When the limit is **Unlimited**, the message stops at the count and never threatens game loss.
+- If a move does not answer an existing check (or otherwise leaves the moving side's king in check), the player-facing reason is phrased naturally:
+  > _"Illegal move because it leaves the own king in check."_
 
 ---
 
@@ -487,7 +518,7 @@ The claim action itself is made through four top-level buttons:
 - **Claim 50-Move Position**
 - **Claim 50-Move Move**
 
-Each button commits immediately when pressed. There is no confirmation dialog and no cancel/back-out step. For the two **Move** variants, pressing the button opens an inline SAN input for the claimed move; the player must complete that already-committed claim by entering a legal SAN.
+Claim-on-board buttons commit immediately when pressed. For the two **Move** variants, pressing the button opens an inline SAN input for the claimed move with **Submit** and **Cancel** buttons.
 
 #### "Claim on board"
 
@@ -499,14 +530,15 @@ Each button commits immediately when pressed. There is no confirmation dialog an
 The player enters a move in **SAN notation** in an inline panel. The server processes the claim in this fixed order:
 
 1. **SAN validation first.** The supplied SAN is validated against the current position via Ashlar Chess's `LenientSanParser.parse(...)` -- the lenient pipeline, which accepts canonical SAN plus the library's defined tolerances (e.g. case slips, missing or spurious check/mate marks) as long as the input uniquely identifies one legal move. The move is **not performed** for validation -- the parser leaves the board unchanged. If the SAN cannot be resolved to a legal move:
-   - Result: `invalidMove`. Message: _"Invalid move: «Ashlar Chess reason». Please enter a legal move for the claim."_
-   - The SAN-input panel stays open and is re-prompted with the input cleared and refocused.
-   - The chosen claim channel remains committed; the player cannot switch to a different claim or cancel. The invalid SAN submission is treated as typo-correction and does **not** consume the server-side once-per-turn allowance or trigger the incorrect-claim penalty.
-2. **Feasibility short-circuit.** If the SAN is legal, ask Ashlar Chess whether **any** legal move from the current position could possibly satisfy the rule:
+   - Result: `invalidMove`. Message: _"The claim was not considered because the presented move «SAN» is not legal: «Ashlar Chess reason». You may make any legal move."_
+   - The SAN-input panel closes; the player returns to normal move play.
+   - No legal intended move was presented, so the claim is **not considered**. It does **not** consume the server-side once-per-turn allowance, does **not** trigger the incorrect-claim penalty, does **not** convert to a draw offer, and creates no `mustExecuteMove`.
+2. **Cancel before submitting SAN.** If the player clicks **Cancel**, the player has retracted the started claim. Message: _"You retracted your draw claim. The claim was not considered, but it counts as your claim on this move."_ The SAN panel closes. There is no 9.5.3 penalty, no draw offer, and no `mustExecuteMove`, but the move's one claim is consumed; a further claim on the same move goes through the repeat-claim ladder.
+3. **Feasibility short-circuit.** If the SAN is legal, ask Ashlar Chess whether **any** legal move from the current position could possibly satisfy the rule:
    - `board.canClaimThreefoldRepetitionRuleWithOwnMove()` for threefold,
    - `board.canClaimFiftyMoveRuleWithOwnMove()` for the 50-move rule.
    If neither -> reject the claim immediately, without performing the player's move. Message: _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ (or the 50-move equivalent).
-3. **Per-move check.** Otherwise, perform the move speculatively on the internal board, check the rule, and unperform -- the board state is restored regardless of outcome.
+4. **Per-move check.** Otherwise, perform the move speculatively on the internal board, check the rule, and unperform -- the board state is restored regardless of outcome.
 
 #### Outcomes (after both filters pass)
 
@@ -515,30 +547,36 @@ The player's SAN is echoed verbatim in the message so both players see exactly w
 | Outcome | Claimer message | Opponent message | Game-end description |
 |---|---|---|---|
 | **Accepted** | _"Your claim was accepted after your move «SAN»."_ | _"Your opponent requested a draw for threefold repetition after the move «SAN»."_ (or 50-move variant) | _"The game is drawn by threefold repetition."_ (in the result panel -- short, no duplication of the long claim text) |
-| **Rejected -- legal SAN but rule not satisfied** | _"Claim rejected, because there is no threefold repetition after the mentioned move «SAN». Please play."_ + `mustExecuteMove` | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none -- game continues; the player must still play the specified move) |
-| **Rejected -- short-circuit** (no move could satisfy) | _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ | _"Your opponent claimed a draw by threefold repetition after the move «SAN». The claim was rejected."_ | (none) |
+| **Rejected -- legal SAN but rule not satisfied** | _"Claim rejected, because there is no threefold repetition after the mentioned move «SAN». Please play."_ + `mustExecuteMove` | _"Your opponent claimed a draw by threefold repetition with the move «SAN», but the claim is not valid. It still counts as a draw offer. Do you accept the draw?"_ (arrives with the Accept/Reject panel via `drawOffered`) | (none -- game continues; the player must still play the specified move) |
+| **Rejected -- short-circuit** (no move could satisfy) | _"Claim rejected, because no move from the current position can lead to a threefold repetition. Please play."_ | same as above | (none) |
 
 The arbiter **never silently accepts an illegal SAN** -- the player learns from Ashlar Chess's exact reason.
 
 When a with-move claim is rejected, the player must still make the specified move (FIDE 9.5); the clock restarts on them. If they then press the clock with the board in any other state, the arbiter responds _"The specified move, «SAN», was not executed. Please revert the position and play the specified move."_ together with a **Revert** button that restores the board to the start of the turn. The move is still owed after reverting -- the player reverts, plays the specified move, and presses the clock.
 
-#### Once-per-turn limit (FIDE 9.2 / 9.3)
+#### Procedurally wrong claims: three escalation ladders
 
-A player may make **at most one claim per move**. This includes both "on board" and "with move" attempts; an invalid-SAN submission in an already-committed with-move claim does **not** consume the server-side allowance (the player is still completing the same claim). When a player tries a second claim on the same move:
+Claims made at a procedurally wrong moment do **not** disable the claim buttons — the buttons stay enabled for the whole game (teaching philosophy: faults are allowed and the arbiter escalates). Three separate ladders exist, each **counted per player across the whole game — the count accumulates over different moves and never resets** (a warning, once given, stands). The non-game-ending steps inform the opponent **passively** via the info window below the clock (`opponentInfo`; face-to-face principle — no action required); only the game-ending step arrives in the standard arbiter window. With-move claim buttons skip the SAN prompt for all three (the claim is rejected regardless of any move).
 
-- Claimer: _"You have already made a draw claim on this move. Only one claim per move is allowed."_
-- Opponent: _"Your opponent attempted a second draw claim on the same move. The claim was rejected."_
-- Counter resets at the start of the next turn.
+**1. Wrong time — not having the move (FIDE 9.2/9.3; policy [A-003](docs/fide-deviations.md#a-003--wrong-time-draw-claim-escalation))**
 
-#### Touch-before-claim rule (FIDE 9.4)
+| Press | Claimer (arbiter window) | Opponent |
+|---|---|---|
+| 1st | _"You cannot claim a draw when not having the move."_ | passive info: _"… claimed a draw while not having the move. The claim was not considered."_ |
+| 2nd | same + _"Warning: your next draw claim when not having the move loses the game."_ | passive info: claimed again, not considered + warned |
 
-A player **loses the right to claim** under 9.2 / 9.3 once they have touched any piece on the current move. In our model "touched" means any event recorded in the turn's action sequence — CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE, or RESTORE_*. Claims must be made *before* any piece interaction.
+Wording note: procedurally refused claims are **"not considered"** — only a claim that actually reached the rule machinery and was examined on the merits can be **"rejected"**. This applies to all three ladders (wrong time, after touch, repeat on the same move).
+| 3rd | _"You have been warned … you lose the game."_ | arbiter window: _"… repeatedly requested to claim a draw while not having the move, and so has lost the game."_ |
 
-When the player attempts a claim after a recorded event:
+Result type `WRONG_TIME_CLAIM_GAME_LOST`. Example across moves: Black claims while White is on move 10 (rejection), on move 12 (warning), on move 15 — Black loses.
 
-- Claimer: _"You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). Claims must be made before any piece interaction."_
-- Opponent: not notified.
-- The claim does not consume the once-per-turn allowance, since it never reached the claim machinery.
+**2. After touching a piece — same side of the move, before the clock press (FIDE 9.4; policy [A-005](docs/fide-deviations.md#a-005--claim-after-touch-escalation-fide-94))**
+
+A player **loses the right to claim** once they have touched any piece on the current move — any event in the turn's action sequence (CLICK, DRAG_MOVE, DRAG_CAPTURE, REMOVE, RESTORE_*) counts. This covers in particular the window where the player has already made their move on the board but **not yet pressed the clock**. The ladder is EXACTLY as for wrong-time claims: rejection (_"You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). Claims must be made before any piece interaction."_), then + warning, then loss (`CLAIM_AFTER_TOUCH_GAME_LOST`) — accumulated across moves, opponent informed passively on the first two. These rejections never reach the claim machinery, so they consume no once-per-move allowance and trigger no 9.5.3 penalty.
+
+**3. Repeat claim on the same move (FIDE 9.2/9.3 allow one claim per move; policy [A-004](docs/fide-deviations.md#a-004--repeat-claim-same-move-escalation))**
+
+The first considered claim on a move is the legitimate one (an invalid-SAN submission does **not** consume it because no legal intended move was presented). A second claim on the same move is a violation and — since the legitimate claim was already used — carries the warning immediately: _"You cannot make more than one draw claim on your move. You are warned: the next draw claim on a move you have already claimed on loses the game."_ (opponent: passive info). The next repeat violation — on that move or any later one — loses the game (`REPEAT_CLAIM_GAME_LOST`). A legitimate single claim on a later move is never a violation.
 
 #### Penalty for rejected claims (FIDE 9.5.3)
 
@@ -550,7 +588,7 @@ A claim that is **completed but incorrect** (rejected on-board, or rejected with
 It does **not** apply to:
 
 - **Accepted** claims (the player was correct).
-- **Invalid-SAN** attempts (the player hasn't completed a real claim — they can re-prompt).
+- **Invalid-SAN** attempts (no legal intended move was presented; the claim is not considered).
 - **Touched-piece** rejections under 9.4 (the claim never reached the rule machinery).
 - **Once-per-turn** rejections (the penalty already fired on the first rejected attempt).
 
@@ -562,7 +600,7 @@ A rejected claim that came through the proper FIDE channel (claim-on-board, or c
 
 - The session registers the offer via the standard `DrawOfferManager` correct-time path (no escalation penalty -- the player had the move).
 - The opponent receives the standard **drawOffered** broadcast with Accept/Reject buttons. Touch-piece invalidation works as for any other correct-time draw offer.
-- Cases that do **not** convert to a draw offer: `invalidMove` (SAN never validated), pre-claim errors (game not in progress, not on move), and second-claim-on-same-move rejections.
+- Cases that do **not** convert to a draw offer: `invalidMove` (no legal intended move was presented), retracted claims, pre-claim errors (game not in progress, not on move), and second-claim-on-same-move rejections.
 
 ### Draw offer (FIDE 9.1.2.1)
 
@@ -575,12 +613,12 @@ A rejected claim that came through the proper FIDE channel (claim-on-board, or c
 #### Wrong-time offers
 
 - Made at any other moment (opponent's turn, or the player's own turn before they've made a move).
-- The offer **still counts** per FIDE 9.1.2.1, but **escalating penalties** apply:
-  1. **First wrong-time offer (info):** message worded depending on whether the offerer has the move:
+- Escalation is **counted per player PER MOVE** and never carries over to the next move (policy [A-001](docs/fide-deviations.md#a-001--draw-offer-abuse-threshold)): a wrong-time offer is only *semi*-illegal — per FIDE 9.1.2.1 the offer itself is valid, only the timing is admonishable — unlike the explicitly forbidden wrong-time *claims* (A-003), whose counts persist across moves.
+  1. **First wrong-time offer of the move:** a REAL offer, forwarded to the opponent (Accept/Reject panel). The offerer's message is worded depending on whether they have the move:
      - If the offerer has the move (case A): _"...the draw offer should be made after making your move and before pressing the clock. Not following this procedure could lead to a warning. The offer still counts as a draw offer."_
      - If not on move (case B): _"...the draw offer should be made on your own turn. Not following this procedure could lead to a warning. The offer still counts as a draw offer."_
-  2. **Second wrong-time offer (warning):** _"You are offering a draw at the wrong time. The next wrong-time draw offer will lose the game."_
-  3. **Third wrong-time offer:** game lost. _"You have repeatedly offered a draw at the wrong time. You lose the game."_
+  2. **Second on the same move:** **not considered** — NOT forwarded (the opponent already had the first one). Offerer: _"You are again offering a draw at the wrong time. This offer was not considered. Warning: your next draw offer on this move loses the game."_ The opponent sees it passively (info window below the clock): offered again, not considered, warned.
+  3. **Third on the same move:** game lost (`WRONG_TIME_OFFER_GAME_LOST`), with personalised messages via `gameEnded` — offerer: _"You have been warned that you will lose the game when you offer a draw again on this move. As you have offered again, you lose the game."_; opponent: _"Your opponent has, despite the warnings, repeatedly offered a draw at the wrong time, and so has lost the game."_
 
 #### Repeated offers
 
@@ -705,15 +743,32 @@ Tracked in **Spec-driven implementation follow-ups** below.
 
 ### Inbound (client -> server)
 
-`createGame`, `joinGame`, `boardEvent` (incl. cosmetic `DRAG_START` / `DRAG_HOVER`), `clockPress`, `offerDraw`, `acceptDraw`, `rejectDraw`, `claimDraw`, `resign`, `requestPgn`, `restorePosition`, `readyToContinue`.
+`createGame`, `joinGame`, `boardEvent` (incl. cosmetic `DRAG_START` / `DRAG_HOVER`), `clockPress`, `opponentClockPressed` (the player pressed the OPPONENT's lever — see *Wrong clock press*), `offerDraw`, `acceptDraw`, `rejectDraw`, `claimDraw`, `cancelDrawClaim`, `resign`, `claimVictory` (see *Abandonment*), `rematchOffer`, `requestPgn`, `restorePosition`, `readyToContinue`.
 
 ### Outbound (server -> client)
 
-`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event), `gameEnded`, `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected`.
+`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown).
+
+#### Abandonment (player leaves the game)
+
+When a socket drops during a RUNNING game and the player does not resume, two timers run (both from the moment of disconnect):
+
+1. **`OTB_DISCONNECT_GRACE_MS`** (default 12 s): the opponent is informed — `opponentDisconnected` with `abandonInMs`. The client shows a live **countdown** (*"Your opponent has disconnected. The game will be ended in «N»s."*) and a **Claim victory** button.
+2. **`OTB_ABANDON_MS`** (default 60 s): the game is **adjudicated as abandoned**, as chess servers do — the leaver loses (`gameEnded`, type `ABANDONMENT`, *"«Side» left the game. «Side» wins the game."*), **unless** the remaining player could not checkmate by any series of legal moves (same helpmate adjudication as resignation/flag fall, FIDE 5.1.2-style), in which case it is a **draw** with the insufficient-material / no-potential-mate reason. A resume within the window defuses both timers (the opponent then receives `opponentReconnected`, clearing the countdown); a game already decided meanwhile (e.g. the leaver's flag fell first) is left as it ended.
+
+**Claim victory** (`claimVictory`): the remaining player may end the game immediately instead of waiting out the countdown — the SAME adjudication is applied at once (so it may also resolve as a draw). The server accepts the claim only when the opponent's seat has been disconnected for at least the grace period and has not resumed; otherwise the claim is rejected with an error.
+
+**No reconnect after the adjudication**: a `resume` into an ENDED game is refused (`resumeFailed`, *"This game has already ended."*). This matters exactly for the leaver, whose closed tab never received `gameEnded` and therefore still holds the seat token — the refusal also makes their client clear the stale saved session (and with it the lobby's "Return to game" banner). Reconnects into RUNNING games are unaffected.
+
+#### Rematch (Lichess-style)
+
+After a game has ENDED normally (any result — not an aborted challenge), both result panels show a **Rematch** button. `rematchOffer` from one player marks the offer on the room and acks the offerer (`rematchOfferSent` — button frozen as "Rematch offered"); the opponent receives `rematchOffered` and their button starts **blinking**. When the opponent presses their button too (the same `rematchOffer` message — the server resolves offer-then-accept, race-safe per room), the rematch starts: `rematchStarted` goes to each player with their NEW side, a fresh per-seat reconnect token, board, `havingMove`, and `timeControlLabel`. The rematch reuses the room and game id: **same time control and settings, same starting position (original FEN for custom games), colours swapped**. It counts as a new game in the usage log (create + join). A `rematchOffer` before the game has ended is rejected with an error. **No rematch after an abandonment**: the opponent is gone, so the client hides the Rematch button for `ABANDONMENT` endings and the server refuses such offers ("A rematch is not available - your opponent left the game.").
 
 For `move_accepted`, the `move` block carries `from`, `to`, `piece`. **Castling moves** additionally carry `castling: KING_SIDE | QUEEN_SIDE`; their `from`/`to` are resolved to the king's actual squares (the `MoveSpecification` from/to of a castling move are `Square.NONE`, which would otherwise crash on `getName()`).
 
 For `gameJoined` and `gameStarted`, a `havingMove` field carries the side to move at game start (necessary for custom-FEN games where Black may be to move first).
+
+For `gameCreated`, `gameJoined`, and `resync`, a `timeControlLabel` field carries the server-rendered display label of the game's time control with its FIDE discipline, e.g. `5+3 • Blitz` (FIDE Appendices A/B: initial time + 60× increment — blitz ≤ 10 min, rapid < 60 min, classical otherwise). The client shows it verbatim below the clock.
 
 ### Severity / `style` field
 
@@ -783,7 +838,7 @@ The canonical test count and per-class breakdown are in `src/test/java/...`; tha
 - `TestPositionComparator` / `...EdgeCases` -- basic move types, multi-piece moves, missing-piece and castling variants.
 - `TestTouchMoveEvaluator` -- touch-move scanning, castling-attempt detection, obligation satisfaction, failed-castling-without-legal-king-moves, king-then-rook combined touch (FIDE 4.4.a) including order-sensitivity, side-selection from touched rook, and illegal-side fall-back.
 - `TestArbiterEngine` / `...EdgeCases` -- two-layer evaluation, all response types, released-piece (castling, back-to-origin, first-release-wins, castling-specific message, rook-on-wrong-square), illegal-move count messaging, illegal-castling reason and king obligation, fumbling, counter tracking.
-- `TestGameSession` -- end-to-end game flow, checkmate, draw claims (both variants and all outcomes), resignation, custom-FEN starting position, capture-by-removal, threefold/50-move short-circuits, SAN-validation-before-short-circuit ordering, accepted-claim per-player messages + short game-end description, second-claim-on-same-move rejection, rejected-claim registers draw offer, invalid-SAN doesn't consume the server-side claim allowance.
+- `TestGameSession` -- end-to-end game flow, checkmate, draw claims (both variants and all outcomes), resignation, custom-FEN starting position, capture-by-removal, threefold/50-move short-circuits, SAN-validation-before-short-circuit ordering, accepted-claim per-player messages + short game-end description, second-claim-on-same-move rejection, rejected-claim registers draw offer, invalid-SAN claims are not considered and do not consume the server-side claim allowance.
 - `TestGameSessionFlow` -- ready-to-continue, illegal-then-valid, touch-move persistence, released-piece restoration, touch-move-after-restoration.
 - `TestMessageConverter` -- round-trip serialization, edge cases.
 - `TestGameWebSocketServer` -- typed `ArbiterResponse` rendering, opponent-message-not-derived-from-player-prose regression test.
@@ -804,7 +859,7 @@ Each row names a verification path: an automated test (where applicable) or a ma
 | Castling broadcast crash with `NonePointerException` | `MoveSpecification.from/toSquare` are `Square.NONE` for castling; `Square.NONE.getName()` throws | Manual -- safeguarded by `CastlingUtility.isCastlingMove` branch in `sendArbiterResponse` |
 | Flag-fall LCD shows `0:01` | Final `clockUpdate` was sent after `gameEnded` | Manual |
 | Auto-end incremented illegal-move counter | `evaluateForAutoEnd` was reusing `evaluateClockPress` | Automated -- `TestGameSessionFlow` (released-piece interaction tests) |
-| `Invalid move:` in claim hid the SAN panel | Frontend hid the panel on submit; rejected-with-invalid-move never re-prompted | Automated -- `TestGameSession.testClaimWithInvalidSanIsRejectedAsInvalidMove` (+ 50-move counterpart) |
+| Invalid SAN in a claim leaked parser wording or trapped the player in the SAN panel | Draw claim manager strips parser internals; client closes the SAN panel because no legal intended move was presented and the claim is not considered | Automated -- `TestDrawClaimManager.testInvalidClaimMoveMessageHidesParserInternals`, `TestGameSession.testInvalidSanClaimIsNotConsideredAndDoesNotLockClaimsForThisTurn`, focused claims e2e |
 | Misleading "put the king back" on castling-released-piece | Generic released-piece message used regardless of castling commitment | Automated -- `TestArbiterEngine.testReleasedPieceViolationCastlingRookMovedToWrongSquare` |
 | Asymmetric clock-press latency on opening | `isDeadPositionFull()` (deep CUA) ran on every legal-completing event and clock press | Automated -- replaced with `isInsufficientMaterial()`; visible speed-up in `TestGameSession` |
 | Opponent claim message derived from player text | `formatOpponentIllegalMove` did `String.replace`-based pronoun rewriting on already-rendered prose | Automated -- `TestGameWebSocketServer.testOpponentIllegalMoveMessageUsesOpponentReasonNotPlayerMessage` |

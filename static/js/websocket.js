@@ -1,16 +1,19 @@
 // Derive the WebSocket URL from the page origin so a single build works everywhere:
 // - Behind the Caddy/Cloudflare single origin the page is HTTPS and the WebSocket is a
 //   same-origin `wss://<host>/ws` that Caddy proxies to the Java WebSocket server.
-// - In local dev served directly by the Java HTTP server on :8080 there is no proxy, so
-//   fall back to the WebSocket server on :8081 of the same host.
+// - In local dev served directly by the Java HTTP server there is no proxy, so fall back
+//   to the WebSocket server port of the same host. Two known direct pairs: 8080/8081
+//   (normal dev, e.g. start.bat) and 18080/18081 (dedicated Playwright e2e instance, so
+//   test runs never collide with a dev server on 8080).
 // `wss` is chosen whenever the page itself is HTTPS, so the WebSocket is never downgraded
 // to plaintext on a secure page (browsers block that as mixed content anyway).
 function resolveWsUrl() {
   const loc = window.location;
   const scheme = loc.protocol === 'https:' ? 'wss' : 'ws';
-  if (loc.port === '8080') {
+  const directWsPorts = { '8080': '8081', '18080': '18081' };
+  if (directWsPorts[loc.port]) {
     // Direct dev mode: page came straight from the Java HTTP server, no proxy in front.
-    return `${scheme}://${loc.hostname}:8081`;
+    return `${scheme}://${loc.hostname}:${directWsPorts[loc.port]}`;
   }
   // Single-origin mode (Caddy/Cloudflare): same host, dedicated `/ws` path.
   return `${scheme}://${loc.host}/ws`;
@@ -56,8 +59,10 @@ class GameWebSocket {
 
     this.ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      // Capture the reconnect token + game id the first time we see them.
-      if ((data.type === 'gameCreated' || data.type === 'gameJoined') && data.token) {
+      // Capture the reconnect token + game id whenever the server issues one (a rematch swaps
+      // the seats and mints fresh tokens, so the old one would no longer resume).
+      if ((data.type === 'gameCreated' || data.type === 'gameJoined' || data.type === 'rematchStarted')
+          && data.token) {
         this.sessionToken = data.token;
         this.sessionGameId = data.gameId;
       }
@@ -169,6 +174,10 @@ class GameWebSocket {
     const msg = { type: 'claimDraw', claimType: claimType };
     if (san) msg.san = san;
     this.send(msg);
+  }
+
+  sendCancelDrawClaim() {
+    this.send({ type: 'cancelDrawClaim' });
   }
 
   sendResign() {

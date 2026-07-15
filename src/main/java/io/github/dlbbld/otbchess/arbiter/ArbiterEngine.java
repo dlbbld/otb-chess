@@ -79,17 +79,27 @@ public class ArbiterEngine {
    * FIDE 4.7?" without comparing against any particular {@code afterPosition}.
    */
   public boolean hasReleasedPieceCommitment(Board board, ActionSequence sequence) {
+    return findReleasedPieceCommitmentPosition(board, sequence).isPresent();
+  }
+
+  /**
+   * Returns the physical position after the first release that committed the player to a legal move from the turn
+   * start. Mid-play interventions use this as their restoration target: if the player already completed a legal move
+   * and then disturbed the board, Revert must undo only the later disturbance.
+   */
+  public Optional<BitboardPosition> findReleasedPieceCommitmentPosition(Board board, ActionSequence sequence) {
     BitboardPosition currentPosition = board.getBitboardPosition();
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
+      final BitboardPosition beforeEvent = currentPosition;
       currentPosition = applyEvent(currentPosition, event);
       if (isReleaseOnBoard(event)) {
-        final ReleaseCommitment commitment = findCommitmentForRelease(board, event);
+        final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
         if (!commitment.allowedFinalPositions().isEmpty()) {
-          return true;
+          return Optional.of(currentPosition);
         }
       }
     }
-    return false;
+    return Optional.empty();
   }
 
   /**
@@ -103,10 +113,29 @@ public class ArbiterEngine {
   public ArbiterResponse evaluateClockPress(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
     final Side sideToMove = board.getSideToMove();
 
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+    final Optional<ArbiterResponse> unfinishedCastlingTouch = evaluateUnfinishedCastlingTouch(board, afterPosition,
+        sequence, obligation);
+    if (unfinishedCastlingTouch.isPresent()) {
+      return unfinishedCastlingTouch.get();
+    }
+
+    final Optional<ArbiterResponse> opponentCaptureTouchViolation = evaluateOpponentCaptureTouchBeforeRelease(board,
+        afterPosition, obligation);
+    if (opponentCaptureTouchViolation.isPresent()) {
+      return opponentCaptureTouchViolation.get();
+    }
+
     final Optional<ReleasedPieceLock> releasedPieceViolation = findReleasedPieceViolation(board, afterPosition,
         sequence);
     if (releasedPieceViolation.isPresent()) {
       final ReleasedPieceLock lock = releasedPieceViolation.get();
+      final Optional<ArbiterResponse.RookFirstCastlingContext> rookFirstCastling = findRookFirstCastlingContext(board,
+          afterPosition, lock);
+      if (rookFirstCastling.isPresent()) {
+        return ArbiterResponse.releasedPieceViolationRookFirstCastling(rookFirstCastling.get(),
+            lock.releasePosition());
+      }
       // Castling-only commitment ⇒ the player must complete the castling, not restore
       // the king. The message points them at the rook's destination instead of telling
       // them (misleadingly) to "put the king back" — the king is already on the right
@@ -121,13 +150,25 @@ public class ArbiterEngine {
         return ArbiterResponse.releasedPieceViolationCastling(new ArbiterResponse.ReleasedPieceCastlingContext(
             lock.piece(), lock.square(), castlingDirection, rookFrom, rookTo), lock.releasePosition());
       }
-      return ArbiterResponse.releasedPieceViolation(new ReleasedPieceContext(lock.piece(), lock.square()),
-          lock.releasePosition());
+      return ArbiterResponse.releasedPieceViolation(
+          new ReleasedPieceContext(lock.piece(), lock.square(), lock.fromSquare(),
+              lock.releasedPieceDisplacedAfterRelease()),
+          isReleaseOriginAmbiguous(board, lock), lock.releasePosition());
     }
 
-    // Check if the board position even changed
+    // FIDE 7.5.3: pressing the clock without making a move (board unchanged) is considered and
+    // penalised as an illegal move — it counts toward the illegal-move limit and carries the
+    // standard penalty. There is nothing to restore, so the message asks for a move instead.
     if (board.getBitboardPosition().equals(afterPosition)) {
-      return ArbiterResponse.incompleteMove("Please complete your move.");
+      illegalMoveTracker.recordIllegalMove(sideToMove);
+      final String reason = "the clock was pressed without a move being made (FIDE 7.5.3)";
+      final IllegalMoveDetail detail = new IllegalMoveDetail(Optional.of(reason), Optional.of(reason), sideToMove,
+          illegalMoveTracker.getIllegalMoveCount(sideToMove), illegalMoveTracker.getMaxIllegalMoves(),
+          illegalMoveTracker.isUnlimited(), true);
+      if (illegalMoveTracker.isGameLost(sideToMove)) {
+        return ArbiterResponse.illegalMoveGameLost(detail);
+      }
+      return ArbiterResponse.illegalMove(detail);
     }
 
     // Layer 1: Position Comparison — find matching legal move
@@ -142,8 +183,6 @@ public class ArbiterEngine {
     final LegalMove matchedMove = matchingMoves.iterator().next();
 
     // Layer 2: Touch-Move Check
-    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
-
     if (obligation.isPresent()) {
       if (!TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
         return handleTouchMoveViolation(obligation.get());
@@ -154,8 +193,51 @@ public class ArbiterEngine {
     return ArbiterResponse.moveAccepted(matchedMove);
   }
 
+  private Optional<ArbiterResponse> evaluateOpponentCaptureTouchBeforeRelease(Board board,
+      BitboardPosition afterPosition, Optional<TouchMoveObligation> obligation) {
+    if (obligation.isEmpty()) {
+      return Optional.empty();
+    }
+    if (obligation.get().type() != TouchMoveType.OPPONENT_PIECE
+        && obligation.get().type() != TouchMoveType.SPECIFIC_CAPTURE) {
+      return Optional.empty();
+    }
+    final BitboardPosition comparisonPosition = restoreTouchedOpponentPieceIfRemoved(afterPosition, obligation.get());
+    final Set<LegalMove> matchingMoves = PositionComparator.findMatchingMoves(board, comparisonPosition);
+    if (matchingMoves.isEmpty()) {
+      return Optional.empty();
+    }
+    for (final LegalMove matchedMove : matchingMoves) {
+      if (TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
+        return Optional.empty();
+      }
+    }
+    return Optional.of(handleTouchMoveViolation(obligation.get()));
+  }
+
+  private static BitboardPosition restoreTouchedOpponentPieceIfRemoved(BitboardPosition afterPosition,
+      TouchMoveObligation obligation) {
+    final Square square = obligation.type() == TouchMoveType.SPECIFIC_CAPTURE ? obligation.toSquare()
+        : obligation.square();
+    final Piece piece = obligation.type() == TouchMoveType.SPECIFIC_CAPTURE ? obligation.capturedPiece()
+        : obligation.piece();
+    if (square == Square.NONE || piece == Piece.NONE || afterPosition.get(square) != Piece.NONE) {
+      return afterPosition;
+    }
+    return BitboardPositions.from(afterPosition).createChangedPosition(square, piece).build();
+  }
+
   private record ReleasedPieceLock(BitboardPosition releasePosition, Set<BitboardPosition> allowedFinalPositions,
-      Set<LegalMove> committedMoves, Piece piece, Square square) {
+      Set<LegalMove> committedMoves, Piece piece, Square square, Square fromSquare,
+      boolean releasedPieceDisplacedAfterRelease) {
+
+    ReleasedPieceLock withReleasedPieceDisplacedAfterRelease() {
+      if (releasedPieceDisplacedAfterRelease) {
+        return this;
+      }
+      return new ReleasedPieceLock(releasePosition, allowedFinalPositions, committedMoves, piece, square, fromSquare,
+          true);
+    }
 
     /**
      * True iff every legal move consistent with the release is a castling move (i.e. the release commits the player
@@ -178,6 +260,68 @@ public class ArbiterEngine {
     }
   }
 
+  private static Optional<ArbiterResponse> evaluateUnfinishedCastlingTouch(Board board, BitboardPosition afterPosition,
+      ActionSequence sequence, Optional<TouchMoveObligation> obligation) {
+    if (board.getBitboardPosition().equals(afterPosition)) {
+      return Optional.empty();
+    }
+    if (obligation.isEmpty() || obligation.get().type() != TouchMoveType.CASTLING) {
+      return Optional.empty();
+    }
+    final CastlingMove castlingMove = obligation.get().castlingMove();
+    if (!hasExplicitKingThenRookTouch(sequence, board.getSideToMove(), castlingMove)) {
+      return Optional.empty();
+    }
+    final Optional<LegalMove> legalCastlingMove = board.getLegalMoves().stream()
+        .filter(move -> move.moveSpecification().isCastling())
+        .filter(move -> move.moveSpecification().castlingMove() == castlingMove)
+        .findFirst();
+    if (legalCastlingMove.isEmpty()) {
+      return Optional.empty();
+    }
+    final BitboardPosition castledPosition = board.getBitboardPosition()
+        .afterMove(legalCastlingMove.get().moveSpecification(), board.getSideToMove());
+    if (afterPosition.equals(castledPosition)) {
+      return Optional.empty();
+    }
+    return Optional.of(ArbiterResponse.touchMoveViolation(obligation.get(),
+        castlingIntermediatePosition(board, castlingMove).filter(afterPosition::equals).orElse(null)));
+  }
+
+  private static boolean hasExplicitKingThenRookTouch(ActionSequence sequence, Side sideToMove,
+      CastlingMove castlingMove) {
+    final Square kingFrom = castlingMove.kingFromSquare(sideToMove);
+    final Square rookFrom = castlingMove.rookFromSquare(sideToMove);
+    final Piece king = Piece.of(sideToMove, PieceType.KING);
+    final Piece rook = Piece.of(sideToMove, PieceType.ROOK);
+    boolean kingClicked = false;
+    for (final BoardEvent event : sequence.getEvents()) {
+      if (event.type() != BoardEventType.CLICK) {
+        continue;
+      }
+      if (!kingClicked) {
+        kingClicked = event.piece() == king && event.square() == kingFrom;
+      } else if (event.piece() == rook && event.square() == rookFrom) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static Optional<BitboardPosition> castlingIntermediatePosition(Board board, CastlingMove castlingMove) {
+    final Side sideToMove = board.getSideToMove();
+    final Square kingFrom = castlingMove.kingFromSquare(sideToMove);
+    final Square kingTo = castlingMove.kingToSquare(sideToMove);
+    final Piece king = Piece.of(sideToMove, PieceType.KING);
+    if (board.getBitboardPosition().get(kingFrom) != king || board.getBitboardPosition().get(kingTo) != Piece.NONE) {
+      return Optional.empty();
+    }
+    return Optional.of(BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(kingFrom, Piece.NONE)
+        .createChangedPosition(kingTo, king)
+        .build());
+  }
+
   private static Optional<ReleasedPieceLock> findReleasedPieceViolation(Board board, BitboardPosition afterPosition,
       ActionSequence sequence) {
     final Optional<AttemptedMove> attemptedCastling = inferPhysicalCastlingAttempt(board, afterPosition,
@@ -188,25 +332,92 @@ public class ArbiterEngine {
     }
 
     BitboardPosition currentPosition = board.getBitboardPosition();
-    Optional<ReleasedPieceLock> firstReleasedLegalPosition = Optional.empty();
+    ReleasedPieceLock firstReleasedLegalPosition = null;
 
     for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
+      if (firstReleasedLegalPosition != null && displacesReleasedPiece(event, firstReleasedLegalPosition)) {
+        firstReleasedLegalPosition = firstReleasedLegalPosition.withReleasedPieceDisplacedAfterRelease();
+      }
+
+      final BitboardPosition beforeEvent = currentPosition;
       currentPosition = applyEvent(currentPosition, event);
 
-      if (firstReleasedLegalPosition.isEmpty() && isReleaseOnBoard(event)) {
-        final ReleaseCommitment commitment = findCommitmentForRelease(board, event);
+      if (firstReleasedLegalPosition == null && isReleaseOnBoard(event)) {
+        final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
         if (!commitment.allowedFinalPositions().isEmpty()) {
-          firstReleasedLegalPosition = Optional.of(new ReleasedPieceLock(currentPosition,
-              commitment.allowedFinalPositions(), commitment.committedMoves(), event.piece(), event.targetSquare()));
+          firstReleasedLegalPosition = new ReleasedPieceLock(currentPosition, commitment.allowedFinalPositions(),
+              commitment.committedMoves(), event.piece(), event.targetSquare(), event.square(), false);
         }
       }
     }
 
-    if (firstReleasedLegalPosition.isPresent()
-        && !firstReleasedLegalPosition.get().allowedFinalPositions().contains(afterPosition)) {
-      return firstReleasedLegalPosition;
+    if (firstReleasedLegalPosition != null
+        && !firstReleasedLegalPosition.allowedFinalPositions().contains(afterPosition)) {
+      return Optional.of(firstReleasedLegalPosition);
     }
     return Optional.empty();
+  }
+
+  private static boolean displacesReleasedPiece(BoardEvent event, ReleasedPieceLock lock) {
+    if (lock.square() == Square.NONE || lock.piece() == Piece.NONE) {
+      return false;
+    }
+    final boolean pickedUpFromReleaseSquare = switch (event.type()) {
+      case DRAG_MOVE, DRAG_CAPTURE, REMOVE -> event.piece() == lock.piece() && event.square() == lock.square();
+      case CLICK, RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> false;
+    };
+    if (pickedUpFromReleaseSquare) {
+      return true;
+    }
+    return event.targetSquare() == lock.square() && event.displacedPiece() == lock.piece();
+  }
+
+  private static Optional<ArbiterResponse.RookFirstCastlingContext> findRookFirstCastlingContext(Board board,
+      BitboardPosition afterPosition, ReleasedPieceLock lock) {
+    final Side sideToMove = board.getSideToMove();
+    if (lock.piece() != Piece.of(sideToMove, PieceType.ROOK) || lock.fromSquare() == Square.NONE
+        || afterPosition.get(lock.square()) != lock.piece()) {
+      return Optional.empty();
+    }
+
+    for (final CastlingMove castlingMove : List.of(CastlingMove.KING_SIDE, CastlingMove.QUEEN_SIDE)) {
+      if (!isCastlingLegalOnSide(board, castlingMove)) {
+        continue;
+      }
+      final Square rookFrom = castlingMove.rookFromSquare(sideToMove);
+      final Square rookTo = castlingMove.rookToSquare(sideToMove);
+      if (lock.fromSquare() != rookFrom || lock.square() != rookTo) {
+        continue;
+      }
+      final Square kingFrom = castlingMove.kingFromSquare(sideToMove);
+      final Square kingTo = castlingMove.kingToSquare(sideToMove);
+      final Piece king = Piece.of(sideToMove, PieceType.KING);
+      if (lock.releasePosition().get(kingFrom) == king && lock.releasePosition().get(kingTo) == Piece.NONE
+          && afterPosition.get(kingFrom) == Piece.NONE && afterPosition.get(kingTo) == king
+          && differsOnlyOn(lock.releasePosition(), afterPosition, kingFrom, kingTo)) {
+        return Optional.of(new ArbiterResponse.RookFirstCastlingContext(lock.piece(), rookFrom, rookTo, kingFrom));
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static boolean isCastlingLegalOnSide(Board board, CastlingMove castlingMove) {
+    return board.getLegalMoves().stream()
+        .anyMatch(move -> move.moveSpecification().isCastling()
+            && move.moveSpecification().castlingMove() == castlingMove);
+  }
+
+  private static boolean differsOnlyOn(BitboardPosition first, BitboardPosition second, Square firstSquare,
+      Square secondSquare) {
+    for (final Square square : Square.values()) {
+      if (square == Square.NONE || square == firstSquare || square == secondSquare) {
+        continue;
+      }
+      if (first.get(square) != second.get(square)) {
+        return false;
+      }
+    }
+    return first.get(firstSquare) != second.get(firstSquare) && first.get(secondSquare) != second.get(secondSquare);
   }
 
   /**
@@ -217,11 +428,13 @@ public class ArbiterEngine {
   private record ReleaseCommitment(Set<BitboardPosition> allowedFinalPositions, Set<LegalMove> committedMoves) {
   }
 
-  private static ReleaseCommitment findCommitmentForRelease(Board board, BoardEvent event) {
+  private static ReleaseCommitment findCommitmentForRelease(Board board, BoardEvent event,
+      BitboardPosition positionBeforeEvent) {
     final Set<BitboardPosition> positions = new HashSet<>();
     final Set<LegalMove> moves = new HashSet<>();
     for (final LegalMove legalMove : board.getLegalMoves()) {
-      if (isReleasePartOfLegalMove(board.getSideToMove(), event, legalMove)) {
+      if (isReleasePartOfLegalMove(board.getSideToMove(), event, legalMove, positionBeforeEvent,
+          board.getBitboardPosition())) {
         moves.add(legalMove);
         positions.add(board.getBitboardPosition().afterMove(legalMove.moveSpecification(), board.getSideToMove()));
       }
@@ -229,7 +442,27 @@ public class ArbiterEngine {
     return new ReleaseCommitment(positions, moves);
   }
 
-  private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove) {
+  /**
+   * True when "the {piece} on {square}" alone would not identify the released piece: more than one piece of the same
+   * kind could have legally reached the release square (e.g. knights on c3 and g5 both reaching e4), so the violation
+   * message must also name the origin square — SAN-style disambiguation, applied only when needed. Origins are counted
+   * over the legal moves of the position before the turn; castling and promotions are irrelevant here (one king; a
+   * promotion release has no board origin — its {@code fromSquare} is {@link Square#NONE}).
+   */
+  private static boolean isReleaseOriginAmbiguous(Board board, ReleasedPieceLock lock) {
+    if (lock.fromSquare() == Square.NONE) {
+      return false;
+    }
+    return board.getLegalMoves().stream()
+        .filter(move -> !move.moveSpecification().isCastling())
+        .filter(move -> move.movingPiece() == lock.piece())
+        .filter(move -> move.moveSpecification().toSquare() == lock.square())
+        .map(move -> move.moveSpecification().fromSquare())
+        .distinct().count() > 1;
+  }
+
+  private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove,
+      BitboardPosition positionBeforeEvent, BitboardPosition turnStartPosition) {
     final MoveSpecification spec = legalMove.moveSpecification();
     if (spec.isCastling()) {
       return event.piece() == Piece.of(havingMove, PieceType.KING)
@@ -241,13 +474,33 @@ public class ArbiterEngine {
       // placed on the promotion square. A pawn landing on the last rank is an incomplete move, never
       // a legal release — so it must not start a released-piece commitment. The commitment (and the
       // restore message) then correctly names the promoted piece, not the pawn.
+      // The promoted piece must arrive from OFF the board: side-area placements are RESTORE_*
+      // events, which carry no source square. Dragging an already-on-board piece of the same type
+      // onto the promotion square is NOT a promotion completion — it is position tampering,
+      // adjudicated as an illegal move at the clock press.
       final Piece promotedPiece = Piece.of(havingMove, spec.promotionPieceType().getPieceType());
-      return event.piece() == promotedPiece && event.targetSquare() == spec.toSquare();
+      return event.piece() == promotedPiece && event.targetSquare() == spec.toSquare()
+          && event.square() == Square.NONE;
     }
     if (event.piece() != legalMove.movingPiece()) {
       return false;
     }
-    return event.square() == spec.fromSquare() && event.targetSquare() == spec.toSquare();
+    if (event.square() != spec.fromSquare() || event.targetSquare() != spec.toSquare()) {
+      return false;
+    }
+    if (legalMove.isEnPassant()) {
+      return false;
+    }
+    // The release physically IS this move only if the destination square was not tampered with
+    // earlier in the turn. Example: after b2xa1 (own pawn parked on a1 mid-promotion), dragging
+    // the a8 rook onto a1 used to match the legal Ra8xa1 of the turn-start position — but the
+    // physical act captured the player's OWN pawn, which is no move at all (and produced an
+    // unsatisfiable commitment: restore target = the tampered position itself). Comparing the
+    // destination's content at release time with the turn start rejects that, while normal
+    // moves and captures stay committed. En passant is deliberately excluded above: physically,
+    // landing on the en-passant square is only half of the capture, and the clock-press position
+    // must decide whether the captured pawn was also removed.
+    return positionBeforeEvent.get(spec.toSquare()) == turnStartPosition.get(spec.toSquare());
   }
 
   private static BitboardPosition applyEvent(BitboardPosition position, BoardEvent event) {
@@ -290,7 +543,7 @@ public class ArbiterEngine {
     final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
     final IllegalMoveDetail detail = new IllegalMoveDetail(reason.map(IllegalMoveReason::playerReason),
         reason.map(IllegalMoveReason::opponentReason), sideToMove, count, illegalMoveTracker.getMaxIllegalMoves(),
-        illegalMoveTracker.isUnlimited());
+        illegalMoveTracker.isUnlimited(), false);
 
     if (illegalMoveTracker.isGameLost(sideToMove)) {
       return ArbiterResponse.illegalMoveGameLost(detail);
@@ -302,10 +555,14 @@ public class ArbiterEngine {
   /**
    * Physical move inferred from the player's board manipulations.
    */
-  private record AttemptedMove(MoveSpecification moveSpecification, boolean castlingAttempt, Square kingReleaseSquare) {
+  private record AttemptedMove(MoveSpecification moveSpecification, boolean castlingAttempt, Square kingReleaseSquare,
+      boolean fullPhysicalCastlingAttempt) {
   }
 
   private record IllegalMoveReason(String playerReason, String opponentReason) {
+  }
+
+  private record NormalizedReason(String playerReason, String opponentReason) {
   }
 
   private static Optional<IllegalMoveReason> explainSimpleIllegalMove(Board board, BitboardPosition afterPosition,
@@ -317,6 +574,8 @@ public class ArbiterEngine {
 
     final MoveSpecification moveSpecification = attemptedMove.get().moveSpecification();
     final BitboardPosition beforePosition = board.getBitboardPosition();
+    final Optional<LegalMove> legalAttempt = board.getLegalMoves().stream()
+        .filter(move -> move.moveSpecification().equals(moveSpecification)).findFirst();
     try {
       // move() runs the same legality validation as the library's internal check and throws
       // InvalidMoveException for an illegal move; unmove() restores the board afterwards.
@@ -329,10 +588,35 @@ public class ArbiterEngine {
     }
     final BitboardPosition expectedPosition = beforePosition.afterMove(moveSpecification, board.getSideToMove());
     if (!expectedPosition.equals(afterPosition)) {
+      final Optional<IllegalMoveReason> enPassantReason = explainIncompleteEnPassant(legalAttempt, expectedPosition,
+          afterPosition);
+      if (enPassantReason.isPresent()) {
+        return enPassantReason;
+      }
       final String reason = "the move itself is legal, but the final board position is not correct";
       return Optional.of(new IllegalMoveReason(reason, reason));
     }
     return Optional.empty();
+  }
+
+  private static Optional<IllegalMoveReason> explainIncompleteEnPassant(Optional<LegalMove> legalAttempt,
+      BitboardPosition expectedPosition, BitboardPosition afterPosition) {
+    if (legalAttempt.isEmpty() || !legalAttempt.get().isEnPassant()) {
+      return Optional.empty();
+    }
+    final Square capturedSquare = legalAttempt.get().enPassantCapturedPawnSquare();
+    final Piece capturedPiece = legalAttempt.get().capturedPiece();
+    if (afterPosition.get(capturedSquare) != capturedPiece) {
+      return Optional.empty();
+    }
+    final BitboardPosition withCapturedPawnStillPresent = BitboardPositions.from(expectedPosition)
+        .createChangedPosition(capturedSquare, capturedPiece).build();
+    if (!withCapturedPawnStillPresent.equals(afterPosition)) {
+      return Optional.empty();
+    }
+    final String reason = "the en passant capture is incomplete: the captured pawn on "
+        + capturedSquare.getName() + " is still on the board";
+    return Optional.of(new IllegalMoveReason(reason, reason));
   }
 
   private static Optional<AttemptedMove> inferAttemptedMove(Board board, BitboardPosition afterPosition,
@@ -348,7 +632,7 @@ public class ArbiterEngine {
   private static Optional<AttemptedMove> inferPhysicalCastlingAttempt(Board board, BitboardPosition afterPosition,
       List<BoardEvent> events) {
     return CastlingAttemptDetector.findPhysicalAttempt(board, afterPosition, events)
-        .map(attempt -> new AttemptedMove(attempt.moveSpecification(), true, attempt.kingReleaseSquare()));
+        .map(attempt -> new AttemptedMove(attempt.moveSpecification(), true, attempt.kingReleaseSquare(), true));
   }
 
   private static boolean shouldBypassReleasedPieceForInvalidCastlingAttempt(Board board, AttemptedMove attempt) {
@@ -416,7 +700,7 @@ public class ArbiterEngine {
 
     final MoveSpecification moveSpecification = createMoveSpecification(moveEvent);
     return Optional.of(new AttemptedMove(moveSpecification, moveSpecification.isCastling(),
-        moveSpecification.isCastling() ? moveEvent.targetSquare() : Square.NONE));
+        moveSpecification.isCastling() ? moveEvent.targetSquare() : Square.NONE, false));
   }
 
   private static MoveSpecification createMoveSpecification(BoardEvent event) {
@@ -444,15 +728,30 @@ public class ArbiterEngine {
 
   private static IllegalMoveReason formatIllegalMoveExplanation(String reason, Board board, ActionSequence sequence,
       AttemptedMove attemptedMove) {
-    final String formattedReason;
+    final NormalizedReason normalizedReason = normalizeIllegalMoveReason(reason, attemptedMove.castlingAttempt());
+    final String formattedPlayerReason;
+    final String formattedOpponentReason;
     if (attemptedMove.castlingAttempt() && !reason.startsWith("castling is not possible")) {
-      formattedReason = "castling is not possible: " + reason;
+      formattedPlayerReason = "castling is not possible: " + normalizedReason.playerReason();
+      formattedOpponentReason = "castling is not possible: " + normalizedReason.opponentReason();
     } else {
-      formattedReason = reason;
+      formattedPlayerReason = normalizedReason.playerReason();
+      formattedOpponentReason = normalizedReason.opponentReason();
     }
     return new IllegalMoveReason(
-        formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, false),
-        formattedReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, true));
+        formattedPlayerReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, false),
+        formattedOpponentReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, true));
+  }
+
+  private static NormalizedReason normalizeIllegalMoveReason(String reason, boolean castlingAttempt) {
+    if (!reason.equals("it would leave the own king in check")) {
+      return new NormalizedReason(reason, reason);
+    }
+    final String naturalReason = "it leaves the own king in check";
+    if (castlingAttempt) {
+      return new NormalizedReason(naturalReason, naturalReason);
+    }
+    return new NormalizedReason("because " + naturalReason, naturalReason);
   }
 
   private static String formatCastlingTouchMoveConsequence(Board board, ActionSequence sequence,
@@ -461,28 +760,42 @@ public class ArbiterEngine {
       return "";
     }
 
-    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
     final Square kingFrom = attemptedMove.moveSpecification().castlingMove().kingFromSquare(board.getSideToMove());
-    final Piece kingPiece = Piece.of(board.getSideToMove(), PieceType.KING);
+    final String actionDescription = attemptedMove.fullPhysicalCastlingAttempt()
+        ? "attempted to castle by moving the king and rook"
+        : "released the king on " + attemptedMove.kingReleaseSquare().getName() + ", which attempts to castle";
+    if (hasLegalMovesFromSquare(board.getLegalMoves(), kingFrom)) {
+      return opponent
+          ? " Because your opponent " + actionDescription + ", and castling on this side is"
+              + " illegal, after restoring the position they must make a legal move with the king."
+          : " Because you " + actionDescription + ", and castling on this side is illegal,"
+              + " after restoring the position you must make a legal move with the king.";
+    }
 
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
     if (obligation.isPresent()) {
-      final TouchMoveObligation value = obligation.get();
-      if (value.type() == TouchMoveType.OWN_PIECE && value.square() == kingFrom && value.piece() == kingPiece) {
-        return opponent
-            ? " Castling counts as a king move; because the king has legal moves, after restoring the position"
-                + " they must make a legal move with the king."
-            : " Castling counts as a king move; because the king has legal moves, after restoring the position"
-                + " you must make a legal move with the king.";
-      }
       // A different first touch remains governed by the normal touch-move recovery path.
       return "";
     }
 
     return opponent
-        ? " Castling counts as a king move, but the touched king has no legal moves; after restoring the position"
-            + " they may make another legal move."
-        : " Castling counts as a king move, but the touched king has no legal moves; after restoring the position"
-            + " make another legal move.";
+        ? " Because your opponent " + actionDescription + ", and castling on this side is"
+            + " illegal, but the king has no legal move, after restoring the position they may make any legal move."
+        : " Because you " + actionDescription + ", and castling on this side is illegal,"
+            + " but the king has no legal move, after restoring the position you may make any legal move.";
+  }
+
+  private static boolean hasLegalMovesFromSquare(List<LegalMove> legalMoves, Square square) {
+    for (final LegalMove legalMove : legalMoves) {
+      if (legalMove.moveSpecification().fromSquare() == square) {
+        return true;
+      }
+      if (legalMove.moveSpecification().isCastling()
+          && legalMove.moveSpecification().castlingMove().kingFromSquare(legalMove.movingSide()) == square) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private ArbiterResponse handleTouchMoveViolation(TouchMoveObligation obligation) {

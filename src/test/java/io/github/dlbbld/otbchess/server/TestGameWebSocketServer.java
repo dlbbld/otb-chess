@@ -39,7 +39,7 @@ class TestGameWebSocketServer {
   @Test
   void testOpponentIllegalMoveMessageUsesOpponentReasonNotPlayerMessage() {
     final IllegalMoveDetail detail = new IllegalMoveDetail(Optional.of("player-only wording: you must restore"),
-        Optional.of("opponent-safe wording: they must restore"), Side.WHITE, 1, 2, false);
+        Optional.of("opponent-safe wording: they must restore"), Side.WHITE, 1, 2, false, false);
     final ArbiterResponse response = ArbiterResponse.illegalMove(detail);
 
     assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT, response.playerMessageKey());
@@ -50,8 +50,8 @@ class TestGameWebSocketServer {
 
   @Test
   void testOpponentReleasedPieceViolationMessageUsesStructuredContext() {
-    final ReleasedPieceContext context = new ReleasedPieceContext(Piece.WHITE_PAWN, Square.E3);
-    final ArbiterResponse response = ArbiterResponse.releasedPieceViolation(context, null);
+    final ReleasedPieceContext context = new ReleasedPieceContext(Piece.WHITE_PAWN, Square.E3, Square.E2);
+    final ArbiterResponse response = ArbiterResponse.releasedPieceViolation(context, false, null);
 
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_PLAYER, response.playerMessageKey());
     assertEquals(Piece.WHITE_PAWN, response.releasedPieceContext().get().piece());

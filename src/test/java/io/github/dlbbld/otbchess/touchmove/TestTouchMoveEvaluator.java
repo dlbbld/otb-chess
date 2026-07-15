@@ -218,6 +218,20 @@ class TestTouchMoveEvaluator {
   }
 
   @Test
+  void testEnPassantSatisfiesOpponentPieceObligationOnCapturedPawnSquare() {
+    final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
+    final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.OPPONENT_PIECE, Square.B5,
+        Piece.BLACK_PAWN);
+
+    final var cxb6ep = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.C5 && m.moveSpecification().toSquare() == Square.B6)
+        .findFirst().orElseThrow();
+
+    assertTrue(cxb6ep.isEnPassant());
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation, cxb6ep));
+  }
+
+  @Test
   void testTouchOwnThenCapturableOpponentBindsSpecificCapture() {
     // FIDE 4.3.3: after 1.e4 d5, touching the white pawn on e4 and then the black pawn on d5 (which
     // the e4 pawn can capture) binds the specific capture exd5.
@@ -246,6 +260,68 @@ class TestTouchMoveEvaluator {
     // Only the specific capture satisfies it; another legal move of the touched pawn does not.
     assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation.get(), exd5));
     assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation.get(), e5));
+  }
+
+  @Test
+  void testTouchOpponentThenOwnFallsBackToOpponentPieceObligation() {
+    final Board board = Board.fromFenStrict("4k3/8/1r6/8/8/1R6/8/4K3 w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.remove(Square.B6, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B3, Square.B5, Piece.WHITE_ROOK, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.SPECIFIC_CAPTURE, obligation.get().type());
+    assertEquals(Square.B3, obligation.get().square());
+    assertEquals(Piece.WHITE_ROOK, obligation.get().piece());
+    assertEquals(Square.B6, obligation.get().toSquare());
+    assertEquals(Piece.BLACK_ROOK, obligation.get().capturedPiece());
+    assertTrue(obligation.get().opponentTouchedFirst());
+  }
+
+  @Test
+  void testOpponentFirstIgnoresEarlierNonCapturingOwnTouchWhenLaterOwnPieceCanCapture() {
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/1n6/PPP1P3/4K3 w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.B3, Piece.BLACK_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
+    sequence.addEvent(BoardEvent.click(Square.C2, Piece.WHITE_PAWN, 2));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.SPECIFIC_CAPTURE, obligation.get().type());
+    assertEquals(Square.C2, obligation.get().square());
+    assertEquals(Piece.WHITE_PAWN, obligation.get().piece());
+    assertEquals(Square.B3, obligation.get().toSquare());
+    assertEquals(Piece.BLACK_KNIGHT, obligation.get().capturedPiece());
+    assertTrue(obligation.get().opponentTouchedFirst());
+  }
+
+  @Test
+  void testTouchOwnThenOpponentBindsSpecificEnPassantCapture() {
+    final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.C5, Piece.WHITE_PAWN, 0));
+    sequence.addEvent(BoardEvent.click(Square.B5, Piece.BLACK_PAWN, 1));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.SPECIFIC_CAPTURE, obligation.get().type());
+    assertEquals(Square.C5, obligation.get().square());
+    assertEquals(Square.B5, obligation.get().toSquare());
+
+    final var cxb6ep = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.C5 && m.moveSpecification().toSquare() == Square.B6)
+        .findFirst().orElseThrow();
+
+    assertTrue(cxb6ep.isEnPassant());
+    assertTrue(TouchMoveEvaluator.satisfiesObligation(obligation.get(), cxb6ep));
   }
 
   @Test
@@ -334,8 +410,8 @@ class TestTouchMoveEvaluator {
     final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
 
-    // The king has no legal move. The rook h1-g1 move is part of the failed castling attempt,
-    // so it must not become the binding touch-move obligation.
+    // The king has no legal move. Under FIDE 4.4.3/4.7.2, the failed castling attempt does
+    // not bind the rook; the player is free to make any legal move.
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.F1, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.G1, Piece.WHITE_ROOK, 1));
 

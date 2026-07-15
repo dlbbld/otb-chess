@@ -77,3 +77,54 @@ test('released-piece commitment survives repeated reverts; only the committed mo
   await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
 });
+
+test('released-piece message distinguishes later position change from moving the released pawn', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'a2', 'a4');
+  await dragPiece(white, 'h2', 'h3');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Please revert the position change after pawn release on a4.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('put the pawn back on a4');
+  await expect(black.locator('#opponentInfoPanel')).toContainText(
+    'revert the position change after pawn release on a4');
+  await expect(black.locator('#arbiterMessage')).not.toContainText('revert the position change');
+
+  await clickRestore(white);
+  await expectPiece(white, 'a4', 'WHITE_PAWN');
+  await expectPiece(white, 'h2', 'WHITE_PAWN');
+  await expectEmpty(white, 'h3');
+  await expectRestoredAndResumed(white);
+
+  await dragPiece(white, 'a4', 'a5');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Please put the pawn back on a4 and press the clock.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('revert the position change after pawn release');
+});
+
+test('released-piece final move can be clock-pressed immediately after Revert', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'a2', 'a4');
+  await dragPiece(white, 'h2', 'h3');
+  await pressClock(white);
+
+  await clickRestore(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Position restored');
+
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expectPiece(white, 'a4', 'WHITE_PAWN');
+  await expectEmpty(white, 'a2');
+  await expectPiece(white, 'h2', 'WHITE_PAWN');
+  await expectEmpty(white, 'h3');
+});

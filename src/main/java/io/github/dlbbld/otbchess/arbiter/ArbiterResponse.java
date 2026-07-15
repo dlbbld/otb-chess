@@ -39,10 +39,18 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
     opponentMessageArgs = List.copyOf(opponentMessageArgs);
   }
 
+  /**
+   * @param noMoveMade true for the FIDE 7.5.3 case — the clock was pressed with the board unchanged. Counted and
+   *                   penalised like any illegal move, but there is nothing to restore: the messages say "make a
+   *                   move" instead of "restore the position", and the server skips the restoration flow.
+   */
   public record IllegalMoveDetail(Optional<String> playerReason, Optional<String> opponentReason, Side side, int count,
-      int maxIllegalMoves, boolean unlimited) {
+      int maxIllegalMoves, boolean unlimited, boolean noMoveMade) {
 
     String playerReasonPrefix() {
+      if (playerReason.isPresent() && playerReason.get().startsWith("because ")) {
+        return "Illegal move " + ensureSentence(playerReason.get()) + " ";
+      }
       return playerReason.map(reason -> "Illegal move: " + ensureSentence(reason) + " ").orElse("Illegal move. ");
     }
 
@@ -63,7 +71,20 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
     }
   }
 
-  public record ReleasedPieceContext(Piece piece, Square square) {
+  /**
+   * The binding release: {@code piece} was released on {@code square}, having been picked up from {@code fromSquare}.
+   * {@code fromSquare} is {@link Square#NONE} when the origin is not a board square (e.g. a promotion piece placed
+   * from the side area, or the castling variant where the message names its own squares).
+   * {@code releasedPieceDisplacedAfterRelease} is true when a later manipulation picked the committed piece up from
+   * its release square; then the recovery instruction says to put that piece back. If false, the released piece stayed
+   * put and the player must revert the later position change around it.
+   */
+  public record ReleasedPieceContext(Piece piece, Square square, Square fromSquare,
+      boolean releasedPieceDisplacedAfterRelease) {
+
+    public ReleasedPieceContext(Piece piece, Square square, Square fromSquare) {
+      this(piece, square, fromSquare, true);
+    }
   }
 
   /**
@@ -75,6 +96,13 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
       Square rookTo) {
   }
 
+  /**
+   * FIDE 4.4.2: a player who moves the rook before the king may not castle on that side. If the rook release is itself
+   * a legal rook move, the move is fixed as that rook move and the later king displacement must be restored.
+   */
+  public record RookFirstCastlingContext(Piece piece, Square rookFrom, Square rookTo, Square kingFrom) {
+  }
+
   public static ArbiterResponse moveAccepted(LegalMove move) {
     return new ArbiterResponse(ArbiterResponseType.MOVE_ACCEPTED, MessageKey.ARBITER_MOVE_ACCEPTED, List.of(),
         Optional.empty(), List.of(), Optional.of(move), Optional.empty(), Optional.empty(), Optional.empty(),
@@ -82,6 +110,10 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
   }
 
   public static ArbiterResponse touchMoveViolation(TouchMoveObligation obligation) {
+    return touchMoveViolation(obligation, null);
+  }
+
+  public static ArbiterResponse touchMoveViolation(TouchMoveObligation obligation, BitboardPosition restorePosition) {
     final MessageKey playerKey;
     final MessageKey opponentKey;
     final List<Object> args;
@@ -110,21 +142,51 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
         args = List.of();
       }
       case SPECIFIC_CAPTURE -> {
-        playerKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_PLAYER;
-        opponentKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT;
+        if (obligation.opponentTouchedFirst()) {
+          playerKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT_FIRST_PLAYER;
+          opponentKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT_FIRST_OPPONENT;
+        } else {
+          playerKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_PLAYER;
+          opponentKey = MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT;
+        }
         args = List.of(formatPieceName(obligation.piece()), obligation.square().getName(),
             formatPieceName(obligation.capturedPiece()), obligation.toSquare().getName());
       }
       default -> throw new IllegalStateException("Unhandled obligation type: " + obligation.type());
     }
     return new ArbiterResponse(ArbiterResponseType.TOUCH_MOVE_VIOLATION, playerKey, args, Optional.of(opponentKey),
-        args, Optional.empty(), Optional.of(obligation), Optional.empty(), Optional.empty(), Optional.empty());
+        args, Optional.empty(), Optional.of(obligation), Optional.ofNullable(restorePosition), Optional.empty(),
+        Optional.empty());
   }
 
-  public static ArbiterResponse releasedPieceViolation(ReleasedPieceContext context, BitboardPosition restorePosition) {
-    final List<Object> args = List.of(formatPieceName(context.piece()), context.square().getName());
-    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION, MessageKey.ARBITER_RELEASED_PIECE_PLAYER,
-        args, Optional.of(MessageKey.ARBITER_RELEASED_PIECE_OPPONENT), args, Optional.empty(), Optional.empty(),
+  /**
+   * @param ambiguousOrigin true when another piece of the same kind could also have legally reached the release
+   *                        square, so "the {piece} on {square}" alone would not tell the player WHICH piece was
+   *                        released (e.g. knights on c3 and g5 both reaching e4). The message then names the origin:
+   *                        "released the {piece} from {from} on {square}" — SAN-style disambiguation, only when
+   *                        needed. Requires a known {@code fromSquare}.
+   */
+  public static ArbiterResponse releasedPieceViolation(ReleasedPieceContext context, boolean ambiguousOrigin,
+      BitboardPosition restorePosition) {
+    final boolean nameOrigin = ambiguousOrigin && context.fromSquare() != Square.NONE;
+    final MessageKey playerKey;
+    final MessageKey opponentKey;
+    if (context.releasedPieceDisplacedAfterRelease()) {
+      playerKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_PLAYER
+          : MessageKey.ARBITER_RELEASED_PIECE_PLAYER;
+      opponentKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_OPPONENT
+          : MessageKey.ARBITER_RELEASED_PIECE_OPPONENT;
+    } else {
+      playerKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_POSITION_CHANGE_PLAYER
+          : MessageKey.ARBITER_RELEASED_PIECE_POSITION_CHANGE_PLAYER;
+      opponentKey = nameOrigin ? MessageKey.ARBITER_RELEASED_PIECE_FROM_POSITION_CHANGE_OPPONENT
+          : MessageKey.ARBITER_RELEASED_PIECE_POSITION_CHANGE_OPPONENT;
+    }
+    final List<Object> args = nameOrigin
+        ? List.of(formatPieceName(context.piece()), context.fromSquare().getName(), context.square().getName())
+        : List.of(formatPieceName(context.piece()), context.square().getName());
+    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION, playerKey,
+        args, Optional.of(opponentKey), args, Optional.empty(), Optional.empty(),
         Optional.ofNullable(restorePosition), Optional.empty(), Optional.of(context));
   }
 
@@ -138,27 +200,45 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
         context.rookFrom().getName(), context.rookTo().getName());
     // The standard ReleasedPieceContext (piece + square) is also carried, so callers
     // that read structured fields without distinguishing castling still see the king
-    // and the release square.
-    final ReleasedPieceContext releasedContext = new ReleasedPieceContext(context.piece(), context.square());
+    // and the release square. No origin: the castling message names its own squares,
+    // and a castling king release is never ambiguous (there is only one king).
+    final ReleasedPieceContext releasedContext = new ReleasedPieceContext(context.piece(), context.square(),
+        Square.NONE);
     return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION,
         MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, args,
         Optional.of(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_OPPONENT), args, Optional.empty(), Optional.empty(),
         Optional.ofNullable(restorePosition), Optional.empty(), Optional.of(releasedContext));
   }
 
+  public static ArbiterResponse releasedPieceViolationRookFirstCastling(RookFirstCastlingContext context,
+      BitboardPosition restorePosition) {
+    final List<Object> args = List.of(context.rookFrom().getName(), context.rookTo().getName(),
+        context.kingFrom().getName());
+    final ReleasedPieceContext releasedContext = new ReleasedPieceContext(context.piece(), context.rookTo(),
+        context.rookFrom());
+    return new ArbiterResponse(ArbiterResponseType.RELEASED_PIECE_VIOLATION,
+        MessageKey.ARBITER_RELEASED_PIECE_ROOK_FIRST_CASTLING_PLAYER, args,
+        Optional.of(MessageKey.ARBITER_RELEASED_PIECE_ROOK_FIRST_CASTLING_OPPONENT), args, Optional.empty(),
+        Optional.empty(), Optional.ofNullable(restorePosition), Optional.empty(), Optional.of(releasedContext));
+  }
+
   public static ArbiterResponse illegalMove(IllegalMoveDetail detail) {
     final MessageKey playerKey;
     final List<Object> playerArgs;
+    // The no-move variants (FIDE 7.5.3) end with "Please make a move." — there is nothing to restore.
     if (detail.unlimited()) {
-      playerKey = MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_UNLIMITED;
+      playerKey = detail.noMoveMade() ? MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_PLAYER_UNLIMITED
+          : MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_UNLIMITED;
       playerArgs = List.of(detail.playerReasonPrefix(), detail.count(), detail.countOrdinal());
     } else {
       final int remaining = detail.maxIllegalMoves() - detail.count();
       if (remaining == 1) {
-        playerKey = MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT;
+        playerKey = detail.noMoveMade() ? MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_PLAYER_NEXT
+            : MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_NEXT;
         playerArgs = List.of(detail.playerReasonPrefix(), detail.count(), detail.countOrdinal());
       } else {
-        playerKey = MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_LIMIT;
+        playerKey = detail.noMoveMade() ? MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_PLAYER_LIMIT
+            : MessageKey.ARBITER_ILLEGAL_MOVE_PLAYER_LIMIT;
         playerArgs = List.of(detail.playerReasonPrefix(), detail.count(), detail.countOrdinal(),
             detail.maxIllegalMoves(), detail.maxOrdinal());
       }
@@ -166,7 +246,9 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
 
     final Optional<String> opponentReason = detail.opponentReasonDetail();
     final Optional<MessageKey> opponentKey = Optional
-        .of(opponentReason.isPresent() ? MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT
+        .of(opponentReason.isPresent()
+            ? (detail.noMoveMade() ? MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_OPPONENT
+                : MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT)
             : MessageKey.ARBITER_ILLEGAL_MOVE_OPPONENT_GENERIC);
     final List<Object> opponentArgs = opponentReason.<List<Object>>map(List::of).orElseGet(List::of);
 
@@ -223,6 +305,11 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
 
   public String style() {
     return severity().style();
+  }
+
+  public ArbiterResponse withRestorePosition(BitboardPosition restorePosition) {
+    return new ArbiterResponse(type, playerMessageKey, playerMessageArgs, opponentMessageKey, opponentMessageArgs,
+        acceptedMove, obligation, Optional.ofNullable(restorePosition), illegalMoveDetail, releasedPieceContext);
   }
 
   private static ArbiterResponse custom(ArbiterResponseType type, MessageKey key, String message) {

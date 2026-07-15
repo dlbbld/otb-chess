@@ -26,23 +26,77 @@
           <div class="side-area-label" id="rightSideLabel"></div>
           <div class="side-area-pieces" id="rightSidePieces"></div>
         </div>
+
+        <!-- Transient game-event banner ("Game started"), centered over the board. -->
+        <div class="game-banner" id="gameBanner" style="display:none;"></div>
       </div>
 
-      <!-- Action buttons below the board -->
-      <div class="action-buttons">
-        <button id="abortBtn" class="action-btn" style="display:none;">Abort Game</button>
-        <button id="offerDrawBtn" class="action-btn" disabled>Offer Draw</button>
-        <button id="resignBtn" class="action-btn" disabled>Resign</button>
-        <button id="requestPieceBtn" class="action-btn" disabled>Request Piece</button>
-      </div>
+      <!-- Controls below the board -->
+      <div class="board-controls">
+        <div class="control-row game-actions" aria-label="Game actions">
+          <button id="abortBtn" class="action-btn control-btn" style="display:none;"
+              aria-label="Abort Game" data-tooltip="Abort Game">
+            <span class="btn-icon icon-stop" aria-hidden="true">!</span>
+          </button>
+          <button id="offerDrawBtn" class="action-btn control-btn" disabled
+              aria-label="Offer Draw" data-tooltip="Offer Draw">
+            <span class="btn-icon icon-draw" aria-hidden="true">1/2</span>
+          </button>
+          <button id="resignBtn" class="action-btn control-btn" disabled
+              aria-label="Resign" data-tooltip="Resign">
+            <span class="btn-icon icon-resign" aria-hidden="true"></span>
+          </button>
+        </div>
 
-      <div class="claim-buttons">
-        <button id="claimThreefoldOnBoardBtn" class="action-btn small-btn" disabled>Claim Threefold Position</button>
-        <button id="claimThreefoldWithMoveBtn" class="action-btn small-btn" disabled>Claim Threefold Move</button>
-        <button id="claimFiftyMoveOnBoardBtn" class="action-btn small-btn" disabled>Claim 50-Move Position</button>
-        <button id="claimFiftyMoveWithMoveBtn" class="action-btn small-btn" disabled>Claim 50-Move Move</button>
-        <button id="exportPgnBtn" class="action-btn small-btn">Display PGN</button>
-        <button id="flipBoardBtn" class="action-btn small-btn">Flip Board</button>
+        <div class="control-row claim-section" aria-label="Draw claims">
+          <button id="claimThreefoldOnBoardBtn" class="action-btn control-btn claim-btn" disabled
+              aria-label="Claim threefold repetition on the current position"
+              data-tooltip="Claim threefold repetition on the current position">
+            <span class="btn-icon claim-icon" aria-hidden="true">
+              <span class="claim-rule">3x</span>
+              <span class="claim-kind icon-board"></span>
+            </span>
+          </button>
+          <button id="claimThreefoldWithMoveBtn" class="action-btn control-btn claim-btn" disabled
+              aria-label="Claim threefold repetition with a move"
+              data-tooltip="Claim threefold repetition with a move">
+            <span class="btn-icon claim-icon" aria-hidden="true">
+              <span class="claim-rule">3x</span>
+              <span class="claim-kind icon-move">-></span>
+            </span>
+          </button>
+          <button id="claimFiftyMoveOnBoardBtn" class="action-btn control-btn claim-btn" disabled
+              aria-label="Claim the 50-move rule on the current position"
+              data-tooltip="Claim the 50-move rule on the current position">
+            <span class="btn-icon claim-icon" aria-hidden="true">
+              <span class="claim-rule">50</span>
+              <span class="claim-kind icon-board"></span>
+            </span>
+          </button>
+          <button id="claimFiftyMoveWithMoveBtn" class="action-btn control-btn claim-btn" disabled
+              aria-label="Claim the 50-move rule with a move"
+              data-tooltip="Claim the 50-move rule with a move">
+            <span class="btn-icon claim-icon" aria-hidden="true">
+              <span class="claim-rule">50</span>
+              <span class="claim-kind icon-move">-></span>
+            </span>
+          </button>
+        </div>
+
+        <div class="control-row utility-actions" aria-label="Board utilities">
+          <button id="requestPieceBtn" class="action-btn control-btn utility-btn" disabled
+              aria-label="Request Piece" data-tooltip="Request Piece">
+            <span class="btn-icon icon-piece" aria-hidden="true">+</span>
+          </button>
+          <button id="exportPgnBtn" class="action-btn control-btn utility-btn"
+              aria-label="Display PGN" data-tooltip="Display PGN">
+            <span class="btn-icon icon-pgn" aria-hidden="true">PGN</span>
+          </button>
+          <button id="flipBoardBtn" class="action-btn control-btn utility-btn"
+              aria-label="Flip Board" data-tooltip="Flip Board">
+            <span class="btn-icon icon-flip" aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
       <div class="app-version board-version" data-app-version></div>
     </div>
@@ -61,12 +115,16 @@
       <div id="gameResultPanel" class="game-result-panel" style="display:none;">
         <div class="game-result-score" id="gameResultScore"></div>
         <div class="game-result-reason" id="gameResultReason"></div>
+        <!-- Rematch (Lichess-style): first click offers — the opponent's button starts blinking;
+             their click accepts. Same time control, colours swapped. -->
+        <button id="rematchBtn" class="action-btn">Rematch</button>
         <button id="newGameBtn" class="action-btn">New Game</button>
       </div>
 
-      <!-- Draw offer received — the "Your opponent offers a draw." text already appears in
-           the arbiter message panel above, so the inline panel only carries the buttons. -->
+      <!-- Draw offer received. The panel keeps the offer context visible even when the
+           arbiter message above changes to turn/status text. -->
       <div id="drawOfferPanel" class="inline-panel" style="display:none;">
+        <span id="drawOfferMessage"></span>
         <button id="acceptDrawBtn" class="action-btn">Accept</button>
         <button id="rejectDrawBtn" class="action-btn">Reject</button>
       </div>
@@ -82,7 +140,8 @@
       <div id="sanInputPanel" class="inline-panel" style="display:none;">
         <span id="sanClaimLabel">Enter move:</span>
         <input type="text" id="sanInput" class="san-input" placeholder="e.g. Nf3">
-        <button id="submitClaimMoveBtn" class="action-btn">Submit Move</button>
+        <button id="submitClaimMoveBtn" class="action-btn">Submit</button>
+        <button id="cancelClaimMoveBtn" class="action-btn">Cancel</button>
       </div>
 
       <!-- Inline promotion piece selection -->
@@ -121,6 +180,17 @@
           <div class="lever-surface"></div>
         </div>
       </div>
+    </div>
+
+    <!-- Below the clock: the passive game-information window plus the time control. -->
+    <div class="below-clock">
+      <!-- Passive info: what the opponent just did (e.g. a wrong-time draw claim). Face-to-face
+           principle — at a real board the player would see it happen — but it requires NO
+           action, so it lives here and never in the arbiter message window above the clock. -->
+      <div class="opponent-info" id="opponentInfoPanel" style="display:none;"></div>
+      <!-- Time control, e.g. "5+3 • Blitz" (FIDE discipline). Centered in the remaining space,
+           about level with the bottom edge of the board — quiet and out of the way. -->
+      <div class="time-control-label" id="timeControlLabel"></div>
     </div>
     </div>
   </div>

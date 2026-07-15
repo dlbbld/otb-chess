@@ -15,6 +15,10 @@ test('two players: create, join, white plays e2-e4, black sees it', async ({ bro
   const { white, black, gameId } = game;
   expect(gameId).toMatch(/\S/);
 
+  // Both players see the time control with its FIDE discipline (3+0 = blitz).
+  await expect(white.locator('#timeControlLabel')).toHaveText('3+0 • Blitz');
+  await expect(black.locator('#timeControlLabel')).toHaveText('3+0 • Blitz');
+
   // White is to move. Play e2-e4 on the physical board, then commit with the clock.
   await dragPiece(white, 'e2', 'e4');
   await expectPiece(white, 'e4', 'WHITE_PAWN');

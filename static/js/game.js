@@ -9,6 +9,9 @@ class Game {
     // FIDE 9.2 / 9.3: at most one draw claim per move. Set when the server reports a
     // non-invalid claim outcome; reset whenever a new turn starts on this side.
     this.claimMadeThisTurn = false;
+    // FIDE 9.4: touching any piece this turn forfeits the right to claim. Mirrors the server's
+    // action-sequence check so a doomed claim goes straight to the arbiter (no SAN prompt).
+    this.touchedThisTurn = false;
     this.pendingClaimWithMoveType = null;
     this.gameActive = false;
     this.sideAreaPieces = [];
@@ -27,8 +30,14 @@ class Game {
     // drives the "who joined" half of the game-start message (see gameStartedMessage).
     this.isCreator = isCreator;
 
-    if (!isCreator && !this.gameId) {
-      this.showArbiterMessage('No game ID specified. Go back to the lobby.');
+    // A saved session (gameId + secret token in localStorage) means a running game in THIS
+    // browser: a bare /game.html — e.g. the lobby's "Return to game", or a new tab — resumes it
+    // without needing any game code in the URL.
+    const saved = Game.loadSession();
+    const hasSavedSession = !!(saved && saved.gameId && saved.token);
+
+    if (!isCreator && !this.gameId && !hasSavedSession) {
+      this.showGameUnavailable('No game code was provided.');
       return;
     }
 
@@ -44,11 +53,10 @@ class Game {
     await this.ws.connect();
     this.setupMessageHandlers();
 
-    // A saved session means this is a refresh of an existing game: resume the SAME game (and code)
-    // rather than creating/joining a new one. The lobby clears it for a deliberate new game, and we
-    // clear it on abort / game end.
-    const saved = Game.loadSession();
-    if (saved && saved.gameId && saved.token) {
+    // A saved session means this is a refresh of an existing game (or a return via the lobby /
+    // a bare /game.html): resume the SAME game (and code) rather than creating/joining a new
+    // one. The lobby clears it for a deliberate new game, and we clear it on abort / game end.
+    if (hasSavedSession) {
       this.isCreator = saved.isCreator;
       this.side = saved.side || this.side;
       this.ws.sessionToken = saved.token;
@@ -177,19 +185,78 @@ class Game {
     }
   }
 
+  // Ambient game info below the clock: the time control plus its FIDE discipline, e.g.
+  // "5+3 • Blitz". Server-rendered (see TimeControl.displayLabel) and identical for both players.
+  setTimeControlLabel(label) {
+    const el = document.getElementById('timeControlLabel');
+    if (el && label) el.textContent = label;
+  }
+
+  // === Passive info window (below the clock) ===
+  // Information about the opponent's actions that requires NO reaction (face-to-face principle:
+  // at a real board the player would see it happen). Action-relevant messages — game end, "you
+  // must correct the move", draw offers — go to the arbiter window above the clock instead.
+
+  showOpponentInfo(message) {
+    const el = document.getElementById('opponentInfoPanel');
+    if (!el) return;
+    el.textContent = message;
+    el.style.display = 'block';
+  }
+
+  clearOpponentInfo() {
+    const el = document.getElementById('opponentInfoPanel');
+    if (!el) return;
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+
+  // === Disconnect countdown (opponent gone) ===
+  // After the server's disconnect notice, count down to the abandonment adjudication and offer
+  // "Claim victory" (same adjudication, just immediately). Cleared on reconnect / game end.
+
+  startDisconnectCountdown(baseMessage, abandonInMs) {
+    this.stopDisconnectCountdown();
+    if (!abandonInMs || abandonInMs <= 0) {
+      this.showArbiterMessage(baseMessage, 'info');
+      return;
+    }
+    const deadline = Date.now() + abandonInMs;
+    const render = () => {
+      const secondsLeft = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      this.showArbiterMessage(`${baseMessage} The game will be ended in ${secondsLeft}s.`, 'info');
+      if (secondsLeft <= 0) this.stopDisconnectCountdown(); // the gameEnded broadcast takes over
+    };
+    render();
+    this._disconnectCountdownTimer = setInterval(render, 1000);
+    this.clearArbiterButtons();
+    this.showArbiterButton('Claim victory', () => {
+      this.ws.send({ type: 'claimVictory' });
+    });
+  }
+
+  stopDisconnectCountdown() {
+    if (this._disconnectCountdownTimer) {
+      clearInterval(this._disconnectCountdownTimer);
+      this._disconnectCountdownTimer = null;
+    }
+  }
+
   onClockButtonPressed(position) {
     if (!this.gameActive) return;
 
     const pressedColor = position === 'bottom' ? this.bottomClockColor : this.topClockColor;
 
-    // Only a press of the player's OWN lever while it's their turn does anything —
-    // exactly like a real chess clock where pressing the wrong side does not register.
-    // We intentionally do NOT notify the server about clicks on the opponent's lever
-    // (or on the player's own lever when it's not their turn): no message, no arbiter
-    // intervention, no "do not press the opponent's clock" feedback. Silence keeps
-    // the cursor-and-click behaviour identical for both halves and avoids leaking
-    // which lever belongs to whom.
-    if (pressedColor !== this.side) return;
+    if (pressedColor !== this.side) {
+      // Real-world modeling: on a physical clock the OPPONENT's lever CAN be pressed. The
+      // server decides whether it registers (only while the opponent's clock is running —
+      // their lever up; otherwise it is a physical no-op) and escalates: pause + admonishment,
+      // pause + warning, loss of the game on the third press.
+      this.ws.send({ type: 'opponentClockPressed' });
+      return;
+    }
+    // A press of the player's own lever when it is not their turn is a physical no-op
+    // (the lever is already down) — silence, exactly like a real clock.
     if (!this.isMyTurn) return;
 
     this.ws.sendClockPress(this.board.getBoardState());
@@ -208,6 +275,7 @@ class Game {
       this.board.setPosition(data.board);
       this.board.renderAll();
       this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
       this.showArbiterMessage('Game created. Waiting for opponent...');
       this.clearArbiterButtons();
@@ -229,6 +297,7 @@ class Game {
       this.board.setPosition(data.board);
       this.board.renderAll();
       this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
       // Persist so a refresh resumes this joined game rather than re-joining (which would fail).
       Game.saveSession({ gameId: data.gameId, token: data.token, side: data.side, isCreator: false });
@@ -246,7 +315,11 @@ class Game {
       this.isMyTurn = havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.updateButtons();
-      this.showArbiterMessage(Game.gameStartedMessage(this.isCreator, this.isMyTurn));
+      // The event itself is a transient banner (Lichess-style); the arbiter message keeps only
+      // the two short facts: who joined, whose clock runs.
+      this.showGameBanner('Game started');
+      this.showArbiterMessage(Game.gameStartedMessage(this.isCreator, this.isMyTurn,
+        this.side === 'white' ? 'Black' : 'White'));
       this.clearArbiterButtons();
     });
 
@@ -261,6 +334,7 @@ class Game {
       this.board.setPosition(data.board);
       this.board.renderAll();
       this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
 
       const started = data.state !== 'WAITING_FOR_PLAYERS';
@@ -289,11 +363,15 @@ class Game {
     });
 
     // Reconnect token no longer valid (game ended/expired/server restart): drop the saved session
-    // so a refresh won't loop trying to resume a dead game, and return to the lobby.
+    // so a refresh won't loop trying to resume a dead game, and offer a path back to the lobby.
     this.ws.on('resumeFailed', (data) => {
-      Game.clearSession();
-      this.showArbiterMessage((data.message || 'This game is no longer available.') + ' Returning to lobby…');
-      setTimeout(() => { window.location.href = '/'; }, 2500);
+      this.showGameUnavailable(data.message || 'This game is no longer available.');
+    });
+
+    // Tried to join a game with no free seat (not found, already full, or already ended). Same
+    // friendly treatment as a failed resume: a clear message and a way back to the lobby.
+    this.ws.on('joinFailed', (data) => {
+      this.showGameUnavailable(data.message || 'This game is no longer available.');
     });
 
     // After OUR move is accepted by the server
@@ -304,7 +382,10 @@ class Game {
       this.updateButtons();
       this.recomputeSideArea();
       this.showArbiterMessage("Move accepted. Opponent's turn.");
+      document.getElementById('drawOfferPanel').style.display = 'none';
       this.clearArbiterButtons();
+      // The move closes the episode the passive info reported on.
+      this.clearOpponentInfo();
     });
 
     // After the OPPONENT's move is accepted — we receive the new board state
@@ -324,6 +405,8 @@ class Game {
       }
       this.showArbiterMessage('Your turn.');
       this.clearArbiterButtons();
+      // A new turn starts: whatever the passive info reported is over.
+      this.clearOpponentInfo();
     });
 
     // Real-time opponent board events (see opponent manipulate pieces)
@@ -344,6 +427,7 @@ class Game {
       this.isMyTurn = data.havingMove === this.side;
       this.board.setEnabled(this.isMyTurn);
       this.resetClaimUiForNewTurn();
+      this.clearOpponentInfo();
     });
 
     this.ws.on('clockUpdate', (data) => {
@@ -442,12 +526,15 @@ class Game {
 
     this.ws.on('drawAcceptRejected', (data) => {
       this.showArbiterMessage(data.message, 'error');
-      document.getElementById('drawOfferPanel').style.display = 'none';
     });
 
     this.ws.on('drawOffered', (data) => {
+      const message = data.message || 'Your opponent offers a draw.';
+      document.getElementById('drawOfferMessage').textContent = message;
       document.getElementById('drawOfferPanel').style.display = 'flex';
-      this.showArbiterMessage('Your opponent offers a draw.');
+      // Server-rendered: a plain offer says "Your opponent offers a draw."; a rejected claim
+      // converted per FIDE 9.5 explains the claim. Keep it in the offer panel so the
+      // arbiter/status area can remain dedicated to turn-flow messages.
     });
 
     // Bare acknowledgment to the offering player after a correct-time draw offer:
@@ -460,11 +547,10 @@ class Game {
     });
 
     // The on-move player just touched a piece while a draw offer was pending.
-    // Per FIDE 9.1.2.1 the right to accept is lost; hide the Accept/Reject panel
-    // and show the explanation.
+    // Per FIDE 9.1.2.1 the right to accept is lost, but the GUI keeps the
+    // offer visible until the player tries to act on it or completes the move.
     this.ws.on('drawOfferInvalidated', (data) => {
-      document.getElementById('drawOfferPanel').style.display = 'none';
-      this.showArbiterMessage(data.message, 'error');
+      // Intentionally no visible update here.
     });
 
     this.ws.on('drawRejected', (data) => {
@@ -474,16 +560,30 @@ class Game {
     });
 
     this.ws.on('drawClaimResult', (data) => {
-      this.showArbiterMessage(data.message, data.invalidMove ? 'error' : null);
+      this.showArbiterMessage(data.message, data.invalidMove || data.wrongTime || data.repeatClaim ? 'error' : null);
       if (data.invalidMove) {
-        const input = document.getElementById('sanInput');
-        if (input) {
-          input.value = '';
-          input.focus();
-        }
+        // No legal intended move was presented, so the draw claim is not considered. Return
+        // the player to normal move play instead of keeping them in a SAN correction loop.
+        this.claimMadeThisTurn = false;
+        this.pendingClaimWithMoveType = null;
+        this.hideSanInput();
+      } else if (data.wrongTime) {
+        // Claim while not having the move: not a completed claim — the once-per-move flag stays
+        // off (also covers the race where the client thought it was on move but the server
+        // disagreed). Buttons remain enabled; the arbiter escalation does the teaching.
+        this.claimMadeThisTurn = false;
+        this.pendingClaimWithMoveType = null;
+        this.hideSanInput();
+      } else if (data.repeatClaim) {
+        // Second claim on the same move: the flag stays ON (a further press goes straight to
+        // the arbiter, which will end the game). Buttons deliberately remain enabled.
+        this.claimMadeThisTurn = true;
+        this.pendingClaimWithMoveType = null;
+        this.hideSanInput();
       } else {
-        // The claim has resolved for this turn. The server-side claim ledger now owns the
-        // once-per-turn state; the UI stays locked until a new turn starts.
+        // The claim resolved (accepted or rejected on the merits). Remember it so further
+        // presses this turn skip the SAN prompt and go straight to the arbiter's escalation —
+        // the buttons stay enabled (teaching philosophy), only the server counts violations.
         this.claimMadeThisTurn = true;
         this.pendingClaimWithMoveType = null;
         this.updateButtons();
@@ -494,6 +594,16 @@ class Game {
     // Opponent broadcast: the other side made a claim event we need to display.
     this.ws.on('drawClaimOpponent', (data) => {
       this.showArbiterMessage(data.message);
+    });
+
+    // Passive information about the opponent's actions (e.g. a wrong-time draw claim): shown in
+    // the info window below the clock — the player should see it, like at a real board, but no
+    // action is required, so it stays out of the arbiter message window.
+    this.ws.on('opponentInfo', (data) => {
+      if (data.clearArbiterMessage) {
+        this.clearArbiterMessage();
+      }
+      this.showOpponentInfo(data.message);
     });
 
     this.ws.on('pgn', (data) => {
@@ -507,6 +617,14 @@ class Game {
       Game.clearSession();
       this.board.setEnabled(false);
       this.updateButtons();
+      // A pending draw offer dies with the game (e.g. a rejected claim was forwarded as an
+      // offer and the claimer then lost by escalation) — no Accept/Reject on a finished game.
+      document.getElementById('drawOfferPanel').style.display = 'none';
+      // The game-ending message goes to the arbiter window; stale passive info disappears, and
+      // a running disconnect countdown (plus its Claim-victory button) stops.
+      this.clearOpponentInfo();
+      this.stopDisconnectCountdown();
+      this.clearArbiterButtons();
       // Game has ended — drop the PAUSE overlay because no further clockUpdate
       // will arrive to clear it via the updateClocks path.
       const clockEl = document.getElementById('chessClock');
@@ -515,6 +633,11 @@ class Game {
         : (data.winner === 'white' ? '1-0' : '0-1');
       document.getElementById('gameResultScore').textContent = scoreText;
       document.getElementById('gameResultReason').textContent = data.description;
+      // No rematch after an abandonment \u2014 the opponent is gone, there is nobody to accept
+      // (and the server refuses such offers too). Reset to visible for every other ending,
+      // since the panel is reused across rematch chains.
+      document.getElementById('rematchBtn').style.display =
+        data.resultType === 'ABANDONMENT' ? 'none' : '';
       document.getElementById('gameResultPanel').style.display = 'block';
 
       // Personalise the arbiter message for moves that immediately end the game instead of
@@ -536,11 +659,12 @@ class Game {
         this.showArbiterMessage(data.mover === this.side
           ? 'Your last move led to a fivefold repetition.'
           : "Your opponent's last move led to a fivefold repetition.");
-      } else if ((data.resultType === 'RESIGNATION' || data.resultType === 'FLAG_FALL')
-          && data.winner === 'none') {
-        // FIDE draw exception: the actor resigned/flagged but the opponent cannot mate.
+      } else if ((data.resultType === 'RESIGNATION' || data.resultType === 'FLAG_FALL'
+          || data.resultType === 'ABANDONMENT') && data.winner === 'none') {
+        // FIDE draw exception: the actor resigned/flagged/left but the opponent cannot mate.
         // Phrase it in the second person for each player.
-        const verb = data.resultType === 'RESIGNATION' ? 'resigned' : 'flagged';
+        const verb = data.resultType === 'RESIGNATION' ? 'resigned'
+          : (data.resultType === 'FLAG_FALL' ? 'flagged' : 'left the game');
         const reason = data.drawReason === 'INSUFFICIENT_MATERIAL'
           ? 'insufficient material to mate'
           : 'no potential mate';
@@ -549,6 +673,31 @@ class Game {
           : `Your opponent ${verb}, but because you have ${reason}, the game is a draw.`;
         this.showArbiterMessage(msg);
         document.getElementById('gameResultReason').textContent = msg;
+      } else if (data.resultType === 'ABANDONMENT') {
+        // Abandonment loss: the leaver is gone (their client won't render this); phrase for the
+        // remaining player. The actor check keeps it correct should the leaver ever see it.
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You left the game and lose.'
+          : 'Your opponent left the game. You win.');
+      } else if (data.resultType === 'WRONG_CLOCK_PRESS_GAME_LOST') {
+        // Third press of the opponent's clock despite the warning (see A-006).
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You have been warned that you will lose the game when you press your opponent\'s clock again.'
+            + ' As you have pressed it again, you lose the game.'
+          : 'Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game.');
+      } else if (data.resultType === 'WRONG_TIME_OFFER_GAME_LOST') {
+        // Third wrong-time draw offer on the same move despite the warning (see A-001).
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You have been warned that you will lose the game when you offer a draw again on this move.'
+            + ' As you have offered again, you lose the game.'
+          : 'Your opponent has, despite the warnings, repeatedly offered a draw at the wrong time,'
+            + ' and so has lost the game.');
+      } else if (data.resultType === 'MOVED_OPPONENT_PIECE_GAME_LOST') {
+        // Third moved opponent piece despite the warning (see A-007).
+        this.showArbiterMessage(data.actor === this.side
+          ? 'You have been warned that you will lose the game when you move an opponent\'s piece again.'
+            + ' As you have moved one again, you lose the game.'
+          : 'Your opponent has, despite the warnings, repeatedly moved your pieces, and so has lost the game.');
       } else if (data.resultType === 'DRAW_AGREEMENT' && data.winner === 'none') {
         // Who accepted goes on top (arbiter message); the result panel keeps the canonical
         // "The game is drawn by agreement." after the ½-½ score.
@@ -556,6 +705,67 @@ class Game {
           ? 'You accepted the draw offer.'
           : 'Your opponent accepted the draw offer.');
       }
+    });
+
+    // Own rematch offer acknowledged: freeze the button so the offer can't be spammed; the
+    // opponent's button is blinking now.
+    this.ws.on('rematchOfferSent', (data) => {
+      const btn = document.getElementById('rematchBtn');
+      btn.disabled = true;
+      btn.textContent = 'Rematch offered';
+      this.showArbiterMessage(data.message);
+    });
+
+    // The opponent offered a rematch: THIS player's button starts blinking (Lichess-style);
+    // clicking it accepts.
+    this.ws.on('rematchOffered', (data) => {
+      document.getElementById('rematchBtn').classList.add('rematch-blink');
+      this.showArbiterMessage(data.message);
+    });
+
+    this.ws.on('rematchUnavailable', (data) => {
+      this.markRematchUnavailable(data.message);
+    });
+
+    // Rematch accepted: a fresh game in the same room — same time control and starting
+    // position, colours swapped. Reset the whole client state as a combined created+started.
+    this.ws.on('rematchStarted', (data) => {
+      this.gameId = data.gameId;
+      this.side = data.side;
+      // The seats swapped: orient the board absolutely for the NEW colour (flip() only toggles).
+      if ((this.side === 'black') !== this.board.flipped) {
+        this.board.flip();
+      }
+      this.board.setPosition(data.board);
+      this.board.renderAll();
+      this.board.clearHighlights();
+      this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
+      this.setupExtraQueens();
+
+      this.gameActive = true;
+      this.isMyTurn = data.havingMove === this.side;
+      this.board.setEnabled(this.isMyTurn);
+      this.resetClaimUiForNewTurn();
+      this.clearOpponentInfo();
+
+      // Fresh reconnect session for the new seat (the old token died with the seat swap).
+      Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: this.isCreator });
+
+      // Result panel (and its rematch state) belongs to the finished game — reset for this one.
+      document.getElementById('gameResultPanel').style.display = 'none';
+      const rematchBtn = document.getElementById('rematchBtn');
+      rematchBtn.disabled = false;
+      rematchBtn.textContent = 'Rematch';
+      rematchBtn.classList.remove('rematch-blink');
+      document.getElementById('drawOfferPanel').style.display = 'none';
+      document.getElementById('abortBtn').style.display = 'none';
+      document.getElementById('resignBtn').style.display = '';
+      this.updateButtons();
+      this.stopDisconnectCountdown();
+      this.showGameBanner('Rematch started');
+      this.showArbiterMessage(data.message);
+      this.clearArbiterButtons();
     });
 
     this.ws.on('gameAborted', () => {
@@ -566,9 +776,22 @@ class Game {
     });
 
     this.ws.on('opponentDisconnected', (data) => {
-      this.showArbiterMessage(data.message, 'info');
       // Drop any in-flight opponent drag visualisation — no more events will arrive.
       this.board.clearOpponentDragVisuals();
+      if (!this.gameActive) {
+        this.markRematchUnavailable(data.message || 'Your opponent has disconnected.');
+        return;
+      }
+      // Countdown to the abandonment adjudication (Lichess-style), plus the option to end it
+      // now: "Claim victory" applies the same adjudication immediately (win — or draw when no
+      // mate is possible). A reconnect (opponentReconnected) or the game end clears all of it.
+      this.startDisconnectCountdown(data.message, data.abandonInMs);
+    });
+
+    this.ws.on('opponentReconnected', (data) => {
+      this.stopDisconnectCountdown();
+      this.clearArbiterButtons();
+      this.showArbiterMessage(data.message, 'info');
     });
 
     this.ws.on('error', (data) => {
@@ -644,12 +867,10 @@ class Game {
 
     document.getElementById('acceptDrawBtn').addEventListener('click', () => {
       this.ws.sendAcceptDraw();
-      document.getElementById('drawOfferPanel').style.display = 'none';
     });
 
     document.getElementById('rejectDrawBtn').addEventListener('click', () => {
       this.ws.sendRejectDraw();
-      document.getElementById('drawOfferPanel').style.display = 'none';
     });
 
     document.getElementById('claimThreefoldOnBoardBtn').addEventListener('click', () => {
@@ -675,6 +896,11 @@ class Game {
       this.ws.sendClaimDraw(this.pendingClaimWithMoveType, san);
     });
 
+    document.getElementById('cancelClaimMoveBtn').addEventListener('click', () => {
+      if (!this.pendingClaimWithMoveType) return;
+      this.ws.sendCancelDrawClaim();
+    });
+
     document.getElementById('sanInput').addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') return;
       event.preventDefault();
@@ -682,6 +908,11 @@ class Game {
     });
 
     document.getElementById('exportPgnBtn').addEventListener('click', () => {
+      const pgnDialog = document.getElementById('pgnDialog');
+      if (pgnDialog.style.display !== 'none') {
+        pgnDialog.style.display = 'none';
+        return;
+      }
       this.ws.sendRequestPgn();
     });
 
@@ -704,6 +935,12 @@ class Game {
       }
     });
 
+    document.getElementById('rematchBtn').addEventListener('click', () => {
+      // First click = offer; a click while the button blinks (opponent offered) = accept.
+      // The server resolves both through the same message.
+      this.ws.send({ type: 'rematchOffer' });
+    });
+
     document.getElementById('newGameBtn').addEventListener('click', () => {
       window.location.href = '/';
     });
@@ -724,6 +961,9 @@ class Game {
   }
 
   onBoardEvent(event) {
+    // Any board interaction counts as a touch (FIDE 9.4) — the right to claim is gone for this
+    // move, so claim presses from here on skip the SAN prompt and go straight to the arbiter.
+    this.touchedThisTurn = true;
     // Send the current physical board state with every event so the server can detect
     // game-ending moves (checkmate/stalemate/etc.) without waiting for a clock press.
     this.ws.sendBoardEvent(event, this.board.getBoardState());
@@ -875,20 +1115,31 @@ class Game {
   }
 
   sendClaimOnBoard(claimType) {
-    if (!this.gameActive || this.claimMadeThisTurn) return;
-    this.claimMadeThisTurn = true;
+    if (!this.gameActive) return;
+    if (!this.isMyTurn || this.claimMadeThisTurn || this.touchedThisTurn) {
+      // Procedural fault — claiming while not having the move, after touching a piece this
+      // move (FIDE 9.4), or a second claim on the same move: deliberately let it through — our
+      // philosophy is to let the player make the fault and learn from the arbiter's escalation
+      // (rejection/warning, then loss of the game).
+      this.ws.sendClaimDraw(claimType);
+      return;
+    }
     this.pendingClaimWithMoveType = null;
     this.hideSanInput();
-    this.updateButtons();
     this.ws.sendClaimDraw(claimType);
   }
 
   beginClaimWithMove(claimType, label) {
-    if (!this.gameActive || this.claimMadeThisTurn) return;
-    this.claimMadeThisTurn = true;
+    if (!this.gameActive) return;
+    if (!this.isMyTurn || this.claimMadeThisTurn || this.touchedThisTurn) {
+      // Procedural fault (wrong time / after touching a piece / repeat on the same move): no
+      // SAN prompt — the claim is rejected regardless of any move — send it straight to the
+      // arbiter so the escalation can play out.
+      this.ws.sendClaimDraw(claimType);
+      return;
+    }
     this.pendingClaimWithMoveType = claimType;
     this.showSanInput(label);
-    this.updateButtons();
   }
 
   showSanInput(label) {
@@ -903,6 +1154,7 @@ class Game {
 
   resetClaimUiForNewTurn() {
     this.claimMadeThisTurn = false;
+    this.touchedThisTurn = false;
     this.pendingClaimWithMoveType = null;
     this.hideSanInput();
     this.updateButtons();
@@ -917,6 +1169,16 @@ class Game {
   hideConfirmation() {
     document.getElementById('confirmPanel').style.display = 'none';
     this._confirmCallback = null;
+  }
+
+  markRematchUnavailable(message) {
+    const btn = document.getElementById('rematchBtn');
+    if (btn) {
+      btn.classList.remove('rematch-blink');
+      btn.disabled = true;
+      btn.textContent = 'Rematch unavailable';
+    }
+    this.showArbiterMessage(message, 'info');
   }
 
   // === Clock display ===
@@ -998,8 +1260,10 @@ class Game {
     document.getElementById('offerDrawBtn').disabled = !this.gameActive;
     document.getElementById('resignBtn').disabled = !this.gameActive;
     document.getElementById('requestPieceBtn').disabled = !this.gameActive;
-    // Claim buttons are disabled once a claim has been committed on this turn.
-    const claimsAllowed = this.gameActive && !this.claimMadeThisTurn;
+    // Claim buttons stay enabled for the whole game (teaching philosophy: faults are allowed
+    // and the arbiter escalates — see A-003/A-004 in docs/fide-deviations.md). They only die
+    // with the game itself.
+    const claimsAllowed = this.gameActive;
     document.getElementById('claimThreefoldOnBoardBtn').disabled = !claimsAllowed;
     document.getElementById('claimThreefoldWithMoveBtn').disabled = !claimsAllowed;
     document.getElementById('claimFiftyMoveOnBoardBtn').disabled = !claimsAllowed;
@@ -1009,19 +1273,20 @@ class Game {
   /**
    * Builds the game-start arbiter message from two INDEPENDENT facts:
    *   - isCreator:    the creator opened the game and waited, so their *opponent* is the one who
-   *                   joined; the joiner is the one who joined.
+   *                   joined (named by colour, e.g. "Black joined."); the joiner is the one who
+   *                   joined ("You joined the game.").
    *   - hasFirstMove: only the side to move has a running clock at the start of the game.
    * These coincide in a standard creator-plays-White game, but NOT when the creator chose Black or a
    * custom FEN starts with Black to move -- so each clause is keyed to its own fact, never to colour.
+   * Deliberately SHORT: the "Game started" event itself is shown as a banner over the board, and no
+   * "your turn" coaching is appended — a chess player whose clock runs knows they must move.
    * Pure (no DOM / no `this`) so the four creator/joiner x first-move combinations are exhaustively
    * testable; the four cases are pinned in tests/e2e/game-start-message.spec.ts.
    */
-  static gameStartedMessage(isCreator, hasFirstMove) {
-    const joined = isCreator ? 'your opponent joined the game' : 'you joined the game';
-    const clock = hasFirstMove
-      ? 'Your clock has been started - your turn.'
-      : "Opponent's clock has been started - opponent's turn.";
-    return `Game started - ${joined}. ${clock}`;
+  static gameStartedMessage(isCreator, hasFirstMove, opponentColourName) {
+    const joined = isCreator ? `${opponentColourName} joined.` : 'You joined the game.';
+    const clock = hasFirstMove ? 'Your clock has been started.' : "Opponent's clock has been started.";
+    return `${joined} ${clock}`;
   }
 
   showArbiterMessage(message, style) {
@@ -1029,6 +1294,41 @@ class Game {
     el.textContent = message;
     el.className = 'arbiter-message';
     if (style) el.classList.add(style);
+  }
+
+  clearArbiterMessage() {
+    const el = document.getElementById('arbiterMessage');
+    if (!el) return;
+    el.textContent = '';
+    el.className = 'arbiter-message';
+  }
+
+  // Transient Lichess-style banner over the board for game-level events ("Game started",
+  // "Rematch started"). Fades away on its own; details stay in the arbiter message window.
+  showGameBanner(text) {
+    const el = document.getElementById('gameBanner');
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = 'block';
+    clearTimeout(this._gameBannerTimer);
+    this._gameBannerTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
+  }
+
+  // Shown when there is no active game to open for this id — a code that wasn't found, expired,
+  // was already full, the game already ended, or a stale resume token. Replaces the old raw
+  // technical error with a calm message and an explicit path back to the lobby. The saved session
+  // is dropped so a refresh doesn't loop trying to reopen a game that no longer exists.
+  showGameUnavailable(message) {
+    Game.clearSession();
+    this.gameActive = false;
+    // Nothing on this page is actionable except the way back. Disable every game control (Display
+    // PGN, Flip Board, etc. aren't covered by updateButtons) and freeze the board. The Back-to-lobby
+    // button is added AFTER this, so it stays enabled.
+    document.querySelectorAll('.game-layout button').forEach((btn) => { btn.disabled = true; });
+    if (this.board) this.board.setEnabled(false);
+    this.showArbiterMessage(message);
+    this.clearArbiterButtons();
+    this.showArbiterButton('Back to lobby', () => { window.location.href = '/'; });
   }
 
   showArbiterButton(label, callback) {

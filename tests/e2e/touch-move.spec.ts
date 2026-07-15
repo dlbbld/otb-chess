@@ -6,7 +6,7 @@ import {
   clickReadyToContinue,
   expectGameResumed,
 } from './helpers/app';
-import { dragPiece, clickSquare, pressClock, expectPiece } from './helpers/board';
+import { dragPiece, clickSquare, removePiece, pressClock, expectPiece, expectEmpty } from './helpers/board';
 
 let game: TwoPlayerGame;
 
@@ -78,6 +78,101 @@ test('capturing the touched opponent piece satisfies the obligation', async ({ b
   await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expectPiece(white, 'd5', 'WHITE_PAWN');
+});
+
+test('opponent rook removed first then own rook released short of capture is touch-move, not released-piece', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/1r6/8/8/1R6/8/4K3 w - - 0 1', autoResume: false });
+  const { white, black } = game;
+
+  await removePiece(white, 'b6');
+  await dragPiece(white, 'b3', 'b5');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText("first touched the opponent's rook on b6");
+  await expect(white.locator('#arbiterMessage')).toContainText('then your rook on b3');
+  await expect(white.locator('#arbiterMessage')).toContainText('must make that capture');
+  await expect(white.locator('#arbiterMessage')).not.toContainText(/released-piece/i);
+
+  await clickRestore(white);
+  await clickReadyToContinue(white);
+  await clickReadyToContinue(black);
+  await expectGameResumed(white);
+
+  await expectPiece(white, 'b3', 'WHITE_ROOK');
+  await expectPiece(white, 'b6', 'BLACK_ROOK');
+  await dragPiece(white, 'b3', 'b6');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expectPiece(black, 'b6', 'WHITE_ROOK');
+  await expectEmpty(black, 'b3');
+});
+
+test('opponent pawn then own rook specific-capture message preserves touch order', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/6p1/6R1/8/8/8/8/4K3 w - - 0 1' });
+  const { white } = game;
+
+  await clickSquare(white, 'g7');
+  await clickSquare(white, 'g6');
+  await dragPiece(white, 'g6', 'g5');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    "You first touched the opponent's pawn on g7 and then your rook on g6");
+  await expect(white.locator('#arbiterMessage')).toContainText('Because the rook on g6 can capture the pawn on g7');
+  await expect(white.locator('#arbiterMessage')).not.toContainText(
+    'You touched your rook on g6 and then the opponent');
+});
+
+test('opponent-piece obligation narrows to the own capturer touched after revert', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/1n6/PPP1P3/4K3 w - - 0 1', autoResume: false });
+  const { white, black } = game;
+
+  await clickSquare(white, 'b3');
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText("opponent's knight on b3");
+  await expect(white.locator('#arbiterMessage')).toContainText('must be captured');
+
+  await clickRestore(white);
+  await clickReadyToContinue(white);
+  await clickReadyToContinue(black);
+  await expectGameResumed(white);
+
+  await clickSquare(white, 'c2');
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText("first touched the opponent's knight on b3");
+  await expect(white.locator('#arbiterMessage')).toContainText('then your pawn on c2');
+  await expect(white.locator('#arbiterMessage')).toContainText('Because the pawn on c2 can capture the knight on b3');
+
+  await clickRestore(white);
+  await clickReadyToContinue(white);
+  await clickReadyToContinue(black);
+  await expectGameResumed(white);
+
+  await dragPiece(white, 'a2', 'b3');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('pawn on c2');
+  await expect(white.locator('#arbiterMessage')).toContainText('must make that capture');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Move accepted');
+
+  await clickRestore(white);
+  await clickReadyToContinue(white);
+  await clickReadyToContinue(black);
+  await expectGameResumed(white);
+
+  await dragPiece(white, 'c2', 'b3');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expectPiece(black, 'b3', 'WHITE_PAWN');
+  await expectEmpty(black, 'c2');
 });
 
 // Cases 5/6: the touch-move obligation survives an illegal move + restore. These also exercise the

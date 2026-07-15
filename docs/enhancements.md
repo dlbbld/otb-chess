@@ -37,7 +37,7 @@ Companion: [`SPECIFICATION.md`](../SPECIFICATION.md) for current behaviour, [`fi
 
 ## E-003 — Interactive wrong-side claim resolution
 
-**Today**: When a player who does *not* have the move clicks a claim button, the system simply returns a private error to the claimant ("You cannot claim a draw when not having the move."). The opponent (who has the move) is not notified. The clock is not paused. This is FIDE-aligned: in OTB chess an arbiter would tell the offender "it's not your move" and play would continue without interruption.
+**Today**: When a player who does *not* have the move clicks a claim button, the system returns a private rejection to the claimant ("You cannot claim a draw when not having the move.") and — per [A-003](fide-deviations.md#a-003--wrong-time-draw-claim-escalation) — escalates on repetition: warning on the second wrong-time claim, loss of the game on the third. The buttons stay enabled so the fault can be made (and learned from). The opponent is notified only when the third claim ends the game. The clock is not paused. The first-claim handling is FIDE-aligned: in OTB chess an arbiter would tell the offender "it's not your move" and play would continue without interruption.
 
 **Idea on the table**: A more interactive resolution where wrong-side claims are visible to both players:
 

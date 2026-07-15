@@ -35,9 +35,13 @@ export async function joinGame(page: Page, gameId: string): Promise<void> {
   await page.goto(`/game.html?gameId=${gameId}`);
 }
 
-/** Asserts (with auto-retry) that the page reached the "Game started" state. */
+/**
+ * Asserts (with auto-retry) that the page reached the game-started state. "Game started" itself
+ * is a transient banner; the arbiter message carries the short clock fact, present in all four
+ * creator/joiner x first-move variants.
+ */
 export async function expectGameStarted(page: Page): Promise<void> {
-  await expect(page.locator('#arbiterMessage')).toContainText('Game started', { timeout: 15_000 });
+  await expect(page.locator('#arbiterMessage')).toContainText('clock has been started', { timeout: 15_000 });
 }
 
 /**

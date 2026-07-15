@@ -15,6 +15,7 @@ import {
   pressOpponentClock,
   pressOwnClock,
   flipBoard,
+  clickSquare,
   expectPiece,
   expectEmpty,
 } from './helpers/board';
@@ -170,6 +171,19 @@ test('en passant that would expose the own king is rejected', async ({ browser }
   await expectPiece(white, 'e5', 'WHITE_PAWN'); // position restored
 });
 
+test('illegal move while in check says it leaves the own king in check', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k3r3/8/8/8/8/8/8/4K2R w - - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'h1', 'h2'); // does not answer the check from the black rook on e8
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move because it leaves the own king in check.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('would leave');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('it leaves the own king in check');
+});
+
 test('moving an opponent piece is rejected immediately', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white } = game;
@@ -210,7 +224,7 @@ test('changing a completed promotion is a released-piece violation, not an illeg
   await expect(white.locator('#arbiterMessage')).toContainText(/queen/i);
 });
 
-test('castling by two king moves (king released on g1, then moved on) is a released-piece violation', async ({
+test('castling by two king moves (king released on g1, then moved on) asks to complete castling', async ({
   browser,
 }) => {
   game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
@@ -220,8 +234,152 @@ test('castling by two king moves (king released on g1, then moved on) is a relea
   await dragPiece(white, 'g1', 'f1'); // then moved on to f1
   await pressClock(white);
 
-  await expect(white.locator('#arbiterMessage')).toContainText(/released-piece/i);
-  await expect(white.locator('#arbiterMessage')).toContainText(/castling/i);
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Castling has been started. Because the king was released on g1 and kingside castling is legal,'
+      + ' you must complete the castling move by moving the rook from h1 to f1.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText(/released-piece/i);
+});
+
+test('incomplete castling has no Revert button and informs the opponent passively', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'e1', 'g1'); // king released on g1 -> starts legal kingside castling
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Castling has been started. Because the king was released on g1 and kingside castling is legal,'
+      + ' you must complete the castling move by moving the rook from h1 to f1.');
+  await expect(white.getByRole('button', { name: 'Revert' })).toBeHidden();
+
+  await expect(black.locator('#arbiterMessage')).not.toContainText(/started castling/i);
+  await expect(black.locator('#opponentInfoPanel')).toContainText('Your opponent started castling');
+
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
+test('king released on castling square is illegal when the castling path is attacked', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k4r2/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'the king would travel over a field that is in check');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Because you released the king on g1, which attempts to castle');
+  await expect(white.locator('#arbiterMessage')).toContainText('you must make a legal move with the king');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('complete the castling move');
+});
+
+test('king-then-rook touch before incomplete castling uses the touch-castling reason', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white, black } = game;
+
+  await clickSquare(white, 'e1');
+  await clickSquare(white, 'h1');
+  await dragPiece(white, 'e1', 'g1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Because you touched the king and the rook, and castling is legal, please perform the castling move.');
+  await expect(white.getByRole('button', { name: 'Revert' })).toBeHidden();
+  await expect(black.locator('#arbiterMessage')).not.toContainText(/touched the king and the rook/i);
+  await expect(black.locator('#opponentInfoPanel')).toContainText(
+    'Your opponent touched the king and the rook, and castling is legal.');
+
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
+test('rook-first castling attempt keeps the rook move and restores the king', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'h1', 'f1'); // legal rook move; rook-first castling is not allowed
+  await dragPiece(white, 'e1', 'g1'); // king displacement after the rook move
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Castling cannot be performed rook first. Because the rook was released on f1 as a legal move,'
+      + ' the move is the rook move from h1 to f1. Please put the king back on e1 and press the clock.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText(/illegal move/i);
+  await expect(white.locator('#arbiterMessage')).not.toContainText(/put the rook back/i);
+
+  await clickRestore(white);
+  await expectPiece(white, 'e1', 'WHITE_KING');
+  await expectPiece(white, 'f1', 'WHITE_ROOK');
+  await expectEmpty(white, 'g1');
+  await expectEmpty(white, 'h1');
+  await expect(white.locator('#arbiterMessage')).toContainText('Clock restarted', { timeout: 15_000 });
+
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
+test('illegal castling without the side right obliges the first-touched king when it can move', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '2k5/8/8/8/8/8/8/R3K2R w Q - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
+  await expect(white.locator('#arbiterMessage')).toContainText('there is no castling right anymore on this side');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Because you attempted to castle by moving the king and rook, and castling on this side is illegal');
+  await expect(white.locator('#arbiterMessage')).toContainText('you must make a legal move with the king');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
+});
+
+test('illegal castling with no king moves leaves any legal move free even when the rook can move', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k7/8/8/8/8/7b/3PPP2/3QK2R w - - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Because you attempted to castle by moving the king and rook, and castling on this side is illegal');
+  await expect(white.locator('#arbiterMessage')).toContainText('the king has no legal move');
+  await expect(white.locator('#arbiterMessage')).toContainText('you may make any legal move');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('legal move with the rook');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
+});
+
+test('illegal castling with no king or rook moves leaves any other legal move free', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k3r3/8/8/8/8/7b/3P1P2/3QK2R w - - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Because you attempted to castle by moving the king and rook, and castling on this side is illegal');
+  await expect(white.locator('#arbiterMessage')).toContainText('the king has no legal move');
+  await expect(white.locator('#arbiterMessage')).toContainText('you may make any legal move');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
 });
 
 test('moving two pieces (a knight shuffle around a pin) is an illegal move', async ({ browser }) => {

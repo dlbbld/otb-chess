@@ -64,6 +64,26 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testIllegalMoveLeavingKingInCheckUsesNaturalWording() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/8/4K2R w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.H2, Piece.WHITE_ROOK, 0));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.H1, Piece.NONE).createChangedPosition(Square.H2, Piece.WHITE_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertEquals("because it leaves the own king in check", response.illegalMoveDetail().get().playerReason().get());
+    assertEquals("it leaves the own king in check", response.illegalMoveDetail().get().opponentReason().get());
+    assertTrue(response.message().startsWith("Illegal move because it leaves the own king in check."));
+    assertFalse(response.message().contains("would leave"));
+  }
+
+  @Test
   void testIllegalMoveWithoutSimpleAttemptKeepsGenericMessage() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();
@@ -98,9 +118,35 @@ class TestArbiterEngine {
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_PLAYER, response.playerMessageKey());
     assertEquals(Piece.WHITE_PAWN, response.releasedPieceContext().get().piece());
     assertEquals(Square.E3, response.releasedPieceContext().get().square());
+    assertTrue(response.releasedPieceContext().get().releasedPieceDisplacedAfterRelease());
+    assertTrue(response.renderedPlayerMessage().contains("put the pawn back on e3"));
     assertTrue(response.restorePosition().isPresent());
     assertEquals(BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.E2, Piece.NONE)
         .createChangedPosition(Square.E3, Piece.WHITE_PAWN).build(), response.restorePosition().get());
+  }
+
+  @Test
+  void testReleasedPieceViolationAfterOtherPieceMoveAsksToRevertPositionChange() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.A2, Square.A4, Piece.WHITE_PAWN, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H2, Square.H3, Piece.WHITE_PAWN, 1));
+
+    final BitboardPosition afterA4AndH3 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.A2, Piece.NONE).createChangedPosition(Square.A4, Piece.WHITE_PAWN)
+        .createChangedPosition(Square.H2, Piece.NONE).createChangedPosition(Square.H3, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterA4AndH3, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_POSITION_CHANGE_PLAYER, response.playerMessageKey());
+    assertFalse(response.releasedPieceContext().get().releasedPieceDisplacedAfterRelease());
+    assertTrue(response.renderedPlayerMessage().contains("revert the position change after pawn release on a4"));
+    assertFalse(response.renderedPlayerMessage().contains("put the pawn back on a4"));
+    assertEquals(BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.A2, Piece.NONE)
+        .createChangedPosition(Square.A4, Piece.WHITE_PAWN).build(), response.restorePosition().get());
   }
 
   /** FIDE 4.7: putting the piece back to the original square does not undo a committed release. */
@@ -126,6 +172,63 @@ class TestArbiterEngine {
         .createChangedPosition(Square.E3, Piece.WHITE_PAWN).build(), response.restorePosition().get());
     // No illegal-move counter increment for the procedural violation.
     assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  /**
+   * When two pieces of the same kind could have legally reached the release square, "the knight on e4" would not say
+   * WHICH knight was released — the message must name the origin ("the knight from c3 on e4"). SAN-style
+   * disambiguation, applied only when ambiguous.
+   */
+  @Test
+  void testReleasedPieceViolationNamesOriginWhenAmbiguous() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    // White knights on c3 and g5 — BOTH can reach e4.
+    final Board board = Board.fromFenStrict("4k3/8/8/6N1/8/2N5/8/4K3 w - - 0 1");
+
+    // White releases the c3 knight on e4 (legal commit), takes it back, and puts the OTHER knight
+    // (from g5) on e4 instead.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.C3, Square.E4, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E4, Square.C3, Piece.WHITE_KNIGHT, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.G5, Square.E4, Piece.WHITE_KNIGHT, 2));
+
+    final BitboardPosition wrongKnightOnE4 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.G5, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, wrongKnightOnE4, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_FROM_PLAYER, response.playerMessageKey());
+    assertEquals(Square.C3, response.releasedPieceContext().get().fromSquare());
+    assertTrue(response.renderedPlayerMessage().contains("released the knight from c3 on e4"));
+    // The restore instruction keeps naming only the release square.
+    assertTrue(response.renderedPlayerMessage().contains("put the knight back on e4"));
+    assertEquals(Messages.get(MessageKey.ARBITER_RELEASED_PIECE_FROM_OPPONENT, "knight", "c3", "e4"),
+        response.renderedOpponentMessage().get());
+    // Restore target: the position with the c3 knight on e4.
+    assertEquals(BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.C3, Piece.NONE)
+        .createChangedPosition(Square.E4, Piece.WHITE_KNIGHT).build(), response.restorePosition().get());
+  }
+
+  /** An unambiguous release (only one such piece can reach the square) keeps the plain message without the origin. */
+  @Test
+  void testReleasedPieceViolationOmitsOriginWhenUnambiguous() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    // Only ONE white knight can reach e4.
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.C3, Square.E4, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E4, Square.D5, Piece.WHITE_KNIGHT, 1));
+
+    final BitboardPosition knightOnD5 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.C3, Piece.NONE).createChangedPosition(Square.D5, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, knightOnD5, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_PLAYER, response.playerMessageKey());
+    assertTrue(response.renderedPlayerMessage().contains("released the knight on e4"));
   }
 
   private static final String PROMOTION_CAPTURE_FEN = "r3k3/1P6/8/8/8/8/8/4K3 w - - 0 1"; // bxa8 promotes
@@ -198,6 +301,77 @@ class TestArbiterEngine {
     assertEquals(Square.A8, response.releasedPieceContext().get().square());
   }
 
+  private static final String BLACK_PROMOTION_FEN = "r3k3/8/8/8/8/8/1p6/R3K3 b - - 0 1"; // b2xa1 promotes
+
+  /**
+   * Reported bug: Black plays b2xa1 (pawn parked on a1, promotion pending), then drags the a8 rook onto a1 and
+   * presses the clock. That is neither a promotion completion (the promoted piece must come from the side area) nor
+   * Ra8xa1 (the "capture" took Black's OWN pawn) — it is a plain illegal move. It must NOT create a released-piece
+   * commitment: that demanded a "restore" to the tampered position itself, and Revert + clock-press looped forever.
+   */
+  @Test
+  void testDraggedBoardPieceOntoPromotionSquareIsIllegalMoveNotReleasedPiece() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict(BLACK_PROMOTION_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B2, Square.A1, Piece.BLACK_PAWN, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragCapture(Square.A8, Square.A1, Piece.BLACK_ROOK, Piece.BLACK_PAWN, 1));
+
+    final BitboardPosition after = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B2, Piece.NONE).createChangedPosition(Square.A8, Piece.NONE)
+        .createChangedPosition(Square.A1, Piece.BLACK_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, after, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.releasedPieceContext().isEmpty());
+  }
+
+  /**
+   * The legitimate completion of the same promotion stays accepted: pawn captures a1, the pawn is removed, and the
+   * ROOK arrives from the side area (a RESTORE event — no source square). b2xa1=R.
+   */
+  @Test
+  void testPromotionCompletedFromSideAreaOnA1IsAccepted() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict(BLACK_PROMOTION_FEN);
+
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragCapture(Square.B2, Square.A1, Piece.BLACK_PAWN, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.remove(Square.A1, Piece.BLACK_PAWN, 1));
+    sequence.addEvent(BoardEvent.restoreToEmpty(Square.A1, Piece.BLACK_ROOK, 2));
+
+    final BitboardPosition after = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B2, Piece.NONE).createChangedPosition(Square.A1, Piece.BLACK_ROOK).build();
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, engine.evaluateClockPress(board, after, sequence).type());
+  }
+
+  /**
+   * Guard: without any tampering, a plain capture release on the same square still binds — the destination check
+   * must not weaken normal released-piece commitments.
+   */
+  @Test
+  void testUntamperedRookCaptureReleaseStillBinds() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict(BLACK_PROMOTION_FEN);
+
+    // Black releases Ra8xa1 (legal), then drags the rook onward to a4.
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragCapture(Square.A8, Square.A1, Piece.BLACK_ROOK, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.A1, Square.A4, Piece.BLACK_ROOK, 1));
+
+    final BitboardPosition after = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.A8, Piece.NONE).createChangedPosition(Square.A1, Piece.NONE)
+        .createChangedPosition(Square.A4, Piece.BLACK_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, after, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(Square.A1, response.releasedPieceContext().get().square());
+  }
+
   /**
    * FIDE 4.7: the FIRST legal release in the turn is the one that binds — even if a later drop is also a legal move.
    */
@@ -257,9 +431,70 @@ class TestArbiterEngine {
     // the castling by moving the rook from h1 to f1. The message must NOT mislead the
     // player into "putting the king back" since the king is already where it belongs.
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, response.playerMessageKey());
-    assertTrue(response.message().contains("king on g1"));
-    assertTrue(response.message().contains("kingside castling"));
-    assertTrue(response.message().contains("from h1 to f1"));
+    assertEquals("Castling has been started. Because the king was released on g1 and kingside castling is legal,"
+        + " you must complete the castling move by moving the rook from h1 to f1.", response.message());
+  }
+
+  @Test
+  void testKingReleasedOnCastlingSquareWhenPathIsAttackedIsIllegalCastlingAttempt() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    // White releases the king on g1, but f1 is attacked by the rook on f8. The same release square
+    // is no longer an incomplete legal castle; it is an illegal castling attempt under FIDE 4.7.2.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+
+    final BitboardPosition afterKingOnly = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_KING).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterKingOnly, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.message().contains("Illegal move: castling is not possible"));
+    assertTrue(response.message().contains("the king would travel over a field that is in check"));
+    assertTrue(response.message().contains("Because you released the king on g1, which attempts to castle"));
+    assertTrue(response.message().contains("you must make a legal move with the king"));
+    assertFalse(response.message().contains("complete the castling move"));
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  @Test
+  void testKingThenRookTouchThenKingMoveUsesCastlingTouchMessage() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 2));
+
+    final BitboardPosition afterKingOnly = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_KING).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterKingOnly, sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_TOUCH_MOVE_CASTLING_PLAYER, response.playerMessageKey());
+    assertEquals("Because you touched the king and the rook, and castling is legal,"
+        + " please perform the castling move.", response.message());
+    assertTrue(response.restorePosition().isPresent());
+    assertEquals(afterKingOnly, response.restorePosition().get());
+  }
+
+  @Test
+  void testKingThenRookTouchWithoutMoveStillCountsAsClockPressWithoutMove() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 1));
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.illegalMoveDetail().get().noMoveMade());
   }
 
   @Test
@@ -281,6 +516,37 @@ class TestArbiterEngine {
 
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, response.playerMessageKey());
+  }
+
+  @Test
+  void testRookFirstCastlingAttemptCommitsTheRookMoveAndRestoresTheKing() {
+    // FIDE 4.4.2: if the rook is deliberately moved before the king, castling on that side
+    // is no longer available on this move. The legal rook release is the move; the later king
+    // displacement is restored, not counted as an illegal king move.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
+
+    final BitboardPosition afterRookFirstCastlingAttempt = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.H1, Piece.NONE).createChangedPosition(Square.F1, Piece.WHITE_ROOK)
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_KING).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterRookFirstCastlingAttempt, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_ROOK_FIRST_CASTLING_PLAYER, response.playerMessageKey());
+    assertEquals("Castling cannot be performed rook first. Because the rook was released on f1 as a legal move,"
+        + " the move is the rook move from h1 to f1. Please put the king back on e1 and press the clock.",
+        response.message());
+    assertFalse(response.message().contains("Illegal move"));
+    assertFalse(response.message().contains("Please put the rook back"));
+    assertTrue(response.restorePosition().isPresent());
+    assertEquals(BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.F1, Piece.WHITE_ROOK).build(), response.restorePosition().get());
+    assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
 
   @Test
@@ -333,12 +599,12 @@ class TestArbiterEngine {
 
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
     assertEquals(MessageKey.ARBITER_RELEASED_PIECE_CASTLING_PLAYER, response.playerMessageKey());
-    assertTrue(response.message().contains("king on g1"));
-    assertTrue(response.message().contains("kingside castling"));
-    assertTrue(response.message().contains("from h1 to f1"));
+    assertEquals("Castling has been started. Because the king was released on g1 and kingside castling is legal,"
+        + " you must complete the castling move by moving the rook from h1 to f1.", response.message());
     // The misleading "put the king back" wording from the generic released-piece message
     // must NOT appear — the king is already correctly placed.
     assertFalse(response.message().contains("Please put the king back"));
+    assertFalse(response.message().contains("Released-piece violation"));
   }
 
   /**
@@ -445,17 +711,33 @@ class TestArbiterEngine {
     assertTrue(response.illegalMoveDetail().get().unlimited());
   }
 
+  /**
+   * FIDE 7.5.3: pressing the clock without making a move is considered and penalised as an illegal move. With the
+   * default limit of two illegal moves, the second such press loses the game.
+   */
   @Test
-  void testIncompleteMoveBoardUnchanged() {
+  void testClockPressWithoutMoveIsPenalisedAsIllegalMove() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();
-
-    // Player presses clock without changing the board
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
 
-    final ArbiterResponse response = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
+    // First press without a move: an illegal move — counted, with the "make a move" instruction
+    // (nothing to restore, the board is unchanged).
+    final ArbiterResponse first = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
+    assertEquals(MessageKey.ARBITER_ILLEGAL_MOVE_NO_MOVE_PLAYER_NEXT, first.playerMessageKey());
+    assertTrue(first.illegalMoveDetail().get().noMoveMade());
+    assertTrue(first.renderedPlayerMessage().contains("the clock was pressed without a move being made (FIDE 7.5.3)"));
+    assertTrue(first.renderedPlayerMessage().contains("Please make a move."));
+    assertFalse(first.renderedPlayerMessage().contains("restore"));
+    assertTrue(first.renderedOpponentMessage().get().contains("They are requested to make a move."));
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
 
-    assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, response.type());
+    // Second press without a move: the game is lost (default limit: 2 illegal moves).
+    final ArbiterResponse second = engine.evaluateClockPress(board, board.getBitboardPosition(), sequence);
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, second.type());
+    assertTrue(second.renderedPlayerMessage().contains("White loses the game"));
+    assertTrue(second.renderedPlayerMessage().contains("2nd illegal move"));
   }
 
   @Test
@@ -554,6 +836,33 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testOpponentPieceTouchObligationPreemptsLaterReleasedPieceCommitment() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/1r6/8/8/1R6/8/4K3 w - - 0 1");
+
+    // White first removes/touches the capturable black rook on b6, then releases the white rook
+    // on b5 and presses the clock. Rb3-b5 is a legal rook move only after the black rook was
+    // lifted, but the earlier opponent-piece touch obliges White to capture the rook on b6.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.remove(Square.B6, Piece.BLACK_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B3, Square.B5, Piece.WHITE_ROOK, 1));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B6, Piece.NONE)
+        .createChangedPosition(Square.B3, Piece.NONE)
+        .createChangedPosition(Square.B5, Piece.WHITE_ROOK)
+        .build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
+    assertEquals(MessageKey.ARBITER_TOUCH_MOVE_SPECIFIC_CAPTURE_OPPONENT_FIRST_PLAYER, response.playerMessageKey());
+    assertTrue(response.message().contains("first touched the opponent's rook on b6"));
+    assertTrue(response.message().contains("then your rook on b3"));
+    assertFalse(response.message().contains("Released-piece"));
+  }
+
+  @Test
   void testTouchMoveViolationDoesNotCountAsIllegalMove() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();
@@ -628,7 +937,8 @@ class TestArbiterEngine {
     board.moveStrict("Nf6");
 
     // Rook first produces the same final position as castling, but the move may not be
-    // accepted as O-O because castling is a king move.
+    // accepted as O-O because castling cannot be performed rook first. The rook move
+    // is committed and the king must be restored.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
@@ -640,7 +950,35 @@ class TestArbiterEngine {
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
-    assertTrue(response.message().contains("rook on f1"));
+    assertEquals(MessageKey.ARBITER_RELEASED_PIECE_ROOK_FIRST_CASTLING_PLAYER, response.playerMessageKey());
+    assertEquals("Castling cannot be performed rook first. Because the rook was released on f1 as a legal move,"
+        + " the move is the rook move from h1 to f1. Please put the king back on e1 and press the clock.",
+        response.message());
+  }
+
+  @Test
+  void testIllegalCastlingAttemptWithoutCastlingRightReportsKingTouchObligation() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("2k5/8/8/8/8/8/8/R3K2R w Q - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.G1, Piece.WHITE_KING).createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.message().contains("castling is not possible"));
+    assertTrue(response.message().contains("there is no castling right anymore on this side"), response.message());
+    assertTrue(response.message().contains(
+        "Because you attempted to castle by moving the king and rook, and castling on this side is illegal"));
+    assertTrue(response.message().contains("you must make a legal move with the king"));
+    assertFalse(response.message().contains("Castling counts as a king move"));
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
 
   @Test
@@ -662,46 +1000,84 @@ class TestArbiterEngine {
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
     assertTrue(response.message().contains("castling is not possible"));
     assertTrue(response.message().contains("the king would travel over a field that is in check"));
-    assertTrue(response.message().contains("Castling counts as a king move"));
+    assertTrue(response.message().contains(
+        "Because you attempted to castle by moving the king and rook, and castling on this side is illegal"));
     assertTrue(response.message().contains("you must make a legal move with the king"));
+    assertFalse(response.message().contains("Castling counts as a king move"));
     assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
 
   @Test
-  void testFailedAdjacentCastlingAttemptWithNoKingMovesDoesNotBindRook() {
+  void testFailedCastlingAttemptWithNoKingMovesAllowsAnyLegalMoveEvenWhenRookCanMove() {
     final ArbiterEngine engine = new ArbiterEngine();
-    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/P2PP3/3QK2R w K - 0 1");
+    final Board board = Board.fromFenStrict("k7/8/8/8/8/7b/3PPP2/3QK2R w - - 0 1");
 
-    // White attempts a malformed kingside castling motion. Castling is impossible because f1 is
-    // attacked, and the king has no legal move at all from e1.
+    // White attempts to castle without castling rights. The king has no legal moves, so FIDE
+    // 4.4.3/4.7.2 frees the player to make any legal move; the rook touch does not bind.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
-    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.F1, Piece.WHITE_KING, 0));
-    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.G1, Piece.WHITE_ROOK, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
 
     final BitboardPosition afterFailedCastling = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.H1, Piece.NONE)
-        .createChangedPosition(Square.F1, Piece.WHITE_KING).createChangedPosition(Square.G1, Piece.WHITE_ROOK).build();
+        .createChangedPosition(Square.G1, Piece.WHITE_KING).createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
 
     final ArbiterResponse failedCastling = engine.evaluateClockPress(board, afterFailedCastling, sequence);
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, failedCastling.type());
     assertTrue(failedCastling.message().contains("castling is not possible"));
-    assertTrue(failedCastling.message().contains("the touched king has no legal moves"));
-    assertTrue(failedCastling.message().contains("make another legal move"));
+    assertTrue(failedCastling.message().contains(
+        "Because you attempted to castle by moving the king and rook, and castling on this side is illegal"));
+    assertTrue(failedCastling.message().contains("the king has no legal move"));
+    assertTrue(failedCastling.message().contains("you may make any legal move"));
 
-    // After restoring the original position, the failed castling rook touch must not bind the
-    // player to a rook move. A different legal move is acceptable.
+    // After restoring the original position, a different legal move is acceptable.
     sequence.resetReleasedPieceRule();
-    sequence.addEvent(BoardEvent.dragMove(Square.A2, Square.A3, Piece.WHITE_PAWN, 2));
+    sequence.addEvent(BoardEvent.dragMove(Square.D2, Square.D3, Piece.WHITE_PAWN, 2));
     final BitboardPosition afterPawnMove = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.A2, Piece.NONE).createChangedPosition(Square.A3, Piece.WHITE_PAWN).build();
+        .createChangedPosition(Square.D2, Piece.NONE).createChangedPosition(Square.D3, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse laterMove = engine.evaluateClockPress(board, afterPawnMove, sequence);
 
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, laterMove.type());
     assertTrue(laterMove.acceptedMove().isPresent());
-    assertEquals(Square.A2, laterMove.acceptedMove().get().moveSpecification().fromSquare());
-    assertEquals(Square.A3, laterMove.acceptedMove().get().moveSpecification().toSquare());
+    assertEquals(Square.D2, laterMove.acceptedMove().get().moveSpecification().fromSquare());
+    assertEquals(Square.D3, laterMove.acceptedMove().get().moveSpecification().toSquare());
+  }
+
+  @Test
+  void testFailedCastlingAttemptWithNoKingOrRookMovesAllowsAnyOtherLegalMove() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/7b/3P1P2/3QK2R w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
+
+    final BitboardPosition afterFailedCastling = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.G1, Piece.WHITE_KING).createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
+
+    final ArbiterResponse failedCastling = engine.evaluateClockPress(board, afterFailedCastling, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, failedCastling.type());
+    assertTrue(failedCastling.message().contains("castling is not possible"));
+    assertTrue(failedCastling.message().contains(
+        "Because you attempted to castle by moving the king and rook, and castling on this side is illegal"));
+    assertTrue(failedCastling.message().contains("the king has no legal move"));
+    assertTrue(failedCastling.message().contains("you may make any legal move"));
+
+    sequence.resetReleasedPieceRule();
+    sequence.addEvent(BoardEvent.dragMove(Square.D1, Square.E2, Piece.WHITE_QUEEN, 2));
+    final BitboardPosition afterQueenBlock = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.D1, Piece.NONE).createChangedPosition(Square.E2, Piece.WHITE_QUEEN).build();
+
+    final ArbiterResponse laterMove = engine.evaluateClockPress(board, afterQueenBlock, sequence);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, laterMove.type());
+    assertTrue(laterMove.acceptedMove().isPresent());
+    assertEquals(Square.D1, laterMove.acceptedMove().get().moveSpecification().fromSquare());
+    assertEquals(Square.E2, laterMove.acceptedMove().get().moveSpecification().toSquare());
   }
 
   @Test
@@ -760,6 +1136,46 @@ class TestArbiterEngine {
     final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E5, Piece.NONE).createChangedPosition(Square.F5, Piece.NONE)
         .createChangedPosition(Square.F6, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
+  }
+
+  @Test
+  void testIncompleteEnPassantIsIllegalMoveNotReleasedPiece() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/8/1pP5/8/8/4K3 b - c3 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragMove(Square.B4, Square.C3, Piece.BLACK_PAWN, 0));
+
+    final BitboardPosition incompleteEnPassant = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B4, Piece.NONE)
+        .createChangedPosition(Square.C3, Piece.BLACK_PAWN)
+        .build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, incompleteEnPassant, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.renderedPlayerMessage().contains("en passant capture is incomplete"));
+    assertTrue(response.renderedPlayerMessage().contains("captured pawn on c4 is still on the board"));
+    assertFalse(response.renderedPlayerMessage().contains("Released-piece"));
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.BLACK));
+  }
+
+  @Test
+  void testEnPassantRemovalFirstSatisfiesOpponentPawnTouch() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k3/8/8/1pP5/3N4/8/8/4K3 w - b6 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.remove(Square.B5, Piece.BLACK_PAWN, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.C5, Square.B6, Piece.WHITE_PAWN, 1));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B5, Piece.NONE).createChangedPosition(Square.C5, Piece.NONE)
+        .createChangedPosition(Square.B6, Piece.WHITE_PAWN).build();
 
     final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
 

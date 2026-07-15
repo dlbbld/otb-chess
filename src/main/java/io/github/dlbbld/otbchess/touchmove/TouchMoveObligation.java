@@ -21,6 +21,8 @@ import io.github.dlbbld.ashlarchess.board.enums.Square;
  *                                   must be captured. {@link Square#NONE} for the other types.
  * @param capturedPiece              for {@link TouchMoveType#SPECIFIC_CAPTURE}, the opponent piece that must be
  *                                   captured. {@link Piece#NONE} for the other types.
+ * @param opponentTouchedFirst       for {@link TouchMoveType#SPECIFIC_CAPTURE}, whether the opponent piece was touched
+ *                                   before the own piece. Used only to render the physical history in the right order.
  * @param precededByUnmovableOwnTouch for {@link TouchMoveType#OWN_PIECE}, whether the player touched one or more of
  *                                   their own pieces that had no legal moves <em>before</em> touching the binding piece.
  *                                   When true, the binding piece is not literally the first piece touched -- it is the
@@ -28,16 +30,16 @@ import io.github.dlbbld.ashlarchess.board.enums.Square;
  *                                   Always {@code false} for the other types.
  */
 public record TouchMoveObligation(TouchMoveType type, Square square, Piece piece, CastlingMove castlingMove,
-    Square toSquare, Piece capturedPiece, boolean precededByUnmovableOwnTouch) {
+    Square toSquare, Piece capturedPiece, boolean opponentTouchedFirst, boolean precededByUnmovableOwnTouch) {
 
   /** Convenience constructor for own-piece / opponent-piece obligations. */
   public TouchMoveObligation(TouchMoveType type, Square square, Piece piece) {
-    this(type, square, piece, CastlingMove.NONE, Square.NONE, Piece.NONE, false);
+    this(type, square, piece, CastlingMove.NONE, Square.NONE, Piece.NONE, false, false);
   }
 
   /** Convenience constructor for castling obligations. */
   public TouchMoveObligation(TouchMoveType type, Square square, Piece piece, CastlingMove castlingMove) {
-    this(type, square, piece, castlingMove, Square.NONE, Piece.NONE, false);
+    this(type, square, piece, castlingMove, Square.NONE, Piece.NONE, false, false);
   }
 
   /**
@@ -46,8 +48,17 @@ public record TouchMoveObligation(TouchMoveType type, Square square, Piece piece
    */
   public static TouchMoveObligation specificCapture(Square fromSquare, Piece ownPiece, Square toSquare,
       Piece capturedPiece) {
+    return specificCapture(fromSquare, ownPiece, toSquare, capturedPiece, false);
+  }
+
+  /**
+   * Creates a {@link TouchMoveType#SPECIFIC_CAPTURE} obligation while preserving the order in which the pieces were
+   * touched, so the violation message describes the actual physical sequence.
+   */
+  public static TouchMoveObligation specificCapture(Square fromSquare, Piece ownPiece, Square toSquare,
+      Piece capturedPiece, boolean opponentTouchedFirst) {
     return new TouchMoveObligation(TouchMoveType.SPECIFIC_CAPTURE, fromSquare, ownPiece, CastlingMove.NONE, toSquare,
-        capturedPiece, false);
+        capturedPiece, opponentTouchedFirst, false);
   }
 
   /**
@@ -55,6 +66,7 @@ public record TouchMoveObligation(TouchMoveType type, Square square, Piece piece
    * evaluator when the binding own piece was reached only after the player touched own pieces that had no legal moves.
    */
   public TouchMoveObligation asPrecededByUnmovableOwnTouch() {
-    return new TouchMoveObligation(type, square, piece, castlingMove, toSquare, capturedPiece, true);
+    return new TouchMoveObligation(type, square, piece, castlingMove, toSquare, capturedPiece, opponentTouchedFirst,
+        true);
   }
 }

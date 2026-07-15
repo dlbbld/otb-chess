@@ -71,11 +71,13 @@ FIDE's Article 11.5 and 12.9 give the arbiter judgment over distraction, annoyin
 
 **FIDE**: Article 11.5 forbids "unreasonable offers of a draw"; Article 12.9 lists penalties (warning → time penalty → opponent point increase → game lost), with the choice and threshold left to the arbiter.
 
-**Our policy**: Three presses of the draw-offer button at a non-recommended moment (i.e., outside the gap between making one's own move and pressing the clock) result in **loss of the game** for the offending player.
+**Our policy**: Wrong-time presses of the draw-offer button (i.e., outside the gap between making one's own move and pressing the clock) escalate — **counted per player PER MOVE**, never carrying over to the next move (a wrong-time offer is only *semi*-illegal: per FIDE 9.1.2.1 the offer itself is valid, only the timing is admonishable — unlike the explicitly forbidden wrong-time *claims* of A-003, whose counts persist):
 
-The first two presses trigger an inline message to the offender ("offered out of protocol — repeated infractions count as annoyance under Art. 11.5") and a corresponding note to the opponent. The third triggers the loss.
+1. **First wrong-time offer of the move**: a REAL offer — forwarded to the opponent (who can accept or reject it), with a procedural note to the offerer ("…The offer still counts as a draw offer.").
+2. **Second on the same move**: **not considered** — NOT forwarded (the opponent already had the first one). Offerer: *"You are again offering a draw at the wrong time. This offer was not considered. Warning: your next draw offer on this move loses the game."* The opponent sees it passively (info window): offered again, not considered, warned.
+3. **Third on the same move**: **loss of the game** (`WRONG_TIME_OFFER_GAME_LOST`), with the A-00x-style personalised messages.
 
-**Rationale**: Arbiter judgment must be encoded into a digital system; an explicit threshold is more transparent than a fuzzy heuristic. Three is small enough to feel like a real limit, large enough to forgive a single mistake.
+**Rationale**: Arbiter judgment must be encoded into a digital system; an explicit threshold is more transparent than a fuzzy heuristic. The per-move reset reflects the semi-legal nature of the offence: every move starts with a fresh, genuine right to offer.
 
 **Note**: This policy applies only to wrong-time offers. Repeated offers at the recommended time are not currently penalized — see [E-002](enhancements.md#e-002) for the open question of whether they should be.
 
@@ -99,3 +101,93 @@ The trigger is **"touching a piece with the intention of moving or capturing it.
 **Rationale**: The asymmetry encodes "intention to move" reasonably for the two contexts. A correct-time offer interrupts a moment of stillness; the recipient's first touch is intentional and committal. A wrong-time offer arrives during active play; the recipient may touch many pieces while thinking before committing, and only a *completed* move signals decision.
 
 **Acknowledged tension**: A wrong-time offer plus a recipient who has already released a move (per FIDE 4.7) but hasn't pressed the clock is currently rejected by the system as "too late to accept." This is a side effect of [D-001](#d-001-clock-press-as-the-move-boundary): in our model the move is "made" only at clock-press, so the post-release / pre-clock-press window is unreachable for offer acceptance. A FIDE-strict implementation would allow acceptance up to clock-press.
+
+---
+
+### A-003 — Wrong-time draw-claim escalation
+
+**FIDE**: Articles 9.2 / 9.3 — a draw claim (threefold repetition / 50-move rule) can only be made by the player **having the move**. (An *offer* is different: possible at any time, covered by A-001/A-002.) FIDE itself has no penalty ladder for claiming out of turn; an arbiter would simply say "it's not your move" and, on repetition, escalate under Articles 11.5 / 12.9.
+
+**Our policy**: Mirrors [A-001](#a-001-draw-offer-abuse-threshold). The claim buttons stay **enabled** for the player not having the move (teaching philosophy: the player may make the fault and learn from the response). Wrong-time claims then escalate, counted per player across the whole game:
+
+1. First claim: rejected — "You cannot claim a draw when not having the move."
+2. Second claim: same rejection plus a warning — the next wrong-time claim loses the game.
+3. Third claim: **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated wrong-time claims despite warnings.
+
+**The count accumulates across different moves.** The three claims need not happen during the same opponent move: e.g. Black claims while White is on move 10 (rejection), again while White is on move 12 (warning), and again while White is on move 15 — Black loses. The counter never resets during the game; a warning, once given, stands.
+
+The first two presses inform the opponent **passively** (face-to-face principle: at a real board they would see the claim happen) via the info window below the clock — visible, but requiring no action. Only the game-ending third press produces a message in the standard arbiter window.
+
+**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_TIME_CLAIM_LIMIT"); the client keeps the buttons enabled via the `wrongTime` flag on `drawClaimResult`; the passive notification travels as `opponentInfo`.
+
+**Rationale**: Same as A-001 — arbiter judgment must be encoded, an explicit three-strike threshold is transparent, and disabling the buttons would prevent the fault instead of teaching from it.
+
+---
+
+### A-004 — Repeat-claim (same move) escalation
+
+**FIDE**: Articles 9.2 / 9.3 — one draw claim per move. FIDE has no penalty ladder for claiming twice on the same move; an arbiter would refuse and, on repetition, escalate under Articles 11.5 / 12.9.
+
+**Our policy**: Mirrors [A-003](#a-003--wrong-time-draw-claim-escalation), with one step less: the player's FIRST claim on the move was legitimate, so the first repeat already carries the warning.
+
+1. First claim on a move: processed on the merits (FIDE 9.2/9.3). If rejected, it is forwarded to the opponent as a draw offer per FIDE 9.5 — announced to the opponent with what actually happened ("your opponent claimed a draw by …, but the claim is not valid. It still counts as a draw offer. Do you accept the draw?"), not a bare "your opponent offers a draw".
+2. Second claim on the same move: rejected with a warning — the next repeat loses the game.
+3. Next repeat (any move; the warning, once given, stands): **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated claims on the same move.
+
+The claim buttons stay **enabled** throughout; violations are counted per player across the whole game. A legitimate single claim on a later move is never a violation. The warning informs the opponent **passively** (info window below the clock, no action required); only the game-ending repeat produces a message in the standard arbiter window.
+
+**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "REPEAT_CLAIM_VIOLATION_LIMIT"); the client keeps the buttons enabled via the `repeatClaim` flag on `drawClaimResult`; the passive notification travels as `opponentInfo`.
+
+**Rationale**: Same as A-001/A-003. The warning comes one step earlier than in A-003 because the player has already exercised their legitimate claim on that move — the repeat is unambiguous.
+
+---
+
+### A-005 — Claim-after-touch escalation (FIDE 9.4)
+
+**FIDE**: Article 9.4 — the player loses the right to claim under 9.2/9.3 once they have touched a piece with the intention of moving it. In our model, any board interaction this turn (CLICK, DRAG, REMOVE, RESTORE) counts as a touch, so this also covers the window where the player has already **made their move on the board but not yet pressed the clock**. FIDE has no penalty ladder for insisting; an arbiter would refuse and, on repetition, escalate under Articles 11.5 / 12.9.
+
+**Our policy**: EXACTLY the [A-003](#a-003--wrong-time-draw-claim-escalation) ladder, applied to the on-move player who claims after touching a piece:
+
+1. First claim: rejected — "You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). Claims must be made before any piece interaction."
+2. Second claim: same rejection plus a warning — the next claim after touching a piece loses the game.
+3. Third claim: **loss of the game**. The offender is told they were warned; the opponent is told the game was lost by repeated claims after touching a piece.
+
+As with A-003, **the count accumulates across different moves** and never resets. The claim buttons stay **enabled**; the first two presses inform the opponent **passively** (info window below the clock); only the game-ending third press produces a message in the standard arbiter window. With-move claim buttons skip the SAN prompt once a piece has been touched (the claim is rejected regardless of any move).
+
+**Where in code**: [`GameSession.claimDraw`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "AFTER_TOUCH_CLAIM_LIMIT"); the client routes it via the same `wrongTime` flag as A-003 and tracks `touchedThisTurn` to skip the SAN prompt.
+
+**Rationale**: Same as A-003 — the two are the same offence ("claiming at a procedurally wrong moment") on either side of the clock press.
+
+---
+
+### A-006 — Wrong clock press (pressing the opponent's clock) escalation
+
+**FIDE**: Article 6.2.4 forbids operating the opponent's clock ("A player must press his/her clock with the same hand…"; handling the clock improperly falls under 12.9 penalties). On a physical clock, pressing the opponent's lever is *possible* — and this board models the real world, so the press is allowed and the arbiter reacts.
+
+**Physical semantics**: the press registers only while the opponent's clock is RUNNING (their lever up). If their lever is already down, pressing it does nothing — silence, exactly like the real clock (this also covers presses during a pause).
+
+**Our policy** (same three-step ladder as A-003/A-005, counted per player across the whole game):
+
+1. First press: the arbiter **pauses the game** — offender: *"Please do not press your opponent's clock. The game is paused and will continue shortly."*; the opponent sees what happened passively (info window). After the admonishment pause (`OTB_WRONG_CLOCK_PAUSE_MS`, default 5 s) the interrupted clock restarts.
+2. Second press: same pause plus the warning — the next press loses the game.
+3. Third press: **loss of the game** (`WRONG_CLOCK_PRESS_GAME_LOST`). Offender: told they were warned and lose; opponent: *"Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game."*
+
+**Where in code**: [`GameSession.pressOpponentClock`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_CLOCK_PRESS_LIMIT"); the server schedules the clock restart after the pause.
+
+**Rationale**: Same as the other ladders — model the fault, teach through the arbiter's escalating response, encode the arbiter judgment as an explicit transparent threshold.
+
+---
+
+### A-007 — Moving an opponent's piece: escalation
+
+**FIDE**: Article 4.1 — a player may only move their own pieces ("Each move must be played with one hand only"; touching/moving the opponent's pieces improperly falls under the arbiter's Article 11.5 / 12.9 judgment). Dragging an opponent's piece from square to square is never part of a legal move sequence in our event model (capture-by-removal uses REMOVE, restoration uses RESTORE_*).
+
+**Our policy** (same three-step ladder as A-003/A-005/A-006, counted per player across the whole game):
+
+1. First time: the arbiter **pauses the game** — offender: *"Position change: You moved an opponent's piece. That is not allowed. Please restore the position."* with the **Revert** flow; the clock restarts after the restoration (standard auto-resume). The opponent sees what happened passively (info window).
+2. Second time: same, plus the warning — *"Warning: the next time you move an opponent's piece, you lose the game."*
+3. Third time: **loss of the game** (`MOVED_OPPONENT_PIECE_GAME_LOST`). Offender: told they were warned and lose; opponent: *"Your opponent has, despite the warnings, repeatedly moved your pieces, and so has lost the game."*
+
+**Where in code**: [`GameSession.escalateMovedOpponentPiece`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "MOVED_OPPONENT_PIECE_LIMIT"), hooked into the mid-play validation; the passive opponent notice travels as `opponentInfo`.
+
+**Rationale**: Same as the other ladders — the board models the physical world where the fault is possible; the arbiter teaches through escalation instead of making the fault impossible.

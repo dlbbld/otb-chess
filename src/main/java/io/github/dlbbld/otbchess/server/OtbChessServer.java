@@ -179,7 +179,25 @@ public class OtbChessServer {
     return GSON.toJson(obj).getBytes(StandardCharsets.UTF_8);
   }
 
-  private static String appVersion() {
+  // Package-private for TestOtbChessServer, which pins that the Maven filtering actually ran.
+  static String appVersion() {
+    // Preferred source: the Maven-filtered version.properties on the classpath. Unlike the jar
+    // manifest's Implementation-Version (which exists only when running from the packaged jar),
+    // it is present in every run mode — java -jar, mvn exec:java / start.bat, IDE — so the page
+    // footer shows the real version instead of the "development" fallback.
+    try (var in = OtbChessServer.class.getResourceAsStream("/version.properties")) {
+      if (in != null) {
+        final var props = new java.util.Properties();
+        props.load(in);
+        final String version = props.getProperty("version");
+        // "${" guards against an unfiltered copy of the file (placeholder not substituted).
+        if (version != null && !version.isBlank() && !version.contains("${")) {
+          return version;
+        }
+      }
+    } catch (final IOException e) {
+      // Fall through to the manifest.
+    }
     final String version = OtbChessServer.class.getPackage().getImplementationVersion();
     return version == null || version.isBlank() ? "development" : version;
   }

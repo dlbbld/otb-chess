@@ -15,7 +15,7 @@ and verified (incl. unattended reboot — see [`SETUP.md`](SETUP.md) §11), and 
 the public. Decision: **hold the public launch** until several known gameplay flaws are fixed and the
 game is properly play-tested, so the first impression is strong. Re-gate the deployment with
 Cloudflare Access (or take it down) in the meantime; a privacy policy will be re-added before any
-public launch. Released as **v0.1.1** (still beta).
+public launch. Released as **v0.1.2** (still beta).
 
 ### Done
 - [x] Remove the testing-only `/api/lastGameId` endpoint and lobby join-code prefill (`fdf067b`).
@@ -51,7 +51,7 @@ public launch. Released as **v0.1.1** (still beta).
 - [x] Cloudflare Access (invited emails) for the private beta. Self-hosted app `OTB Chess Beta` on `play.otb-chess.app`, Allow policy `Beta testers` (Emails: otbchessmail@gmail.com), email one-time-PIN login (team `noisy-field-e40c.cloudflareaccess.com`). **Verified**: unauthenticated `/` and `/api/health` → 302 to the Access login, and `wss /ws` is blocked. *Remaining (Phase 2 / edge):* WAF + rate-limit rules.
 
 ## iMac host setup (publish-server-beta)
-- Toolchain present on the iMac: Git, Temurin JDK 21, Maven 3.9, Node 25 (built-in `WebSocket`).
+- Toolchain present on the iMac: Git, Temurin JDK 17, Maven 3.9, Node 25 (built-in `WebSocket`).
 - Homebrew on this Mac belongs to another user account, so per-user CLIs are installed to `~/.local/bin` (on `PATH` via `~/.zprofile`): `gh` (GitHub CLI, authed as `dlbbld`), `caddy` v2.11.
 - Run the app alone (loopback): `java -jar target/otb-chess.jar` → http://127.0.0.1:8080 (WS on :8081). Helper scripts: `otb-start` / `otb-stop`.
 - Run the single origin locally (dev/prod parity): start the app, then `caddy run --config Caddyfile` from the repo root → http://localhost:9000 (proxies static→8080, `/ws`→8081).
@@ -61,11 +61,352 @@ public launch. Released as **v0.1.1** (still beta).
 
 ## Backlog (not scheduled)
 
-- [ ] **User-friendly message when opening/joining a game that is not active.** When a player opens a
+- [x] **User-friendly message when opening/joining a game that is not active.** When a player opens a
   game that is no longer playable — game ended, code not found, expired/reaped, or the server
-  restarted — the UI currently shows a technical error instead of a clear, friendly message. Replace
-  it with a user-friendly message (and ideally a path back to the lobby). Not in the current release.
+  restarted — the UI showed a technical error. Now replaced with a calm, friendly message plus a
+  **Back to lobby** button. Server (`handleJoinGame`) sends a dedicated `joinFailed` message with a
+  reason (`not_found` / `ended` / `full`) instead of a raw `error`; the not-found case still counts
+  toward the scan-throttle budget. Client (`game.js`) routes `joinFailed`, `resumeFailed`, and the
+  no-game-code case through one `showGameUnavailable(message)` helper (clears the saved session,
+  shows the message, renders the Back-to-lobby button). e2e coverage added in `lobby.spec.ts`
+  (not-found, full, ended, no-id — all assert the message + the way back).
+- [x] **Name the origin square in the released-piece message when ambiguous.** With e.g. knights on
+  c3 and g5 both able to reach e4, "you already released the knight on e4" didn't say WHICH knight.
+  When more than one piece of the same kind could have legally reached the release square, the
+  message now names the origin: "you already released the knight **from c3** on e4" (SAN-style
+  disambiguation, only when ambiguous; the "put the knight back on e4" instruction is unchanged).
+  New message keys `arbiter.released_piece.from.player/opponent`; `ReleasedPieceContext` carries
+  `fromSquare` (NONE for side-area/promotion placements); ambiguity computed in `ArbiterEngine`
+  from the legal moves. Unit-tested (ambiguous + unambiguous cases in `TestArbiterEngine`).
+- [x] **Show the time control with its FIDE discipline on the board page.** A muted label like
+  `5+3 • Blitz` (Lichess-style display) in the right column's lower spacer — vertically centered
+  below the clock, about level with the bottom edge of the board, on the board side in both views.
+  FIDE classification (Appendices A/B, initial + 60× increment): blitz ≤ 10 min, rapid < 60 min,
+  classical ≥ 60 min — so 30+0 is *rapid*. Server-rendered (`TimeControl.fideCategory/label/
+  displayLabel`, unit-tested incl. boundaries in `TestTimeControl`) and sent as `timeControlLabel`
+  on `gameCreated`/`gameJoined`/`resync` (so a refresh keeps it); unused, FIDE-misnamed
+  `TimeControl` presets (`CLASSICAL_30_0`) dropped. e2e asserts both players see `3+0 • Blitz`.
+- [x] **Fix "vdevelopment" shown below the board in dev runs.** `start.bat` (`mvn exec:java`) runs
+  straight from `target/classes`, so the jar manifest's `Implementation-Version` doesn't exist and
+  `/api/version` fell back to `development`. The version now comes from a Maven-filtered
+  `version.properties` on the classpath (works in every run mode: `java -jar`, `start.bat`, IDE),
+  with the manifest as fallback. Verified `{"version":"0.1.1"}` in both run modes; pinned by
+  `TestOtbChessServer` (fails if the filtering ever stops running).
+- [x] **Wrong-time draw claims escalate instead of locking the buttons** (documented as
+  [A-003](docs/fide-deviations.md) — mirrors A-001 for wrong-time offers). Teaching philosophy:
+  the claim buttons stay *enabled* for the player not having the move so the fault can be made
+  and learned from. Escalation (counted per player across the game, no reset): 1st wrong-time
+  claim → rejection; 2nd → rejection + warning ("your next draw claim when not having the move
+  loses the game"); 3rd → **loss** (`WRONG_TIME_CLAIM_GAME_LOST`, personalised messages: offender
+  "you have been warned … you lose the game", opponent "repeatedly requested to claim a draw …
+  and so has lost the game"). Opponent hears nothing on the first two (private mistakes). New
+  `wrongTime` flag on `drawClaimResult` keeps the client from locking; with-move buttons skip the
+  SAN prompt when not on move. Unit tests (escalation + persistence across turns) and e2e (full
+  three-press flow, buttons asserted enabled between presses).
+- [x] **Accurate opponent message when a rejected claim becomes a draw offer + repeat-claim
+  escalation** (documented as [A-004](docs/fide-deviations.md)). (1) The opponent of a rejected
+  claim no longer sees a claim notice overwritten by a bare "your opponent offers a draw" — one
+  streamlined message: "Your opponent claimed a draw by <threefold repetition of the current
+  position / … with the move X / the 50-move rule …>, but the claim is not valid. It still counts
+  as a draw offer. Do you accept the draw?" (`drawOffered` carries the claim-specific text;
+  `drawClaimOpponent` is skipped for the conversion case). (2) A second claim on the same move no
+  longer disables the buttons: warning immediately ("You cannot make more than one draw claim on
+  your move. You are warned: …"), next repeat loses (`REPEAT_CLAIM_GAME_LOST`, A-003-style
+  personalised messages). Violations counted per player across the game; a legitimate single claim
+  on a later move is never a violation. Claim buttons now stay enabled for the whole game. Bonus
+  fix: a pending draw-offer panel is hidden on `gameEnded`. Unit + e2e coverage.
+- [x] **Passive game-information window below the clock.** Ground rule (face-to-face principle):
+  what a player would *see* happen at a real board but must not act on goes in a new quiet window
+  below the clock (`#opponentInfoPanel`, new `opponentInfo` WS message); action-relevant messages
+  (game end, corrections, draw offers) stay in the arbiter window above the clock. Wired for the
+  claim escalations: wrong-time claim presses 1–2 (A-003) and the repeat-claim warning (A-004) now
+  inform the opponent passively ("Your opponent claimed a draw while not having the move…", "…has
+  been warned…"); the game-ending third press stays in the standard window. Info clears when the
+  episode closes (own move, opponent move, board update, game end). Time-control label stays
+  centered below it. Unit (opponentInfo on warning/rejection, empty on loss and merit rejections)
+  + e2e (both windows asserted on both boards, clearing pinned).
+- [x] **Cross-move accumulation documented + claim-after-touch escalation (A-005).** (1) A-003's
+  wrong-time claim count explicitly accumulates over *different* moves (claim on move 10 →
+  rejection, move 12 → warning, move 15 → loss); documented in SPECIFICATION.md ("Procedurally
+  wrong claims: three escalation ladders") and A-003, pinned by unit + e2e tests playing real
+  moves between the claims. (2) NEW: claiming after touching/moving a piece before the clock
+  press (FIDE 9.4 — e.g. move made on the board, clock not yet pressed) now escalates with the
+  identical ladder instead of a flat error: rejection → warning → loss
+  (`CLAIM_AFTER_TOUCH_GAME_LOST`), counted across moves, opponent informed passively on the first
+  two, with-move buttons skip the SAN prompt once a piece was touched (client tracks
+  `touchedThisTurn`). SPECIFICATION.md claim sections rewritten to the current three-ladder
+  behavior (stale once-per-turn / touch-before-claim texts replaced); defensive null-SAN guard in
+  `DrawClaimManager`. Unit + e2e for both same-move and across-moves scenarios.
+- [x] **Rematch (Lichess-style).** After a normally ended game both result panels show a
+  **Rematch** button. One player's click offers (their button freezes as "Rematch offered"); the
+  opponent's button starts **blinking**; the opponent's click accepts. The rematch reuses the room
+  and game id: same time control and settings, same starting position (original FEN for custom
+  games), **colours swapped**; fresh per-seat reconnect tokens (refresh-resume works in the new
+  game); counts as create+join in the usage log. Wire: `rematchOffer` in;
+  `rematchOfferSent`/`rematchOffered`/`rematchStarted` out (race-safe per room; offer before game
+  end rejected). Unit (`TestGameRoom`: seat/token/session reset, original-FEN restart) + e2e (full
+  offer→blink→accept→swapped-colours→play flow, wrong-state rejection).
+- [x] **Rematch position guarantee explicitly tested** (training-critical): a rematch restarts
+  from the game's ORIGINAL starting position — the standard start for normal games, the custom
+  FEN for custom-position games — never from where the previous game ended. Unit (`TestGameRoom`:
+  standard + custom FEN, both after moves were played) and e2e (board-reset asserts in the
+  standard rematch test; a dedicated custom-FEN rematch test proving the custom position returns
+  on both boards with colours swapped and remains playable).
+- [x] **Abandonment adjudication (player closes the browser).** Two timers from a mid-game
+  disconnect: at `OTB_DISCONNECT_GRACE_MS` (12 s) the opponent is informed ("Your opponent has
+  disconnected."); at `OTB_ABANDON_MS` (60 s) the game is adjudicated as abandoned like chess
+  servers do — the leaver loses (`ABANDONMENT`, "«Side» left the game. «Side» wins."), unless the
+  remaining player has no possible mate (same helpmate adjudication as resignation/flag fall) —
+  then it's a draw with the insufficient-material / no-potential-mate reason. A resume defuses
+  both timers; an already-decided game is left as it ended. Personalised client messages ("Your
+  opponent left the game. You win." / draw variant). Unit (loss, draw, no-op when not running) +
+  e2e (browser-close win, lone-king draw, refresh does NOT forfeit) with short test windows via
+  Playwright env.
+- [x] **No Rematch button after an abandonment** — the opponent is gone, there is nobody to
+  accept. The client hides the button for `ABANDONMENT` endings (New Game stays; reset to visible
+  for all other endings across rematch chains) and the server refuses hand-crafted offers ("A
+  rematch is not available - your opponent left the game."). e2e asserts hidden button + server
+  refusal on both abandonment endings (win and draw).
+- [x] **Disconnect countdown + Claim victory.** The `opponentDisconnected` notice (12 s) now
+  carries `abandonInMs`; the client shows a live countdown ("Your opponent has disconnected. The
+  game will be ended in Ns.") plus a **Claim victory** button that applies the abandonment
+  adjudication immediately (win — or draw when no mate is possible). Server accepts the claim
+  only when the opponent has been gone past the grace and hasn't resumed; a resume sends the new
+  `opponentReconnected` (clears countdown + button). Unit-level logic is the existing `abandon()`;
+  e2e: countdown + claim → 1-0, rejection while connected, reconnect clears the countdown.
+- [x] **Wrong clock press escalation (A-006).** Real-world modeling: the opponent's clock lever
+  CAN be pressed. Registers only while the opponent's clock is running (lever up) — otherwise a
+  physical no-op, like the real clock. Ladder per player across the game: 1st press → arbiter
+  pauses the game + admonishes ("Please do not press your opponent's clock…"), clock restarts
+  after `OTB_WRONG_CLOCK_PAUSE_MS` (5 s); 2nd → same + warning; 3rd → **loss**
+  (`WRONG_CLOCK_PRESS_GAME_LOST`, personalised messages). Opponent informed passively on 1–2;
+  presses during the pause are no-ops (not counted). Replaces the dead legacy
+  `handleOpponentClockPressed` ready-handshake. Unit (`TestGameSession`: ladder, no-op cases,
+  pause/resume) + e2e (full ladder with PAUSE indicator, dead-lever no-op).
+- [x] **Testing policy made permanent**: repo-level `CLAUDE.md` (unit + e2e for every feature,
+  same commit; long e2e runtimes explicitly acceptable) + memory updated.
+- [x] **Wrong-time draw offers: per-move escalation, second offer "not considered" (A-001
+  reworked).** Unlike the claim ladders, a wrong-time offer is only *semi*-illegal (FIDE 9.1.2.1:
+  the offer is valid, the timing admonishable), so the count is **per move and never carries
+  over**. 1st wrong-time offer of the move → a REAL offer (forwarded, opponent can accept/reject)
+  + procedural note; 2nd on the same move → **not considered** (not forwarded), offerer warned
+  ("your next draw offer on this move loses the game"), opponent informed passively; 3rd →
+  **loss** (`WRONG_TIME_OFFER_GAME_LOST`, personalised messages; also fixes the old mislabeled
+  `DRAW_AGREEMENT` loss result that never broadcast `gameEnded`). Docs: A-001 + SPECIFICATION
+  wrong-time-offers section rewritten. Unit (full ladder incl. forwarded/not-forwarded state,
+  per-move reset) + e2e (ladder on live boards with panel visibility + passive info; reset across
+  a move pair). NOTE: the implementation itself was accidentally committed together with the
+  promotion fix (`3b3c411`) via `git add -A`; this entry's commit adds the tests + docs. After
+  b2xa1 (pawn parked on a1, promotion pending), dragging the a8 rook onto a1 + clock press was
+  misread as a "legal release" — via BOTH matcher branches: the promotion match accepted the
+  promoted piece from ANY square, and the normal match accepted Ra8xa1 from the turn-start
+  legal moves although a1 held the player's own pawn. The resulting commitment's restore target
+  was the tampered position itself → Revert did nothing, violation looped forever. Fix in
+  `ArbiterEngine.isReleasePartOfLegalMove`: (1) a promotion completion must arrive from OFF the
+  board (RESTORE_* events, no source square); (2) a normal release binds only if the destination
+  square was untouched earlier in the turn (turn-start comparison — keeps captures/en passant/
+  castling commitments intact). The tampering now adjudicates as a plain **illegal move** with a
+  working Revert. Unit (regression + side-area completion accepted + untampered release still
+  binds) and e2e (the literal reported journey incl. Revert + proper b2xa1=Q continuation, and a
+  clean b2xa1=R with the rook from the side area). "Game started" is now a transient
+  Lichess-style **banner** centered over the board (also used for "Rematch started"); the arbiter
+  message keeps only the two short facts: who joined — the creator sees the opponent's colour
+  ("Black joined."), the joiner keeps "You joined the game." — and whose clock runs ("Your clock
+  has been started." / "Opponent's clock has been started."), with no "your turn" coaching (a
+  running clock says it all; rematch clock lines shortened the same way). All four
+  creator/joiner × first-move variants re-pinned exactly in `game-start-message.spec.ts` incl.
+  banner show + fade; `expectGameStarted` helper keys on the clock fact. Previously a
+  bare "Please complete your move." info. Now: standard illegal-move treatment — penalty time to
+  the opponent, counts toward the limit (default 2 → the **second press in a row loses the
+  game**), message "Illegal move: the clock was pressed without a move being made (FIDE 7.5.3).
+  … Please make a move." (new `no_move` message-key variants — nothing to restore, so no
+  restoration flow and the mover's clock keeps running; `IllegalMoveDetail.noMoveMade`). Spec's
+  stale clock-press section rewritten. Unit (engine: keys/messages/count/game-lost; session:
+  penalty + running clock + loss) + e2e (single press → penalty visible on the clock + game
+  continues with a real move; two presses → 0-1 with "2nd illegal move by White"). A claim
+  made while not having the move (or after touching a piece, or as a repeat on the same move)
+  never reaches the rule machinery — only a claim examined on the merits (threefold/50-move
+  check) can be *rejected*. The five passive-info texts now say "The claim was not considered."
+  (merit rejections keep "…the claim is not valid. It still counts as a draw offer."). Wording
+  note added to SPECIFICATION.md; exact texts pinned in unit tests, e2e asserts the new phrase
+  and the absence of "rejected".
+- [x] **Moved-opponent-piece escalation (A-007).** Dragging an opponent's piece (never legal) now
+  escalates like the other misconducts instead of repeating the same notice forever: 1st → arbiter
+  pauses + "Please restore the position" (existing Revert/auto-resume flow), opponent informed
+  passively; 2nd → same + "Warning: the next time you move an opponent's piece, you lose the
+  game."; 3rd → **loss** (`MOVED_OPPONENT_PIECE_GAME_LOST`, personalised messages). Counted per
+  player across the game. Hooked into the mid-play validation via
+  `GameSession.escalateMovedOpponentPiece`; generic `pendingOpponentInfo` channel added for
+  mid-play passive notices. Unit (full ladder, info texts, clock pause) + e2e (three rounds with
+  Revert/resume on live boards, 0-1 result). Invalid-restoration position changes keep the old
+  single-message behavior (separate concern).
+- [x] **Bug fix: no reconnect into an adjudicated (ended) game.** The leaver's closed tab never
+  received `gameEnded`, so their localStorage still held the seat token — the lobby offered
+  "Return to game" and `resume` happily resynced into the ENDED game. Now a resume into an ENDED
+  game is refused (`resumeFailed`, "This game has already ended."), which also clears the stale
+  session and thus the lobby banner. Running-game reconnects unaffected (pinned by the existing
+  refresh/lobby-return tests). e2e replays the reported journey: leave → claim victory → leaver
+  returns → banner (stale) → refusal → Back to lobby → banner gone.
+- [x] **Way back into a running game from the lobby / a new tab.** The seat token lives in
+  localStorage (survives new tabs and browser restarts), but only game.html used it — a player
+  who lost their game tab and opened localhost:8080 was stranded in the lobby. Now the lobby
+  shows a "Game in progress — Return to game" banner when a saved session exists (create/join
+  still deliberately clear it), and a bare `/game.html` resumes from the saved session instead
+  of bailing with "no game code". Stale sessions resolve via the existing resumeFailed →
+  friendly-message → Back-to-lobby flow (which clears them, so no loop). e2e: new-tab reconnect
+  flow + no banner without a session (client-only change — no Java to unit-test).
+- [x] **Castling obligation wording.** The castling-in-progress message no longer says
+  "Released-piece violation"; it now explains the FIDE 4.7.2 obligation directly:
+  "Castling has been started..." plus the required rook move. Unit tests pin the exact player
+  text and absence of the old label; e2e pins the live arbiter message.
+- [x] **Rook-first castling restoration.** A rook-first castling attempt is no longer treated as
+  castling or as an illegal king move. If the rook release is legal (`Rh1-f1`), that rook move is
+  committed; the later king displacement is restored (`Ke1`), with a specific FIDE 4.4.2 message.
+  Unit + e2e pin the message, restore target, Revert board state, and final clock press accepting
+  the rook move.
+- [x] **Incomplete-castling continuation without Revert.** If legal castling has been started by
+  releasing the king on g1/c1/g8/c8 and the board already matches that required intermediate
+  position, no Revert button is shown; the mover's clock resumes and the player completes castling
+  by moving the rook. Opponent clock-press intervention notices now go to `opponentInfo` below the
+  clock unless they are action-relevant.
+- [x] **Natural king-in-check illegal-move wording.** The Ashlar validation reason
+  "it would leave the own king in check" is normalized at the arbiter boundary to
+  "Illegal move because it leaves the own king in check." Unit + e2e pin the player text and the
+  absence of the old "would leave" wording.
+- [x] **King-then-rook touch explains incomplete castling by touch obligation.** When a player
+  touches king, then rook, then moves only the king to the castling square and presses the clock,
+  the arbiter now uses the FIDE 4.4.a touch-castling reason instead of the later released-king
+  reason. Unit + e2e pin the exact wording, hidden Revert button, passive opponent notice, and
+  completion by moving the rook.
+- [x] **En-passant removal-first satisfies opponent-piece touch.** Removing the en-passant-captured
+  pawn before moving the capturing pawn now satisfies the opponent-piece/specific-capture obligation
+  by checking the legal move's captured square, not only its destination square. Unit + focused e2e
+  pin the c5xb6 e.p. journey.
+- [x] **Revert after a completed move preserves the completed move.** If a player completes a legal
+  move on the board and then displaces another piece before pressing the clock, the Revert target is
+  the completed-move position, not the turn start. Example pinned: White plays e2-e4, then drags the
+  black e7 pawn to e5; Revert keeps the white pawn on e4 and restores only the black pawn to e7.
+  Unit + focused e2e replay the reported journey.
+- [x] **Claim move validation hides parser internals + grouped board controls.** Claim-with-move
+  validation now hides the lenient SAN parser instead of leaking parser internals. Board controls
+  are split into three rows: Offer Draw/Resign, a claim row with four icon-led claim buttons, and
+  bottom-row utilities (Request Piece, Display PGN, Flip Board). Unit + focused e2e pin the
+  message; focused e2e pins the control grouping and text fit.
+- [x] **Rematch offer expires when the offering player leaves.** If a player offers a rematch after
+  a finished game and then closes the browser before the opponent accepts, the remaining player is
+  told the opponent disconnected, the Rematch button becomes unavailable, and a crafted accept/
+  rematch message is refused instead of starting a one-player rematch with the absent player's
+  clock ticking. Unit coverage pins connected-seat state; focused rematch + abandonment e2e cover
+  the reported flow and the existing running-game disconnect behavior.
+- [x] **Board controls are icon-only with hover tooltips.** Removed visible text labels from the
+  below-board control buttons while keeping accessible names and consistent hover tooltips. The
+  resign icon is now a sideways king, matching the physical act of tipping the king over. Focused
+  e2e pins the icon-only grouping, tooltip text, and compact button sizing.
+- [x] **Display PGN button toggles the PGN panel.** Clicking Display PGN now closes the PGN panel
+  when it is already open, while the panel's Close button still works. Focused controls e2e pins
+  open, button-toggle close, reopen, and Close-button close.
+- [x] **Invalid SAN draw claims are not considered.** If a claim-with-move SAN cannot be resolved
+  to a legal move, the arbiter now says the claim was not considered because the presented move is
+  not legal, closes the SAN panel, and leaves the player free to make any legal move. Legal SAN
+  that fails the draw condition still rejects the claim and forces the specified move. Unit +
+  focused claims e2e pin both sides.
+- [x] **Claim-with-move cancellation counts as the move's claim.** The claim SAN panel now has
+  short **Submit** and **Cancel** buttons. Cancel retracts the started claim, says it was not
+  considered, closes the panel, creates no draw offer/penalty/forced move, but consumes the
+  player's one claim on that move so the next claim triggers the repeat-claim ladder. Unit +
+  focused claims e2e pin the server semantics and live UI flow.
+- [x] **Opponent-piece touch beats later released-piece-looking moves.** Fixed the case with White
+  rook b3 / black rook b6: removing the capturable opponent rook and then releasing the own rook
+  on b5 is now a touch-move violation requiring capture on b6, not a released-piece commitment to
+  b5. Revert returns to the turn start and the required capture can then be completed. Unit +
+  focused touch-move e2e pin the reported journey.
+- [x] **Specific-capture messages preserve touch order.** If the player first touches the opponent
+  piece and then their own piece that can capture it, the touch-move message now says opponent
+  first, own piece second, while still requiring the specific capture. Unit + focused e2e pin the
+  rook/pawn order reported at g6/g7.
+- [x] **Opponent-piece obligations can narrow after Revert.** If the player first touches a
+  capturable opponent piece, restores after a violation, and then touches an own piece that can
+  capture it, the obligation narrows to that specific capture. Other pieces that could also
+  capture the opponent piece are then rejected. Unit + focused e2e pin the b3 knight/c2 pawn
+  journey.
+- [x] **Released-piece recovery message distinguishes the changed piece.** If a legal release
+  stays in place but another piece is moved before the clock press, the message now asks to revert
+  the position change after that release. If the released piece itself is moved again, the message
+  still asks to put that piece back on its release square. Unit + focused e2e pin the a-pawn
+  release / h-pawn change journey.
+- [x] **Paused-clock clock presses no longer throw internally.** If the player presses the clock
+  during the restoration auto-resume gap, the session now resumes the clock before evaluating the
+  press; if the game is paused for restoration/ready/other reasons, it returns a clean paused
+  message instead of reaching `ClockManager.switchClock()` with no running clock. Unit + focused
+  e2e pin the immediate press after released-piece Revert.
+- [x] **Incomplete en passant is illegal, not released-piece.** If Black has a pawn on b4 after
+  White's c2-c4 and moves b4-c3 without removing the captured pawn on c4, the arbiter now reports
+  an illegal incomplete en-passant capture instead of a released-piece violation. Unit + focused
+  e2e pin the beginner b4/c4/c3 journey and preserve completed en passant.
+- [x] **Not-considered wrong-time draw offers clear stale rejection notices.** After a first
+  wrong-time draw offer is rejected, a second offer on the same move is passive information for
+  the opponent; it now clears the opponent's old "You rejected the draw offer" arbiter message so
+  only the below-clock info remains. Unit + focused wrong-time-offer e2e pin the flag and live
+  screen behavior.
+- [x] **Rejected claim-converted draw offers name the originating claim.** When an incorrect
+  threefold or 50-move claim becomes a draw offer under FIDE 9.5 and the opponent rejects it, the
+  claimant now sees that the rejected offer was automatically part of that claim. Unit coverage
+  pins all four claim forms; focused claims e2e pins the live threefold-position and 50-move
+  with-move rejection messages.
+- [x] **Rejected claim messages tell the claimant about the draw offer.** For every considered but
+  rejected threefold or 50-move claim, the claimant-side rejection message now also says the claim
+  counts as a draw offer for the opponent, who can accept or reject it. Invalid/not-considered
+  claims are unchanged. Unit coverage pins all four considered rejection forms; focused claims e2e
+  pins the visible player messages.
+- [x] **Accepted with-move claim messages name the rule and canonical SAN.** Successful threefold
+  and 50-move claims made with a declared move now say which rule was claimed and print the
+  canonical SAN for the resolved legal move, not the player's raw input. Unit coverage pins
+  lowercase/spurious-check SAN normalization; focused claims e2e pins live threefold and 50-move
+  accepted messages.
+- [x] **Draw offers stay alive after the offerer presses the clock.** A correct-time draw offer,
+  including one automatically created by a rejected threefold/50-move claim, now remains
+  acceptable/rejectable after the offering player completes the move with the clock press and
+  until the opponent touches a piece. The draw-offer panel now carries the offer text itself so
+  the top arbiter message can change to "Your turn" without losing the offer context. Unit +
+  focused e2e cover ordinary offers from both colours and claim-converted offers after the
+  claimant's clock press.
+- [x] **With-move claim rejections do not reveal whether any drawing move exists.** Once the
+  submitted SAN resolves to a legal move, rejected threefold and 50-move claims now explain why
+  that move failed and bind the player to that move; they no longer say that no move from the
+  current position could satisfy the rule. Unit coverage pins the message and must-play state;
+  focused claims e2e pins the visible player messages.
+- [x] **Draw-offer text stays in the accept/reject panel.** Incoming draw offers, including
+  rejected threefold/50-move claims converted to offers, now put their explanatory text only in
+  the draw-offer panel from the start. The arbiter/status panel no longer duplicates the offer
+  text and remains available for turn-flow messages such as "Your turn." Focused e2e covers
+  ordinary offers, claim-converted offers, and wrong-time first offers.
+- [x] **Touched-piece draw offers stay visible until the clock press.** When the recipient of a
+  draw offer touches or moves a piece, the offer is no longer valid internally, but the
+  Accept/Reject panel remains visible. If the recipient then clicks either button, they are told
+  the offer is no longer valid because they touched a piece; the panel disappears when they
+  complete their move by pressing the clock. Unit coverage pins accept/reject refusal after touch;
+  focused e2e covers both colours.
+- [x] **Illegal castling attempts explain the touch-move consequence.** When a player physically
+  tries to castle on a side where castling is illegal, the message no longer says "Castling
+  counts as a king move." It now follows FIDE 4.4.3/4.7.2: move the king if the king has legal
+  moves; otherwise make any legal move. The touched rook does not bind after an illegal castling
+  attempt. Unit and focused e2e cover lost-right and temporarily illegal castling branches.
+- [x] **King release on castling square distinguishes legal start from illegal attempt.** Releasing
+  the king on g1/c1/g8/c8 starts an incomplete castling move only when castling on that side is
+  legal. If castling is temporarily or permanently illegal, the same release is adjudicated as an
+  illegal castling attempt under FIDE 4.7.2, with the king-move/any-move consequence. Unit and
+  focused e2e pin the attacked-path case.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.
+- The Playwright e2e suite runs its own server instance on **dedicated ports 18080/18081**, so a
+  dev server on 8080/8081 (`start.bat`) can keep running while tests execute — no more killing the
+  dev server for test runs. The suite tests the packaged jar: after Java changes run
+  `npm run build:server` (or `npm run e2e`, which rebuilds) — a running `start.bat` picks up Java
+  changes only on its own restart, static files immediately.
+- **`start.bat` serves only APPROVED code**: it snapshots the latest commit into the
+  `..\otb-chess-stable` worktree (created/refreshed automatically) and builds/serves from there —
+  in-progress, uncommitted edits in the main working tree never reach manual testing, including
+  static files. Restart `start.bat` after a new commit to pick it up. `start-dev.bat` keeps the
+  old behavior (run the working tree as-is, in-progress code included).
 - Don't regress the recent UX: end-of-game / draw messages are personalised per player ("you" vs "your opponent") from `gameEnded` (`mover`/`actor`/`drawReason`). Principle: minimal info during play, clear "who did what" on results.

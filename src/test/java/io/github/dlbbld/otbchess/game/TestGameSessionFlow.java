@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
@@ -203,6 +204,49 @@ class TestGameSessionFlow {
     assertEquals(Side.BLACK, session.getHavingMove());
   }
 
+  @Test
+  void opponentPieceObligationNarrowsToOwnCaptureAfterRestoration() {
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/1n6/PPP1P3/4K3 w - - 0 1");
+    final GameSession session = new GameSession(TEST_TIME, 2, false, board);
+    session.startGame();
+
+    // First cycle: White touches the capturable black knight on b3, then plays an unrelated pawn move.
+    session.recordEvent(Side.WHITE, BoardEvent.click(Square.B3, Piece.BLACK_KNIGHT, 0));
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
+    BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+
+    ArbiterResponse violation = session.pressClockButton(Side.WHITE, afterE4);
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, violation.type());
+    assertTrue(violation.message().contains("opponent's knight on b3"));
+
+    restoreAndReady(session, violation.restorePosition().orElse(session.getPositionBeforeTurn()));
+
+    // Second cycle: after restoration, White touches c2, a pawn that can capture the touched knight,
+    // and again tries the unrelated e-pawn move. The obligation must now narrow to c2xb3.
+    session.recordEvent(Side.WHITE, BoardEvent.click(Square.C2, Piece.WHITE_PAWN, 2));
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 3));
+    afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+
+    violation = session.pressClockButton(Side.WHITE, afterE4);
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, violation.type());
+    assertTrue(violation.message().contains("first touched the opponent's knight on b3"));
+    assertTrue(violation.message().contains("then your pawn on c2"));
+
+    restoreAndReady(session, violation.restorePosition().orElse(session.getPositionBeforeTurn()));
+
+    // Another pawn can also capture b3, but the c2 pawn is now the touched own piece that must make the capture.
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.A2, Square.B3, Piece.WHITE_PAWN, 4));
+    final BitboardPosition afterAxb3 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.A2, Piece.NONE).createChangedPosition(Square.B3, Piece.WHITE_PAWN).build();
+
+    final ArbiterResponse wrongPawn = session.pressClockButton(Side.WHITE, afterAxb3);
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, wrongPawn.type());
+    assertTrue(wrongPawn.message().contains("pawn on c2"));
+    assertEquals(Side.WHITE, session.getHavingMove());
+  }
+
   /**
    * End-to-end released-piece flow: legal release commits, second drop violates, restoration target is the release
    * position, and after the player puts the piece back on the release square and both Ready, the committed move is
@@ -253,6 +297,30 @@ class TestGameSessionFlow {
     // released-piece violation does not contribute to it.)
   }
 
+  @Test
+  void testMidPlayPositionChangeAfterCommittedMoveRestoresOnlyLaterDisplacement() {
+    final GameSession session = new GameSession(TEST_TIME, 2, false);
+    session.startGame();
+
+    final BitboardPosition initial = session.getBoard().getBitboardPosition();
+    final BitboardPosition afterE4 = BitboardPositions.from(initial)
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+
+    assertTrue(session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0))
+        .isEmpty());
+
+    final ArbiterResponse response = session
+        .recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E7, Square.E5, Piece.BLACK_PAWN, 1)).orElseThrow();
+    assertEquals(ArbiterResponseType.POSITION_CHANGE, response.type());
+    assertTrue(response.restorePosition().isPresent());
+    assertEquals(afterE4, response.restorePosition().get());
+    assertTrue(session.isRestorationFromReleasedPiece());
+
+    session.enterWaitingForRestoration(response.restorePosition().get());
+    assertTrue(session.isRestoredPosition(afterE4));
+    assertFalse(session.isRestoredPosition(initial));
+  }
+
   private void makeSimpleMove(GameSession session, Square from, Square to, Piece piece) {
     final Side side = session.getHavingMove();
     session.recordEvent(side, BoardEvent.dragMove(from, to, piece, System.currentTimeMillis()));
@@ -260,5 +328,13 @@ class TestGameSessionFlow {
         .createChangedPosition(from, Piece.NONE).createChangedPosition(to, piece).build();
     final ArbiterResponse response = session.pressClockButton(side, afterPosition);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
+  }
+
+  private void restoreAndReady(GameSession session, BitboardPosition restorePosition) {
+    session.enterWaitingForRestoration(restorePosition);
+    assertTrue(session.isRestoredPosition(restorePosition));
+    session.completeRestoration();
+    session.playerReady(Side.WHITE);
+    session.playerReady(Side.BLACK);
   }
 }

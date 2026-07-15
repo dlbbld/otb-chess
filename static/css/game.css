@@ -23,6 +23,8 @@ body {
 .board-version { margin-top: 2px; }
 .lobby > p { text-align: center; color: #777; margin-bottom: 24px; }
 .lobby-section { margin-bottom: 24px; padding: 16px; background: #f5f0eb; border-radius: 8px; }
+/* "Game in progress" banner: the way back into a running game from a new tab / the lobby. */
+.lobby-section.game-in-progress { border-left: 4px solid #4caf50; }
 .lobby-section h2 { font-size: 16px; margin-bottom: 12px; color: #5d4037; }
 .lobby-section label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
 .radio-group { display: flex; gap: 16px; margin-bottom: 12px; }
@@ -73,6 +75,26 @@ body:has(.game-layout) {
   display: flex;
   align-items: flex-start;
   gap: 0;
+  position: relative; /* anchor for the transient game banner over the board */
+}
+
+/* Transient game-event banner ("Game started", "Rematch started") — Lichess-style, centered
+   over the board and fading away on its own; details live in the arbiter message window. */
+.game-banner {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(48, 46, 44, 0.92);
+  color: #fff;
+  font-size: 26px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  padding: 14px 36px;
+  border-radius: 8px;
+  z-index: 100;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* === Right column: messages above the clock, clock vertically centered next to
@@ -112,6 +134,46 @@ body:has(.game-layout) {
 .game-layout.clock-on-left-view .right-column .chess-clock {
   justify-self: end;
   flex-direction: row-reverse;
+}
+
+/* The lower spacer under the clock: passive game information on top (hugging the clock from
+   below, mirroring how the messages hug it from above), and the time control centered in the
+   remaining space — which keeps it about level with the bottom edge of the board. */
+.right-column .below-clock {
+  grid-row: 3;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Passive info window: what the opponent just did (e.g. a wrong-time draw claim) — visible the
+   way a face-to-face opponent would see it, but requiring NO action. Deliberately quieter than
+   the arbiter panel above the clock. */
+.opponent-info {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #ece7e1;
+  border: 1px solid #ddd5cc;
+  border-radius: 6px;
+  color: #6b6259;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Time control ("5+3 • Blitz"): muted so it reads as ambient game info, not a message. The
+   auto vertical margins center it in the space left below the info window. */
+.right-column .time-control-label {
+  margin: auto 0;
+  align-self: flex-start;
+  color: #9a9189;
+  font-size: 13px;
+  padding-left: 6px;
+}
+
+/* Black's view: keep the label on the board side, like the clock. */
+.game-layout.clock-on-left-view .right-column .time-control-label {
+  align-self: flex-end;
+  padding: 0 6px 0 0;
 }
 
 /* === Chess Clock — DGT 3000 inspired === */
@@ -437,6 +499,17 @@ body:has(.game-layout) {
   text-align: center;
 }
 
+/* Rematch invitation (Lichess-style): when the opponent has offered a rematch, THIS player's
+   Rematch button blinks until they accept (click) or ignore it. */
+@keyframes rematch-blink {
+  0%, 100% { background: #4caf50; color: #fff; }
+  50% { background: inherit; color: inherit; }
+}
+
+.action-btn.rematch-blink {
+  animation: rematch-blink 1s ease-in-out infinite;
+}
+
 .game-result-score {
   font-size: 28px;
   font-weight: bold;
@@ -449,14 +522,6 @@ body:has(.game-layout) {
   color: #bababa;
   font-style: italic;
   margin-bottom: 10px;
-}
-
-/* === Action Buttons (below the board) === */
-.action-buttons {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: center;
 }
 
 .action-btn {
@@ -478,16 +543,214 @@ body:has(.game-layout) {
   cursor: not-allowed;
 }
 
-.claim-buttons {
+/* === Board controls (below the board) === */
+.board-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.control-row {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: center;
+  position: relative;
 }
 
-.small-btn {
+.game-actions {
+  padding-top: 2px;
+}
+
+.claim-section {
+  padding: 2px 0;
+}
+
+.utility-actions {
+  padding-bottom: 1px;
+}
+
+.control-btn {
+  width: 42px;
+  height: 36px;
+  padding: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #fffdfa;
+  border-color: #c8beb3;
+  border-radius: 6px;
+  color: #302e2c;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px rgba(55,45,36,0.10);
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.control-btn:hover:not(:disabled) {
+  background: #f2e8dc;
+  border-color: #b89d83;
+}
+
+.control-btn::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(2px);
+  max-width: 230px;
+  padding: 6px 8px;
+  background: #302e2c;
+  border-radius: 4px;
+  color: #fff;
   font-size: 11px;
-  padding: 4px 10px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: normal;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+  z-index: 120;
+}
+
+.control-btn::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  transform: translateX(-50%) translateY(2px);
+  border: 5px solid transparent;
+  border-top-color: #302e2c;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+  z-index: 119;
+}
+
+.control-btn:hover::before,
+.control-btn:focus-visible::before,
+.control-btn:hover::after,
+.control-btn:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.btn-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-radius: 4px;
+  background: #ede6dd;
+  color: #433a32;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.icon-draw {
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+}
+
+.icon-resign {
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols", serif;
+  overflow: hidden;
+}
+
+.icon-resign::before {
+  content: "♔";
+  display: block;
+  font-size: 18px;
+  transform: rotate(90deg) translateY(1px);
+  transform-origin: 50% 56%;
+}
+
+.icon-stop {
+  color: #8f2f29;
+}
+
+.icon-piece {
+  font-size: 18px;
+}
+
+.icon-pgn {
+  align-items: flex-start;
+  padding-top: 4px;
+  font-size: 8px;
+  letter-spacing: 0;
+}
+
+.icon-pgn::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 5px;
+  height: 1px;
+  background: currentColor;
+  box-shadow: 0 -4px 0 currentColor;
+  opacity: 0.65;
+}
+
+.icon-flip::before,
+.icon-flip::after {
+  position: absolute;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.icon-flip::before {
+  content: "<";
+  left: 5px;
+}
+
+.icon-flip::after {
+  content: ">";
+  right: 5px;
+}
+
+.claim-icon {
+  width: 30px;
+  flex-basis: 30px;
+  gap: 2px;
+  background: #ece4d9;
+}
+
+.claim-rule {
+  width: 14px;
+  text-align: center;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.claim-kind {
+  width: 11px;
+  height: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-board {
+  border: 1px solid #5f554b;
+  background:
+    linear-gradient(45deg, #5f554b 25%, transparent 25%, transparent 75%, #5f554b 75%),
+    linear-gradient(45deg, #5f554b 25%, transparent 25%, transparent 75%, #5f554b 75%);
+  background-color: #f8f1e7;
+  background-position: 0 0, 5px 5px;
+  background-size: 10px 10px;
+}
+
+.icon-move {
+  font-family: "Courier New", monospace;
+  font-size: 10px;
 }
 
 /* === Inline panels === */
@@ -509,6 +772,11 @@ body:has(.game-layout) {
   background: #4a4744; color: #bababa; border-color: #555; font-size: 12px; padding: 4px 10px;
 }
 .inline-panel .action-btn:hover:not(:disabled) { background: #5a5754; }
+
+#drawOfferMessage {
+  flex-basis: 100%;
+  text-align: center;
+}
 
 .san-input {
   width: 70px; padding: 3px 6px; border: 1px solid #555; background: #2b2b2b;

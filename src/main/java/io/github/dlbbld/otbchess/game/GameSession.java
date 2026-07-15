@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.game;
 
+import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -16,6 +18,7 @@ import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.ashlarchess.pgn.PgnCreate;
 import io.github.dlbbld.otbchess.arbiter.ArbiterEngine;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
+import io.github.dlbbld.otbchess.arbiter.ArbiterResponse.IllegalMoveDetail;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.arbiter.MidPlayValidator;
 import io.github.dlbbld.otbchess.event.ActionSequence;
@@ -26,6 +29,7 @@ import io.github.dlbbld.otbchess.game.model.GameResult;
 import io.github.dlbbld.otbchess.game.model.GameResultType;
 import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
+import io.github.dlbbld.otbchess.message.MessageKey;
 
 /**
  * Central orchestrator for an OTB Chess game.
@@ -68,8 +72,31 @@ public class GameSession {
 
   // FIDE 9.2 / 9.3: a player may make at most one draw claim per move. Set when a claim
   // attempt is processed (accepted or rejected, but not when the SAN was invalid — the
-  // player hasn't actually completed an attempt yet). Reset on startNewTurn().
+  // player presented no legal intended move, so the claim is not considered). Reset on
+  // startNewTurn().
   private boolean claimMadeThisTurn;
+
+  // Claims while NOT having the move (FIDE 9.2/9.3 require the move). Teaching philosophy: the
+  // claim buttons stay enabled so the player can repeat the fault and learn — the arbiter
+  // escalates instead: plain rejection, then a warning, then loss of the game on the third
+  // wrong-time claim. Counted per player across the whole game (a warning, once given, stands).
+  private static final int WRONG_TIME_CLAIM_LIMIT = 3;
+  private final Map<Side, Integer> wrongTimeClaimCounts = new EnumMap<>(Side.class);
+
+  // Second-or-later claims on the SAME move (FIDE 9.2/9.3 allow one claim per move). Same
+  // philosophy: buttons stay enabled; the first violation gets the warning immediately (the
+  // player already used their legitimate claim), the second loses the game. Violations are
+  // counted per player across the whole game — a legitimate single claim on a later move is
+  // never a violation, but a repeated one after the warning loses.
+  private static final int REPEAT_CLAIM_VIOLATION_LIMIT = 2;
+  private final Map<Side, Integer> repeatClaimViolationCounts = new EnumMap<>(Side.class);
+
+  // Claims AFTER touching/moving a piece on this move, before the clock press (FIDE 9.4: the
+  // right to claim is lost once a piece is touched). Same ladder as the wrong-time claims:
+  // rejection, warning, loss on the third — counted per player across the whole game, i.e. the
+  // count accumulates over different moves.
+  private static final int AFTER_TOUCH_CLAIM_LIMIT = 3;
+  private final Map<Side, Integer> afterTouchClaimCounts = new EnumMap<>(Side.class);
 
   // FIDE 9.5.3: an incorrect draw claim adds 2 minutes to the opponent's clock.
   // (Article-9 of the Competitive Rules of Play; rapid/blitz Appendix A.3 reduces this
@@ -157,10 +184,23 @@ public class GameSession {
     }
 
     // Check mid-play validation
-    final Optional<ArbiterResponse> midPlayResponse = MidPlayValidator.validate(event, side, positionBeforeTurn,
+    Optional<ArbiterResponse> midPlayResponse = MidPlayValidator.validate(event, side, positionBeforeTurn,
         removedSquaresThisTurn);
     if (midPlayResponse.isPresent()) {
+      final Optional<BitboardPosition> committedReleasePosition = arbiter.findReleasedPieceCommitmentPosition(board,
+          currentSequence);
+      if (committedReleasePosition.isPresent()) {
+        midPlayResponse = Optional.of(midPlayResponse.get().withRestorePosition(committedReleasePosition.get()));
+        restorationFromReleasedPiece = true;
+      } else {
+        restorationFromReleasedPiece = false;
+      }
       clock.stopClock();
+      // Moving an OPPONENT's piece escalates like the other misconducts (A-007): notice,
+      // notice + warning, loss of the game on the third time — counted across the whole game.
+      if (midPlayResponse.get().playerMessageKey() == MessageKey.ARBITER_POSITION_CHANGE_OPPONENT_PIECE) {
+        return Optional.of(escalateMovedOpponentPiece(side, midPlayResponse.get()));
+      }
       return midPlayResponse;
     }
 
@@ -202,6 +242,19 @@ public class GameSession {
     if (side != board.getSideToMove()) {
       return ArbiterResponse.incompleteMove("It is not your turn.");
     }
+    if (waitingForRestoration) {
+      return ArbiterResponse
+          .incompleteMove("The game is paused. Please restore the position before pressing the clock.");
+    }
+    if (waitingForReady) {
+      return ArbiterResponse.incompleteMove("The game is paused. Please wait until both players are ready.");
+    }
+    if (restorationResumePending) {
+      resumeAfterRestorationDelay();
+    }
+    if (clock.getRunningFor() == Side.NONE) {
+      return ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts.");
+    }
 
     // Special case: must execute specified move (after rejected draw claim)
     if (mustExecuteMove != null) {
@@ -210,8 +263,9 @@ public class GameSession {
 
     // Normal evaluation
     final ArbiterResponse response = arbiter.evaluateClockPress(board, afterPosition, currentSequence);
+    final boolean keepDrawOffer = drawOfferManager.isDrawOffered() && drawOfferManager.getOfferingSide() == side;
 
-    return handleArbiterResponse(response, side, false);
+    return handleArbiterResponse(response, side, keepDrawOffer);
   }
 
   /**
@@ -309,7 +363,12 @@ public class GameSession {
       case ILLEGAL_MOVE -> {
         // Add penalty time to opponent
         clock.addPenaltyTime(side.getOppositeSide(), arbiter.getIllegalMoveTracker().getPenaltyTimeMs());
-        clock.stopClock();
+        // FIDE 7.5.3 press-without-move: nothing to restore — the player simply still has to
+        // move, so their clock keeps running. Every other illegal move pauses for restoration.
+        final boolean noMoveMade = response.illegalMoveDetail().map(IllegalMoveDetail::noMoveMade).orElse(false);
+        if (!noMoveMade) {
+          clock.stopClock();
+        }
         restorationFromReleasedPiece = false;
       }
       case ILLEGAL_MOVE_GAME_LOST -> {
@@ -426,7 +485,9 @@ public class GameSession {
     final boolean offererHasMove = side == board.getSideToMove();
     final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
     if (result.gameLost()) {
-      endGame(new GameResult(GameResultType.DRAW_AGREEMENT, side.getOppositeSide(), result.arbiterMessage()));
+      terminationActor = side;
+      endGame(new GameResult(GameResultType.WRONG_TIME_OFFER_GAME_LOST, side.getOppositeSide(),
+          sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
     }
     return result;
   }
@@ -466,11 +527,24 @@ public class GameSession {
     return lastAcceptDrawRejection;
   }
 
+  private String lastRejectDrawRejection;
+
+  public synchronized String getLastRejectDrawRejection() {
+    return lastRejectDrawRejection;
+  }
+
   /**
    * Player rejects a draw offer.
    */
-  public synchronized void rejectDraw(Side side) {
-    drawOfferManager.rejectDraw(side);
+  public synchronized String rejectDraw(Side side) {
+    final String offererMessage = drawOfferManager.offererRejectionMessage();
+    final Optional<String> rejection = drawOfferManager.rejectDraw(side);
+    if (rejection.isPresent()) {
+      lastRejectDrawRejection = rejection.get();
+      return offererMessage;
+    }
+    lastRejectDrawRejection = null;
+    return offererMessage;
   }
 
   // ===== Draw claims =====
@@ -479,31 +553,16 @@ public class GameSession {
    * Player claims a draw (threefold repetition or 50-move rule).
    */
   public synchronized DrawClaimResult claimDraw(Side side, DrawClaimType type, String san) {
-    if (state != GameState.IN_PROGRESS) {
-      return DrawClaimResult.error("You cannot claim a draw now.");
-    }
-    if (side != board.getSideToMove()) {
-      // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is.
-      return DrawClaimResult.error("You cannot claim a draw when not having the move.");
-    }
-    if (!currentSequence.isEmpty()) {
-      // FIDE 9.4: the player loses the right to claim under 9.2 / 9.3 once any piece has
-      // been touched on this move. Any event in the current turn's action sequence
-      // (CLICK, DRAG_*, REMOVE, RESTORE_*) counts as a touch — claims must be made
-      // before starting to interact with pieces.
-      return DrawClaimResult.error("You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4). "
-          + "Claims must be made before any piece interaction.");
-    }
-    if (claimMadeThisTurn) {
-      return DrawClaimResult.rejectedWithoutDrawOffer(
-          "You have already made a draw claim on this move. Only one claim per move is allowed.",
-          "Your opponent attempted a second draw claim on the same move. The claim was rejected.");
+    final DrawClaimResult proceduralRejection = rejectClaimBeforeRuleMachinery(side);
+    if (proceduralRejection != null) {
+      return proceduralRejection;
     }
 
     final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
 
-    // An invalid SAN doesn't constitute a completed claim attempt — the player can re-prompt.
-    // Any other outcome counts and locks claims for the rest of this turn.
+    // An invalid SAN doesn't constitute a completed claim attempt: no legal intended move was
+    // presented, so the claim is not considered. Any other outcome counts and locks claims for
+    // the rest of this turn.
     if (!claimResult.invalidMove()) {
       claimMadeThisTurn = true;
     }
@@ -524,7 +583,8 @@ public class GameSession {
     } else if (!claimResult.invalidMove()) {
       // FIDE 9.5.3: an incorrect (i.e. completed but rejected) claim adds 2 minutes to the
       // opponent's clock. Both rejected on-board claims and rejectedWithMove claims qualify;
-      // invalid-SAN doesn't (the player hasn't actually claimed yet — they can re-prompt).
+      // invalid-SAN doesn't because no legal intended move was presented and the claim was not
+      // considered.
       clock.addPenaltyTime(side.getOppositeSide(), INCORRECT_CLAIM_PENALTY_MS);
       if (claimResult.moveToPerform().isPresent()) {
         mustExecuteMove = claimResult.moveToPerform().get();
@@ -537,10 +597,115 @@ public class GameSession {
     // correct-time offer (the claimer is on the move) so it follows the standard accept /
     // reject / touch-piece-invalidation flow without going through the wrong-time escalation.
     if (claimResult.convertsToDrawOffer()) {
-      drawOfferManager.offerDrawCorrectTime(side);
+      drawOfferManager.offerDrawCorrectTime(side, rejectedClaimDrawOfferMessage(type));
     }
 
     return claimResult;
+  }
+
+  private static String rejectedClaimDrawOfferMessage(DrawClaimType type) {
+    return switch (type) {
+      case THREEFOLD_ON_BOARD, THREEFOLD_WITH_MOVE ->
+          "Your opponent rejected the draw offer, which was automatically part of your claim for threefold repetition.";
+      case FIFTY_MOVE_ON_BOARD, FIFTY_MOVE_WITH_MOVE ->
+          "Your opponent rejected the draw offer, which was automatically part of your claim under the 50-move rule.";
+    };
+  }
+
+  /**
+   * Player started a claim-with-move and then retracted it before presenting a legal move.
+   */
+  public synchronized DrawClaimResult retractDrawClaim(Side side) {
+    final DrawClaimResult proceduralRejection = rejectClaimBeforeRuleMachinery(side);
+    if (proceduralRejection != null) {
+      return proceduralRejection;
+    }
+
+    claimMadeThisTurn = true;
+    return DrawClaimResult.retracted(
+        "You retracted your draw claim. The claim was not considered, but it counts as your claim on this move.",
+        "Your opponent retracted a draw claim. The claim was not considered.");
+  }
+
+  private DrawClaimResult rejectClaimBeforeRuleMachinery(Side side) {
+    if (state != GameState.IN_PROGRESS) {
+      return DrawClaimResult.error("You cannot claim a draw now.");
+    }
+    if (side != board.getSideToMove()) {
+      // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is. (Offering a
+      // draw is different — an offer is possible at any time; a CLAIM requires the move.) The
+      // buttons stay enabled (see wrongTimeClaimCounts) and the arbiter escalates: rejection,
+      // then a warning, then loss of the game on the third wrong-time claim.
+      final int count = wrongTimeClaimCounts.merge(side, 1, Integer::sum);
+      if (count >= WRONG_TIME_CLAIM_LIMIT) {
+        endGame(new GameResult(GameResultType.WRONG_TIME_CLAIM_GAME_LOST, side.getOppositeSide(),
+            sideName(side) + " loses the game by repeatedly claiming a draw when not having the move."));
+        return DrawClaimResult.rejectedWithoutDrawOffer(
+            "You have been warned that you will lose the game when you claim a draw again while not having the"
+                + " move. As you have claimed a draw again, you lose the game.",
+            "Your opponent has, despite the warnings, repeatedly requested to claim a draw while not having the"
+                + " move, and so has lost the game.");
+      }
+      if (count == WRONG_TIME_CLAIM_LIMIT - 1) {
+        return DrawClaimResult.wrongTime(
+            "You cannot claim a draw when not having the move. Warning: your next"
+                + " draw claim when not having the move loses the game.",
+            "Your opponent again claimed a draw while not having the move. The claim was not considered, and"
+                + " they have been warned: their next draw claim when not having the move loses them the game.");
+      }
+      // "Not considered" (not "rejected"): a claim made out of turn never reaches the rule
+      // machinery — only a claim that was actually examined on the merits can be rejected.
+      return DrawClaimResult.wrongTime("You cannot claim a draw when not having the move.",
+          "Your opponent claimed a draw while not having the move. The claim was not considered.");
+    }
+    if (!currentSequence.isEmpty()) {
+      // FIDE 9.4: the player loses the right to claim under 9.2 / 9.3 once any piece has
+      // been touched on this move. Any event in the current turn's action sequence
+      // (CLICK, DRAG_*, REMOVE, RESTORE_*) counts as a touch — claims must be made
+      // before starting to interact with pieces. Same escalation ladder as the wrong-time
+      // claims (see afterTouchClaimCounts): rejection, warning, loss on the third.
+      final int count = afterTouchClaimCounts.merge(side, 1, Integer::sum);
+      if (count >= AFTER_TOUCH_CLAIM_LIMIT) {
+        endGame(new GameResult(GameResultType.CLAIM_AFTER_TOUCH_GAME_LOST, side.getOppositeSide(),
+            sideName(side) + " loses the game by repeatedly claiming a draw after touching a piece."));
+        return DrawClaimResult.rejectedWithoutDrawOffer(
+            "You have been warned that you will lose the game when you claim a draw again after touching a piece."
+                + " As you have claimed a draw again, you lose the game.",
+            "Your opponent has, despite the warnings, repeatedly claimed a draw after touching a piece, and so"
+                + " has lost the game.");
+      }
+      final String rejection = "You cannot claim a draw after touching or moving a piece on this move (FIDE 9.4)."
+          + " Claims must be made before any piece interaction.";
+      if (count == AFTER_TOUCH_CLAIM_LIMIT - 1) {
+        return DrawClaimResult.wrongTime(
+            rejection + " Warning: your next draw claim after touching a piece loses the game.",
+            "Your opponent again claimed a draw after touching a piece on this move. The claim was not considered,"
+                + " and they have been warned: their next draw claim after touching a piece loses them the game.");
+      }
+      return DrawClaimResult.wrongTime(rejection,
+          "Your opponent claimed a draw after touching a piece on this move. The claim was not considered.");
+    }
+    if (claimMadeThisTurn) {
+      // FIDE 9.2/9.3 allow one claim per move. The buttons stay enabled (see
+      // repeatClaimViolationCounts) and the arbiter escalates: warning on the first repeat
+      // (the legitimate claim was already used), loss of the game on the next.
+      final int violations = repeatClaimViolationCounts.merge(side, 1, Integer::sum);
+      if (violations >= REPEAT_CLAIM_VIOLATION_LIMIT) {
+        endGame(new GameResult(GameResultType.REPEAT_CLAIM_GAME_LOST, side.getOppositeSide(),
+            sideName(side) + " loses the game by repeatedly claiming a draw on the same move."));
+        return DrawClaimResult.rejectedWithoutDrawOffer(
+            "You have been warned that you will lose the game when you claim a draw again on the same move."
+                + " As you have claimed a draw again, you lose the game.",
+            "Your opponent has, despite the warnings, repeatedly claimed a draw on the same move, and so has"
+                + " lost the game.");
+      }
+      return DrawClaimResult.repeatClaim(
+          "You cannot make more than one draw claim on your move. You are warned:"
+              + " the next draw claim on a move you have already claimed on loses the game.",
+          "Your opponent made a second draw claim on the same move. The claim was not considered, and they have"
+              + " been warned: their next draw claim on a move they have already claimed on loses them the game.");
+    }
+    return null;
   }
 
   // ===== Resignation =====
@@ -572,6 +737,150 @@ public class GameSession {
 
     final GameResult lossResult = new GameResult(GameResultType.RESIGNATION, opponent,
         sideName(side) + " resigns. " + sideName(opponent) + " wins the game.");
+    endGame(lossResult);
+    return lossResult;
+  }
+
+  // ===== Moving an opponent's piece (A-007) =====
+
+  // Dragging an opponent's piece on the board is never allowed; the arbiter escalates like the
+  // other misconducts: notice + restore, notice + warning + restore, loss of the game on the
+  // third time. Counted per player across the whole game.
+  private static final int MOVED_OPPONENT_PIECE_LIMIT = 3;
+  private final Map<Side, Integer> movedOpponentPieceCounts = new EnumMap<>(Side.class);
+
+  // Passive information for the opponent produced by the latest escalation step (see the
+  // face-to-face principle / info window below the clock); consumed by the server layer.
+  private String pendingOpponentInfo;
+
+  /** @return and clears the passive opponent-info text of the latest escalation step, if any. */
+  public synchronized String consumePendingOpponentInfo() {
+    final String info = pendingOpponentInfo;
+    pendingOpponentInfo = null;
+    return info;
+  }
+
+  private ArbiterResponse escalateMovedOpponentPiece(Side side, ArbiterResponse original) {
+    final int count = movedOpponentPieceCounts.merge(side, 1, Integer::sum);
+    if (count >= MOVED_OPPONENT_PIECE_LIMIT) {
+      terminationActor = side;
+      endGame(new GameResult(GameResultType.MOVED_OPPONENT_PIECE_GAME_LOST, side.getOppositeSide(),
+          sideName(side) + " loses the game by repeatedly moving the opponent's pieces."));
+      // The server sees the ENDED state and broadcasts gameEnded (with the personalised
+      // messages) instead of restore instructions.
+      return original;
+    }
+    if (count == MOVED_OPPONENT_PIECE_LIMIT - 1) {
+      pendingOpponentInfo = "Your opponent again moved one of your pieces and has been warned: the next time"
+          + " they move one of your pieces, they lose the game. The position must be restored.";
+      final ArbiterResponse warning = ArbiterResponse.positionChange(
+          "Position change: You moved an opponent's piece. That is not allowed. Please restore the position."
+              + " Warning: the next time you move an opponent's piece, you lose the game.");
+      return original.restorePosition().map(warning::withRestorePosition).orElse(warning);
+    }
+    pendingOpponentInfo = "Your opponent moved one of your pieces. The game is paused until the position"
+        + " has been restored.";
+    return original;
+  }
+
+  // ===== Wrong clock press (pressing the opponent's clock) =====
+
+  // Real-world modeling: on a physical clock the wrong lever CAN be pressed. Escalation like the
+  // other misconducts: the arbiter pauses the game and admonishes (the clock restarts after a
+  // short pause), the second time with a warning, the third press loses the game. Counted per
+  // player across the whole game.
+  private static final int WRONG_CLOCK_PRESS_LIMIT = 3;
+  private final Map<Side, Integer> wrongClockPressCounts = new EnumMap<>(Side.class);
+  // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
+  private Side wrongClockPressPausedFor;
+
+  /**
+   * Outcome of a press of the opponent's clock lever.
+   *
+   * @param offense      false when the press was a physical no-op (the opponent's lever was already down — their
+   *                     clock was not running); nothing is counted or announced then
+   * @param gameLost     true on the third offense — the game has been ended inside this call
+   * @param message      arbiter message for the offender ({@code null} for a no-op)
+   * @param opponentInfo passive info for the opponent ({@code null} for a no-op and for the game-ending press, which
+   *                     speaks through {@code gameEnded} instead)
+   */
+  public record WrongClockPressOutcome(boolean offense, boolean gameLost, String message, String opponentInfo) {
+  }
+
+  /**
+   * The player pressed their OPPONENT's clock lever. Physically meaningful only while the opponent's clock is
+   * running (their lever up) — otherwise the lever is already down and nothing happens, exactly like a real clock.
+   */
+  public synchronized WrongClockPressOutcome pressOpponentClock(Side side) {
+    final Side opponent = side.getOppositeSide();
+    if (state != GameState.IN_PROGRESS || clock.getRunningFor() != opponent) {
+      return new WrongClockPressOutcome(false, false, null, null);
+    }
+    final int count = wrongClockPressCounts.merge(side, 1, Integer::sum);
+    if (count >= WRONG_CLOCK_PRESS_LIMIT) {
+      terminationActor = side;
+      endGame(new GameResult(GameResultType.WRONG_CLOCK_PRESS_GAME_LOST, opponent,
+          sideName(side) + " loses the game by repeatedly pressing the opponent's clock."));
+      return new WrongClockPressOutcome(true, true, null, null);
+    }
+    clock.stopClock();
+    wrongClockPressPausedFor = opponent;
+    if (count == WRONG_CLOCK_PRESS_LIMIT - 1) {
+      return new WrongClockPressOutcome(true, false,
+          "Please do not press your opponent's clock. The game is paused and will continue shortly."
+              + " Warning: the next press of your opponent's clock loses the game.",
+          "Your opponent pressed your clock and has been warned: the next press loses them the game."
+              + " The game is paused; your clock will restart shortly.");
+    }
+    return new WrongClockPressOutcome(true, false,
+        "Please do not press your opponent's clock. The game is paused and will continue shortly.",
+        "Your opponent pressed your clock. The game is paused; your clock will restart shortly.");
+  }
+
+  /**
+   * Ends the admonishment pause after a wrong clock press: restarts the clock of the side that was running before
+   * the offense. No-op when the game ended meanwhile or no such pause is active.
+   *
+   * @return the side whose clock was restarted, or {@code null} when nothing happened
+   */
+  public synchronized Side resumeAfterWrongClockPress() {
+    if (state != GameState.IN_PROGRESS || wrongClockPressPausedFor == null) {
+      wrongClockPressPausedFor = null;
+      return null;
+    }
+    final Side side = wrongClockPressPausedFor;
+    wrongClockPressPausedFor = null;
+    clock.startClock(side);
+    return side;
+  }
+
+  // ===== Abandonment =====
+
+  /**
+   * A player abandoned the game (closed the browser / never reconnected). Adjudicated like a resignation, as chess
+   * servers do: the leaver loses — unless the remaining player could not checkmate by any series of legal moves
+   * (helpmate test via {@link Adjudicator}, QUICK variant like {@link #resign(Side)}), in which case it is a draw.
+   *
+   * @return the game result, or {@code null} when there is nothing to adjudicate (game not running)
+   */
+  public synchronized GameResult abandon(Side side) {
+    if (state != GameState.IN_PROGRESS) {
+      // Never started (reaper territory) or already decided (e.g. flag fell while they were gone).
+      return null;
+    }
+    final Side opponent = side.getOppositeSide();
+    terminationActor = side;
+
+    if (Adjudicator.adjudicateResignationQuick(board, side) == AdjudicationResult.DRAW) {
+      drawExceptionByInsufficientMaterial = board.isInsufficientMaterial(opponent);
+      final GameResult drawResult = new GameResult(GameResultType.ABANDONMENT, Side.NONE,
+          sideName(side) + " left the game, but because " + drawReason(opponent) + ", the game is a draw.");
+      endGame(drawResult);
+      return drawResult;
+    }
+
+    final GameResult lossResult = new GameResult(GameResultType.ABANDONMENT, opponent,
+        sideName(side) + " left the game. " + sideName(opponent) + " wins the game.");
     endGame(lossResult);
     return lossResult;
   }
@@ -670,6 +979,9 @@ public class GameSession {
     this.mustExecuteMoveSan = null;
     this.claimMadeThisTurn = false;
     this.restorationFromReleasedPiece = false;
+    // The wrong-time offer escalation is per move (a draw offer is only semi-illegal) — the
+    // count never carries over, unlike the claim ladders.
+    drawOfferManager.resetWrongTimeCountsForNewMove();
   }
 
   private void endGame(GameResult gameResult) {
@@ -760,6 +1072,18 @@ public class GameSession {
    */
   public synchronized void resumeAfterRestorationDelay() {
     if (state == GameState.IN_PROGRESS && restorationResumePending && !waitingForReady && !waitingForRestoration) {
+      restorationResumePending = false;
+      clock.startClock(board.getSideToMove());
+    }
+  }
+
+  /**
+   * Continues after an intervention where the required reference position already matches the physical board. The
+   * action sequence is deliberately preserved: for an incomplete castling move, the king release still binds the player
+   * to finish castling by moving the rook.
+   */
+  public synchronized void continueWithoutRestoration() {
+    if (state == GameState.IN_PROGRESS && !waitingForReady && !waitingForRestoration) {
       restorationResumePending = false;
       clock.startClock(board.getSideToMove());
     }

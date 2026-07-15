@@ -70,6 +70,14 @@ public class GameWebSocketServer extends WebSocketServer {
   // player a window to reconnect (idle drop / network blip) without flapping the game.
   private final long disconnectGraceMs = OtbChessServer.envLong("OTB_DISCONNECT_GRACE_MS",
       TimeUnit.SECONDS.toMillis(12));
+  // How long after a socket drops (without a resume) a RUNNING game is adjudicated as abandoned:
+  // the leaver loses unless the remaining player has no possible mate (then it is a draw). Longer
+  // than the disconnect grace so a network blip never forfeits a game.
+  private final long abandonMs = OtbChessServer.envLong("OTB_ABANDON_MS", TimeUnit.SECONDS.toMillis(60));
+  // Length of the arbiter's admonishment pause after a wrong clock press before the interrupted
+  // clock restarts.
+  private final long wrongClockPauseMs = OtbChessServer.envLong("OTB_WRONG_CLOCK_PAUSE_MS",
+      TimeUnit.SECONDS.toMillis(5));
   private final Set<String> allowedOrigins = parseAllowedOrigins();
   private final UsageLog usageLog = UsageLog.fromConfig(OtbChessServer.envStr("OTB_USAGE_LOG", "logs/usage.log"),
       OtbChessServer.envInt("OTB_USAGE_RETENTION_DAYS", 30));
@@ -111,17 +119,51 @@ public class GameWebSocketServer extends WebSocketServer {
     if (side == Side.NONE) {
       return;
     }
+    room.setDisconnectedAt(side, System.currentTimeMillis());
+
     // The player may reconnect (idle drop / blip). Defer the "opponent disconnected" notice; if a
     // resume swaps in a new socket for this side within the grace window, the seat no longer points
-    // at this (closed) conn and we stay quiet.
+    // at this (closed) conn and we stay quiet. The notice carries the time remaining until the
+    // abandonment adjudication so the client can show a countdown and the Claim-victory button.
     maintenance.schedule(() -> {
       if (room.getSocket(side) == conn) {
+        if (room.getSession().getState() == GameState.ENDED) {
+          synchronized (room) {
+            room.setRematchOfferedBy(Side.NONE);
+          }
+          sendRematchUnavailable(room, side.getOppositeSide(),
+              "Your opponent has disconnected. A rematch is no longer available.");
+          return;
+        }
         final JsonObject msg = new JsonObject();
         msg.addProperty("type", "opponentDisconnected");
         msg.addProperty("message", "Your opponent has disconnected.");
+        msg.addProperty("abandonInMs", Math.max(0, abandonMs - disconnectGraceMs));
         room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
       }
     }, disconnectGraceMs, TimeUnit.MILLISECONDS);
+
+    // Stage 2: if the player is STILL gone after the (longer) abandonment window, a running game
+    // is adjudicated as abandoned, like chess servers do: the leaver loses — unless the remaining
+    // player has no possible mate by any series of legal moves, in which case it is a draw
+    // (GameSession.abandon). A resume swaps in a new socket and defuses this; a game that ended
+    // meanwhile (e.g. the leaver's flag fell) makes abandon() a no-op.
+    maintenance.schedule(() -> {
+      try {
+        if (room.getSocket(side) != conn) {
+          return; // reconnected
+        }
+        final GameResult result = room.getSession().abandon(side);
+        if (result == null) {
+          return; // game wasn't running (never started, or already decided)
+        }
+        room.stopClockTicker();
+        sendGameEnded(room, result);
+        System.out.println("Game " + gameId + " adjudicated after abandonment by " + side.name().toLowerCase());
+      } catch (final RuntimeException e) {
+        System.err.println("[abandonment] " + gameId + ": " + e);
+      }
+    }, abandonMs, TimeUnit.MILLISECONDS);
   }
 
   @Override
@@ -158,7 +200,10 @@ public class GameWebSocketServer extends WebSocketServer {
         case "acceptDraw" -> handleAcceptDraw(conn);
         case "rejectDraw" -> handleRejectDraw(conn);
         case "claimDraw" -> handleClaimDraw(conn, json);
+        case "cancelDrawClaim" -> handleCancelDrawClaim(conn);
         case "resign" -> handleResign(conn);
+        case "claimVictory" -> handleClaimVictory(conn);
+        case "rematchOffer" -> handleRematchOffer(conn);
         case "abort" -> handleAbort(conn);
         case "requestPgn" -> handleRequestPgn(conn);
         case "restorePosition" -> handleRestorePosition(conn);
@@ -307,6 +352,8 @@ public class GameWebSocketServer extends WebSocketServer {
     response.addProperty("token", token);
     response.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
     response.addProperty("havingMove", startingBoard.getSideToMove().name().toLowerCase());
+    // Display label like "5+3 • Blitz" — time control plus FIDE discipline (see TimeControl).
+    response.addProperty("timeControlLabel", timeControl.displayLabel());
     conn.send(GSON.toJson(response));
 
     System.out.println("Game created: " + gameId + " by " + creatorSide + (fenInput.isEmpty() ? "" : " (custom FEN)"));
@@ -322,13 +369,20 @@ public class GameWebSocketServer extends WebSocketServer {
     final GameRoom room = gameRooms.get(gameId);
 
     if (room == null) {
-      // Count misses toward the violation budget so join-code scanning gets throttled.
-      sendError(conn, "Game not found: " + gameId);
+      // No active game for this code (typo / expired / reaped / server restarted). Send a friendly
+      // `joinFailed` so the client can offer a path back to the lobby instead of a raw error. Still
+      // count the miss toward the violation budget so join-code scanning gets throttled.
+      sendJoinFailed(conn, "not_found",
+          "This game code wasn't found. It may have expired, ended, or been entered incorrectly.");
       recordViolation(conn);
       return;
     }
     if (room.isFull()) {
-      sendError(conn, "Game is already full.");
+      // The room is still in memory but has no free seat. Distinguish an already-finished game from
+      // one with two live players so the message is accurate.
+      final boolean ended = room.getSession().getState() == GameState.ENDED;
+      sendJoinFailed(conn, ended ? "ended" : "full",
+          ended ? "This game has already ended." : "This game already has two players.");
       return;
     }
 
@@ -360,6 +414,7 @@ public class GameWebSocketServer extends WebSocketServer {
     joinResponse.addProperty("token", token);
     joinResponse.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingPosition)));
     joinResponse.addProperty("havingMove", havingMove.name().toLowerCase());
+    joinResponse.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     conn.send(GSON.toJson(joinResponse));
 
     // Notify both players that the game is starting. `havingMove` lets the client
@@ -446,10 +501,26 @@ public class GameWebSocketServer extends WebSocketServer {
 
     if (midPlayResponse.isPresent()) {
       final ArbiterResponse response = midPlayResponse.get();
+      if (room.getSession().getState() == GameState.ENDED) {
+        // The violation reached its escalation limit (e.g. third moved opponent piece, A-007):
+        // the game is over — the personalised messages travel via gameEnded, no restore.
+        checkGameEnded(room);
+        return;
+      }
       if (response.type() == ArbiterResponseType.POSITION_CHANGE) {
-        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
+            response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
       } else {
         sendArbiterResponse(room, side, response);
+      }
+      // Passive info for the opponent (face-to-face principle): produced by escalating
+      // violations such as a moved opponent piece; rendered below the clock, no action needed.
+      final String info = room.getSession().consumePendingOpponentInfo();
+      if (info != null) {
+        final JsonObject infoMsg = new JsonObject();
+        infoMsg.addProperty("type", "opponentInfo");
+        infoMsg.addProperty("message", info);
+        room.sendToSide(side.getOppositeSide(), GSON.toJson(infoMsg));
       }
     }
 
@@ -515,19 +586,39 @@ public class GameWebSocketServer extends WebSocketServer {
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     sendArbiterResponse(room, side, response);
 
-    sendOpponentArbiterMessage(room, side, response);
+    sendOpponentArbiterNotification(room, side, response);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       sendClockUpdate(room);
       // Note: opponentMoved (sent by sendArbiterResponse) already includes the board state.
       // Do NOT also send boardUpdate here, as it can overwrite the opponent's in-progress moves.
     } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
-      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+      if (response.illegalMoveDetail().map(d -> d.noMoveMade()).orElse(false)) {
+        // FIDE 7.5.3 press-without-move: the board is still at the turn start — nothing to
+        // restore, no restoration flow. The messages (already sent) ask for a move; a clock
+        // update shows the opponent's penalty time immediately.
+        sendClockUpdate(room);
+      } else {
+        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+      }
     } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
-      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
-          response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
+      final BitboardPosition restorePosition = response.restorePosition()
+          .orElse(room.getSession().getPositionBeforeTurn());
+      if (restorePosition.equals(afterPosition)) {
+        room.getSession().continueWithoutRestoration();
+        sendClockUpdate(room);
+      } else {
+        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error", restorePosition);
+      }
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
-      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+      final BitboardPosition restorePosition = response.restorePosition()
+          .orElse(room.getSession().getPositionBeforeTurn());
+      if (restorePosition.equals(afterPosition)) {
+        room.getSession().continueWithoutRestoration();
+        sendClockUpdate(room);
+      } else {
+        sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error", restorePosition);
+      }
     } else if (response.type() == ArbiterResponseType.INCOMPLETE_MOVE && side == room.getSession().getHavingMove()
         && room.getSession().getMustExecuteMove() != null) {
       // A rejected claim's specified move was not carried out: offer a Revert to the start of the
@@ -608,7 +699,8 @@ public class GameWebSocketServer extends WebSocketServer {
     if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
-      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
+      sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
+          response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     } else if (response.type() == ArbiterResponseType.RELEASED_PIECE_VIOLATION) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
@@ -619,6 +711,13 @@ public class GameWebSocketServer extends WebSocketServer {
   private void handleWrongTimeDrawOffer(GameRoom room, WebSocket conn, Side side) {
     final var result = room.getSession().offerDrawWrongTime(side);
 
+    if (result.gameLost()) {
+      // Third wrong-time offer on this move: the session ended the game — the personalised
+      // messages travel via gameEnded (actor).
+      checkGameEnded(room);
+      return;
+    }
+
     if (result.arbiterMessage() != null) {
       final JsonObject arbiterMsg = new JsonObject();
       arbiterMsg.addProperty("type", result.isWrongTime() ? "wrongTimeDrawOffer" : "repeatedDrawOffer");
@@ -628,17 +727,37 @@ public class GameWebSocketServer extends WebSocketServer {
       // Per FIDE the offer is informational and the clock keeps running on whoever has the move.
     }
 
-    // Forward the offer to the opponent (still valid even at the wrong time, unless the
-    // offering side just hit the game-loss penalty or this was a duplicate from the same side).
-    if (result.accepted() && !result.gameLost()) {
+    // A not-considered second offer: the opponent sees what happened passively (info window).
+    if (result.opponentInfo() != null) {
+      final JsonObject info = new JsonObject();
+      info.addProperty("type", "opponentInfo");
+      info.addProperty("message", result.opponentInfo());
+      if (result.clearOpponentArbiterMessage()) {
+        info.addProperty("clearArbiterMessage", true);
+      }
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
+    }
+
+    // Forward the offer to the opponent — only a REAL registered offer (the first wrong-time
+    // offer of the move); a not-considered repeat or a duplicate from the same side is not.
+    if (result.accepted()) {
       sendDrawOfferToOpponent(room, side);
     }
   }
 
   private void sendDrawOfferToOpponent(GameRoom room, Side offeringSide) {
+    sendDrawOfferToOpponent(room, offeringSide, "Your opponent offers a draw.");
+  }
+
+  /**
+   * Variant with a custom message — used when a rejected draw claim converts into a draw offer (FIDE 9.5), so the
+   * opponent sees what actually happened ("your opponent claimed … not valid … still counts as a draw offer") instead
+   * of a bare "your opponent offers a draw".
+   */
+  private void sendDrawOfferToOpponent(GameRoom room, Side offeringSide, String message) {
     final JsonObject drawMsg = new JsonObject();
     drawMsg.addProperty("type", "drawOffered");
-    drawMsg.addProperty("message", "Your opponent offers a draw.");
+    drawMsg.addProperty("message", message);
     room.sendToSide(offeringSide.getOppositeSide(), GSON.toJson(drawMsg));
   }
 
@@ -657,18 +776,10 @@ public class GameWebSocketServer extends WebSocketServer {
       // Acceptance was rejected (e.g. touched a piece)
       final String rejection = room.getSession().getLastAcceptDrawRejection();
       if (rejection != null) {
-        // Arbiter intervention: stop clock, explain, ready-to-continue
-        room.getSession().getClock().stopClock();
         final JsonObject msg = new JsonObject();
         msg.addProperty("type", "drawAcceptRejected");
         msg.addProperty("message", rejection);
         conn.send(GSON.toJson(msg));
-
-        room.getSession().enterWaitingForReady();
-        final JsonObject readyMsg = new JsonObject();
-        readyMsg.addProperty("type", "waitingForReady");
-        readyMsg.addProperty("message", "Are you ready to continue?");
-        room.sendToBoth(GSON.toJson(readyMsg));
       }
     }
   }
@@ -680,7 +791,15 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final Side side = room.getSide(conn);
-    room.getSession().rejectDraw(side);
+    final String offererRejectionMessage = room.getSession().rejectDraw(side);
+    final String rejection = room.getSession().getLastRejectDrawRejection();
+    if (rejection != null) {
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "drawAcceptRejected");
+      msg.addProperty("message", rejection);
+      conn.send(GSON.toJson(msg));
+      return;
+    }
 
     // Personalised per player so it is unambiguous who rejected.
     final JsonObject toRejecter = new JsonObject();
@@ -690,7 +809,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final JsonObject toOfferer = new JsonObject();
     toOfferer.addProperty("type", "drawRejected");
-    toOfferer.addProperty("message", "Your opponent rejected the draw offer.");
+    toOfferer.addProperty("message", offererRejectionMessage);
     room.sendToSide(side.getOppositeSide(), GSON.toJson(toOfferer));
   }
 
@@ -718,32 +837,58 @@ public class GameWebSocketServer extends WebSocketServer {
     final String san = optString(json, "san");
 
     final DrawClaimResult result = room.getSession().claimDraw(side, claimType, san);
+    sendDrawClaimResult(room, conn, side, result);
+  }
 
+  private void handleCancelDrawClaim(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null) {
+      return;
+    }
+
+    final Side side = room.getSide(conn);
+    final DrawClaimResult result = room.getSession().retractDrawClaim(side);
+    sendDrawClaimResult(room, conn, side, result);
+  }
+
+  private void sendDrawClaimResult(GameRoom room, WebSocket conn, Side side, DrawClaimResult result) {
     // Per-player feedback for the claim event itself (claimer's arbiter panel).
     final JsonObject response = new JsonObject();
     response.addProperty("type", "drawClaimResult");
     response.addProperty("accepted", result.accepted());
     response.addProperty("message", result.message());
     response.addProperty("invalidMove", result.invalidMove());
+    response.addProperty("wrongTime", result.wrongTime());
+    response.addProperty("repeatClaim", result.repeatClaim());
     if (result.moveToPerform().isPresent()) {
       response.addProperty("mustExecuteMove", result.moveToPerform().get().toString());
     }
     conn.send(GSON.toJson(response));
 
-    // Opponent gets a separate notification (the claim event happened on their counterpart's
-    // side; they need to know it occurred and what its outcome was).
-    if (result.opponentMessage().isPresent()) {
+    // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. The session already
+    // registered the offer; broadcast it with the claim-specific text ("claimed … not valid …
+    // still counts as a draw offer. Do you accept?") so the opponent gets ONE accurate message
+    // together with the Accept/Reject panel — not a claim notification overwritten by a bare
+    // "your opponent offers a draw".
+    if (result.convertsToDrawOffer()) {
+      sendDrawOfferToOpponent(room, side,
+          result.opponentMessage().orElse("Your opponent offers a draw."));
+    } else if (result.opponentMessage().isPresent()) {
+      // Non-converting outcomes (accepted claim, game-ending violation, …): plain notification.
       final JsonObject opponentMsg = new JsonObject();
       opponentMsg.addProperty("type", "drawClaimOpponent");
       opponentMsg.addProperty("message", result.opponentMessage().get());
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
     }
 
-    // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. The session
-    // already registered the offer; broadcast it so the opponent gets the standard
-    // Accept/Reject panel and the touch-piece invalidation flow.
-    if (result.convertsToDrawOffer()) {
-      sendDrawOfferToOpponent(room, side);
+    // Passive information for the opponent (face-to-face principle: at a real board they would
+    // see the claim happen). Rendered in the info window below the clock — visible, but
+    // requiring NO action — never in the standard arbiter window.
+    if (result.opponentInfo().isPresent()) {
+      final JsonObject info = new JsonObject();
+      info.addProperty("type", "opponentInfo");
+      info.addProperty("message", result.opponentInfo().get());
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
     }
 
     checkGameEnded(room);
@@ -758,6 +903,138 @@ public class GameWebSocketServer extends WebSocketServer {
     final Side side = room.getSide(conn);
     final GameResult result = room.getSession().resign(side);
     sendGameEnded(room, result);
+  }
+
+  /**
+   * "Claim victory" while the opponent is disconnected: ends the game immediately with the SAME adjudication the
+   * automatic abandonment would apply at the deadline — the leaver loses, unless the claimer has no possible mate
+   * (then it is a draw). Guarded so it works only once the opponent has been gone past the disconnect grace (the
+   * moment the client shows the button); a reconnected opponent makes the claim fail.
+   */
+  private void handleClaimVictory(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null) {
+      return;
+    }
+    final Side side = room.getSide(conn);
+    if (side == Side.NONE) {
+      return;
+    }
+    final Side opponent = side.getOppositeSide();
+    final WebSocket opponentSocket = room.getSocket(opponent);
+    final Long disconnectedAt = room.getDisconnectedAt(opponent);
+    if (opponentSocket != null && opponentSocket.isOpen() || disconnectedAt == null
+        || System.currentTimeMillis() - disconnectedAt < disconnectGraceMs) {
+      sendError(conn, "Victory cannot be claimed - your opponent is not gone.");
+      return;
+    }
+    final GameResult result = room.getSession().abandon(opponent);
+    if (result == null) {
+      sendError(conn, "There is nothing to claim - the game is not running.");
+      return;
+    }
+    room.stopClockTicker();
+    sendGameEnded(room, result);
+    System.out.println("Game " + room.getGameId() + " adjudicated after victory claim by "
+        + side.name().toLowerCase());
+  }
+
+  /**
+   * Rematch handshake (Lichess-style): after the game has ended, either player may offer a rematch. The first offer
+   * makes the opponent's Rematch button blink; when the opponent presses THEIR button too (= accepting), a new game
+   * starts in the same room — same time control and settings, same starting position, colours swapped.
+   */
+  private void handleRematchOffer(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null) {
+      return;
+    }
+    // The whole handshake is guarded per room: two simultaneous offers must resolve to
+    // offer-then-accept, never to two dangling offers.
+    synchronized (room) {
+      if (room.getSession().getState() != GameState.ENDED) {
+        sendError(conn, "A rematch can only be offered after the game has ended.");
+        return;
+      }
+      if (room.getSession().getResult() != null
+          && room.getSession().getResult().type() == GameResultType.ABANDONMENT) {
+        // The opponent left the game — there is nobody to accept. The client hides the Rematch
+        // button for this ending; this guard covers hand-crafted messages.
+        sendError(conn, "A rematch is not available - your opponent left the game.");
+        return;
+      }
+      final Side side = room.getSide(conn);
+      if (side == Side.NONE) {
+        return;
+      }
+      if (!room.isConnected(side.getOppositeSide())) {
+        room.setRematchOfferedBy(Side.NONE);
+        sendRematchUnavailable(conn, "A rematch is no longer available - your opponent left the game.");
+        return;
+      }
+      final Side offeredBy = room.getRematchOfferedBy();
+      if (offeredBy == side) {
+        return; // repeated click on an already-sent offer — idempotent
+      }
+      if (offeredBy == Side.NONE) {
+        room.setRematchOfferedBy(side);
+        final JsonObject ack = new JsonObject();
+        ack.addProperty("type", "rematchOfferSent");
+        ack.addProperty("message", "Rematch offer sent.");
+        conn.send(GSON.toJson(ack));
+        final JsonObject offer = new JsonObject();
+        offer.addProperty("type", "rematchOffered");
+        offer.addProperty("message", "Your opponent offers a rematch.");
+        room.sendToSide(side.getOppositeSide(), GSON.toJson(offer));
+        return;
+      }
+      if (!room.isConnected(offeredBy)) {
+        room.setRematchOfferedBy(Side.NONE);
+        sendRematchUnavailable(conn, "A rematch is no longer available - your opponent left the game.");
+        return;
+      }
+      // The other side had already offered — this press accepts: start the rematch.
+      startRematch(room);
+    }
+  }
+
+  /** Starts the accepted rematch: colours swapped, fresh session/tokens, both players re-seated. */
+  private void startRematch(GameRoom room) {
+    room.stopClockTicker();
+    room.startRematch(); // swaps seats, fresh session from the original starting position
+
+    final var session = room.getSession();
+    final var havingMove = session.getHavingMove();
+    final var board = GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition()));
+
+    // Fresh per-seat reconnect tokens (the seats changed owners) and per-player start messages.
+    for (final Side seat : new Side[] { Side.WHITE, Side.BLACK }) {
+      final String token = generateSessionToken();
+      room.setToken(seat, token);
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "rematchStarted");
+      msg.addProperty("gameId", room.getGameId());
+      msg.addProperty("side", seat.name().toLowerCase());
+      msg.addProperty("token", token);
+      msg.add("board", board);
+      msg.addProperty("havingMove", havingMove.name().toLowerCase());
+      msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
+      // Short, like the game-start message: no "your turn" coaching — a running clock says it all.
+      final String clockLine = havingMove == seat ? "Your clock has been started."
+          : "Opponent's clock has been started.";
+      msg.addProperty("message",
+          "Rematch started - you now play " + (seat == Side.WHITE ? "White" : "Black") + ". " + clockLine);
+      room.sendToSide(seat, GSON.toJson(msg));
+    }
+
+    // A rematch is a new game — same two events as create + join.
+    usageLog.record(UsageLog.EVENT_CREATE, room.getGameId());
+    usageLog.record(UsageLog.EVENT_JOIN, room.getGameId());
+
+    session.startGame();
+    room.startClockTicker(clockExecutor, () -> tickClock(room));
+    sendClockUpdate(room);
+    System.out.println("Rematch started: " + room.getGameId());
   }
 
   /**
@@ -897,29 +1174,58 @@ public class GameWebSocketServer extends WebSocketServer {
     }
   }
 
+  /**
+   * The player pressed their OPPONENT's clock lever — possible on a physical clock, so it is modeled. The arbiter
+   * escalates (see GameSession.pressOpponentClock): pause + admonishment, pause + warning, then loss of the game on
+   * the third press. After the admonishment pause ({@code OTB_WRONG_CLOCK_PAUSE_MS}) the interrupted clock restarts.
+   * Presses while the opponent's lever is already down are physical no-ops — silence, like the real thing.
+   */
   private void handleOpponentClockPressed(WebSocket conn) {
     final GameRoom room = getRoom(conn);
     if (room == null) {
       return;
     }
+    final Side side = room.getSide(conn);
+    if (side == Side.NONE) {
+      return;
+    }
 
-    // Stop the clock
-    room.getSession().getClock().stopClock();
+    final var outcome = room.getSession().pressOpponentClock(side);
+    if (!outcome.offense()) {
+      return; // lever was already down — nothing happened, nothing to say
+    }
 
-    // Notify the player who pressed the wrong clock
+    if (outcome.gameLost()) {
+      // Third press: the game is over. The personalised messages travel via gameEnded (actor).
+      sendGameEnded(room, room.getSession().getResult());
+      return;
+    }
+
+    // Admonishment (first press) or warning (second): offender hears the arbiter, the opponent
+    // sees what happened passively; the PAUSE shows on both clocks via the clock update.
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "opponentClockPressed");
-    msg.addProperty("message", "Please do not press the opponent's clock.");
+    msg.addProperty("message", outcome.message());
     conn.send(GSON.toJson(msg));
 
-    // Enter waiting for ready
-    room.getSession().enterWaitingForReady();
+    final JsonObject info = new JsonObject();
+    info.addProperty("type", "opponentInfo");
+    info.addProperty("message", outcome.opponentInfo());
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
 
-    // Send ready prompt to both
-    final JsonObject readyMsg = new JsonObject();
-    readyMsg.addProperty("type", "waitingForReady");
-    readyMsg.addProperty("message", "Are you ready to continue?");
-    room.sendToBoth(GSON.toJson(readyMsg));
+    sendClockUpdate(room);
+
+    // The arbiter restarts the interrupted clock after the pause (no-op if the game ended or
+    // another intervention took over meanwhile).
+    maintenance.schedule(() -> {
+      try {
+        if (room.getSession().resumeAfterWrongClockPress() != null) {
+          sendClockUpdate(room);
+        }
+      } catch (final RuntimeException e) {
+        System.err.println("[wrong-clock-resume] " + room.getGameId() + ": " + e);
+      }
+    }, wrongClockPauseMs, TimeUnit.MILLISECONDS);
   }
 
   private void sendRestoreInstructions(GameRoom room, Side side) {
@@ -940,9 +1246,16 @@ public class GameWebSocketServer extends WebSocketServer {
     room.sendToSide(side, GSON.toJson(msg));
   }
 
-  private void sendOpponentArbiterMessage(GameRoom room, Side side, ArbiterResponse response) {
+  private void sendOpponentArbiterNotification(GameRoom room, Side side, ArbiterResponse response) {
     final Optional<String> opponentMessage = response.renderedOpponentMessage();
     if (opponentMessage.isEmpty()) {
+      return;
+    }
+    if (isPassiveOpponentNotification(response.type())) {
+      final JsonObject info = new JsonObject();
+      info.addProperty("type", "opponentInfo");
+      info.addProperty("message", opponentMessage.get());
+      room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
       return;
     }
     final JsonObject opponentMsg = new JsonObject();
@@ -950,6 +1263,13 @@ public class GameWebSocketServer extends WebSocketServer {
     opponentMsg.addProperty("message", opponentMessage.get());
     opponentMsg.addProperty("style", response.style());
     room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
+  }
+
+  private static boolean isPassiveOpponentNotification(ArbiterResponseType type) {
+    return switch (type) {
+      case ILLEGAL_MOVE, TOUCH_MOVE_VIOLATION, RELEASED_PIECE_VIOLATION, INCOMPLETE_MOVE -> true;
+      default -> false;
+    };
   }
 
   private void forwardBoardEventToOpponent(GameRoom room, Side side, JsonObject eventData) {
@@ -986,14 +1306,33 @@ public class GameWebSocketServer extends WebSocketServer {
     if (room == null || side == Side.NONE) {
       final JsonObject msg = new JsonObject();
       msg.addProperty("type", "resumeFailed");
-      msg.addProperty("message", "This game is no longer available.");
+      msg.addProperty("message", "This game is no longer available — it may have ended or expired.");
+      conn.send(GSON.toJson(msg));
+      return;
+    }
+    if (room.getSession().getState() == GameState.ENDED) {
+      // The game ended while this player was away — e.g. adjudicated as abandoned after they
+      // closed the tab, so their client never saw gameEnded and still holds the seat token.
+      // A reconnect into a finished game is not allowed; resumeFailed makes the client clear
+      // the stale saved session (which also removes the lobby's "Return to game" banner).
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "resumeFailed");
+      msg.addProperty("message", "This game has already ended.");
       conn.send(GSON.toJson(msg));
       return;
     }
 
     // Swap the dropped socket for the new one and resend current state.
     room.setSocket(side, conn);
+    room.setDisconnectedAt(side, null);
     playerGameMap.put(conn, gameId);
+
+    // Tell the opponent the player is back — clears their disconnect countdown / Claim-victory
+    // button (the pending disconnect timers defuse themselves via the socket-identity check).
+    final JsonObject back = new JsonObject();
+    back.addProperty("type", "opponentReconnected");
+    back.addProperty("message", "Your opponent has reconnected.");
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(back));
 
     final var session = room.getSession();
     final var clock = session.getClock();
@@ -1010,6 +1349,7 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition())));
     msg.addProperty("havingMove", session.getHavingMove().name().toLowerCase());
     msg.add("clock", clockData);
+    msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     conn.send(GSON.toJson(msg));
 
     System.out.println("Resumed " + side.name().toLowerCase() + " in game " + gameId);
@@ -1286,12 +1626,16 @@ public class GameWebSocketServer extends WebSocketServer {
     // For draws by an explicit player action (resignation, flag-fall under the FIDE "opponent
     // cannot win" exception, or accepting a draw offer), tag who acted so the client can phrase
     // the message in the second person. Resignation / flag-fall additionally carry the draw reason.
-    if (result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
-        || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
+    if (result.type() == GameResultType.ABANDONMENT || result.type() == GameResultType.WRONG_CLOCK_PRESS_GAME_LOST
+        || result.type() == GameResultType.MOVED_OPPONENT_PIECE_GAME_LOST
+        || result.type() == GameResultType.WRONG_TIME_OFFER_GAME_LOST
+        || result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
+            || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
       msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());
     }
     if (result.winner() == Side.NONE
-        && (result.type() == GameResultType.RESIGNATION || result.type() == GameResultType.FLAG_FALL)) {
+        && (result.type() == GameResultType.RESIGNATION || result.type() == GameResultType.FLAG_FALL
+            || result.type() == GameResultType.ABANDONMENT)) {
       msg.addProperty("drawReason",
           room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
     }
@@ -1336,6 +1680,37 @@ public class GameWebSocketServer extends WebSocketServer {
   private void sendError(WebSocket conn, String message) {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "error");
+    msg.addProperty("message", message);
+    if (conn != null && conn.isOpen()) {
+      conn.send(GSON.toJson(msg));
+    }
+  }
+
+  /**
+   * Tells the joining client that there is no active game to join for the given code (not found,
+   * already full, or already ended). Distinct from {@link #sendError} so the client can render a
+   * calm, friendly message with a path back to the lobby rather than a red technical error.
+   */
+  private void sendJoinFailed(WebSocket conn, String reason, String message) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "joinFailed");
+    msg.addProperty("reason", reason);
+    msg.addProperty("message", message);
+    if (conn != null && conn.isOpen()) {
+      conn.send(GSON.toJson(msg));
+    }
+  }
+
+  private void sendRematchUnavailable(GameRoom room, Side side, String message) {
+    final WebSocket socket = room.getSocket(side);
+    if (socket != null && socket.isOpen()) {
+      sendRematchUnavailable(socket, message);
+    }
+  }
+
+  private void sendRematchUnavailable(WebSocket conn, String message) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "rematchUnavailable");
     msg.addProperty("message", message);
     if (conn != null && conn.isOpen()) {
       conn.send(GSON.toJson(msg));

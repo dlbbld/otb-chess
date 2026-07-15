@@ -19,8 +19,11 @@ import io.github.dlbbld.otbchess.game.model.TimeControl;
 public class GameRoom {
 
   private final String gameId;
-  private final GameSession session;
+  private GameSession session;
   private final TimeControl timeControl;
+  // Kept for rematches: a rematch rebuilds the session with the SAME settings.
+  private final int maxIllegalMoves;
+  private final boolean autoResumeAfterRestore;
   // Wall-clock creation time, used to reap rooms that were created but never joined.
   private final long createdAtMs = System.currentTimeMillis();
 
@@ -32,6 +35,15 @@ public class GameRoom {
   // token (not the guessable join code), so a third party who knows the join code can't hijack a seat.
   private String whiteToken;
   private String blackToken;
+
+  // Rematch handshake after the game ended: the side that offered, or NONE. When the OTHER side
+  // also offers (= accepts), the rematch starts. Reset by startRematch().
+  private Side rematchOfferedBy = Side.NONE;
+
+  // Wall-clock time (ms since epoch) since a seat's socket dropped without a resume; null while
+  // connected. Lets "claim victory" verify the opponent has really been gone past the grace.
+  private Long whiteDisconnectedAtMs;
+  private Long blackDisconnectedAtMs;
 
   public GameRoom(String gameId, TimeControl timeControl) {
     this(gameId, timeControl, io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true);
@@ -54,6 +66,8 @@ public class GameRoom {
     this.gameId = gameId;
     this.session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
     this.timeControl = timeControl;
+    this.maxIllegalMoves = maxIllegalMoves;
+    this.autoResumeAfterRestore = autoResumeAfterRestore;
   }
 
   public String getGameId() {
@@ -99,6 +113,11 @@ public class GameRoom {
       case BLACK -> blackPlayer;
       default -> null;
     };
+  }
+
+  public boolean isConnected(Side side) {
+    final WebSocket socket = getSocket(side);
+    return socket != null && socket.isOpen() && getDisconnectedAt(side) == null;
   }
 
   public Side getSide(WebSocket conn) {
@@ -173,5 +192,52 @@ public class GameRoom {
       clockTickFuture.cancel(false);
       clockTickFuture = null;
     }
+  }
+
+  /** Marks the side's socket as dropped (or reconnected with {@code null}) for the claim-victory guard. */
+  public void setDisconnectedAt(Side side, Long timestampMs) {
+    if (side == Side.WHITE) {
+      this.whiteDisconnectedAtMs = timestampMs;
+    } else if (side == Side.BLACK) {
+      this.blackDisconnectedAtMs = timestampMs;
+    }
+  }
+
+  /** @return when this side's socket dropped (ms since epoch), or {@code null} while connected. */
+  public Long getDisconnectedAt(Side side) {
+    return switch (side) {
+      case WHITE -> whiteDisconnectedAtMs;
+      case BLACK -> blackDisconnectedAtMs;
+      default -> null;
+    };
+  }
+
+  // ===== Rematch =====
+
+  /** @return the side that has offered a rematch since the game ended, or {@link Side#NONE}. */
+  public Side getRematchOfferedBy() {
+    return rematchOfferedBy;
+  }
+
+  public void setRematchOfferedBy(Side side) {
+    this.rematchOfferedBy = side;
+  }
+
+  /**
+   * Starts a rematch: the players swap colours (seats), and a fresh session begins from the SAME starting position
+   * (the original FEN for custom games) with the SAME time control and settings. The reconnect tokens are invalidated
+   * — the caller must issue fresh per-seat tokens and start the game/clock, mirroring the join flow.
+   */
+  public void startRematch() {
+    final WebSocket previousWhite = whitePlayer;
+    whitePlayer = blackPlayer;
+    blackPlayer = previousWhite;
+    whiteToken = null;
+    blackToken = null;
+    whiteDisconnectedAtMs = null;
+    blackDisconnectedAtMs = null;
+    rematchOfferedBy = Side.NONE;
+    session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore,
+        new Board(session.getBoard().getInitialFen()));
   }
 }
