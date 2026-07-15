@@ -87,8 +87,8 @@ test('a not-considered wrong-time offer clears the opponent stale rejection noti
   await white.locator('#offerDrawBtn').click();
   await expect(white.locator('#arbiterMessage')).toContainText(
     'should be made after making your move and before pressing the clock');
-  await expect(black.locator('#drawOfferPanel')).toBeVisible();
-  await expect(black.locator('#arbiterMessage')).toContainText('Your opponent offers a draw');
+  await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await expect(black.locator('#arbiterMessage')).not.toContainText('Your opponent offers a draw');
 
   await black.locator('#rejectDrawBtn').click();
   await expect(black.locator('#arbiterMessage')).toContainText('You rejected the draw offer');

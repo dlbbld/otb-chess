@@ -375,6 +375,11 @@ public launch. Released as **v0.1.1** (still beta).
   that move failed and bind the player to that move; they no longer say that no move from the
   current position could satisfy the rule. Unit coverage pins the message and must-play state;
   focused claims e2e pins the visible player messages.
+- [x] **Draw-offer text stays in the accept/reject panel.** Incoming draw offers, including
+  rejected threefold/50-move claims converted to offers, now put their explanatory text only in
+  the draw-offer panel from the start. The arbiter/status panel no longer duplicates the offer
+  text and remains available for turn-flow messages such as "Your turn." Focused e2e covers
+  ordinary offers, claim-converted offers, and wrong-time first offers.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

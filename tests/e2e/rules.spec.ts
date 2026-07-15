@@ -202,6 +202,8 @@ test('a draw offer accepted by the opponent ends the game as a draw', async ({ b
   // FIDE: offer a draw after making your move, before pressing the clock.
   await dragPiece(white, 'e2', 'e4');
   await offerDraw(white);
+  await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await expect(black.locator('#arbiterMessage')).not.toContainText('Your opponent offers a draw');
   await pressClock(white);
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
   await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
@@ -224,6 +226,8 @@ test('a draw offer by Black can be accepted after Black presses the clock', asyn
   await pressClock(white);
   await dragPiece(black, 'e7', 'e5');
   await offerDraw(black);
+  await expect(white.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('Your opponent offers a draw');
   await pressClock(black);
   await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
   await expect(white.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
@@ -239,6 +243,8 @@ test('a rejected draw offer after the offerer clock press names who rejected, fo
 
   await dragPiece(white, 'e2', 'e4');
   await offerDraw(white);
+  await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await expect(black.locator('#arbiterMessage')).not.toContainText('Your opponent offers a draw');
   await pressClock(white);
   await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
   await black.locator('#rejectDrawBtn').click();

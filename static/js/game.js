@@ -533,8 +533,8 @@ class Game {
       document.getElementById('drawOfferMessage').textContent = message;
       document.getElementById('drawOfferPanel').style.display = 'flex';
       // Server-rendered: a plain offer says "Your opponent offers a draw."; a rejected claim
-      // converted per FIDE 9.5 explains the claim and that it still counts as an offer.
-      this.showArbiterMessage(message);
+      // converted per FIDE 9.5 explains the claim. Keep it in the offer panel so the
+      // arbiter/status area can remain dedicated to turn-flow messages.
     });
 
     // Bare acknowledgment to the offering player after a correct-time draw offer:
