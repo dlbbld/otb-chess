@@ -391,6 +391,11 @@ public launch. Released as **v0.1.1** (still beta).
   counts as a king move." It now follows FIDE 4.4.3/4.7.2: move the king if the king has legal
   moves; otherwise make any legal move. The touched rook does not bind after an illegal castling
   attempt. Unit and focused e2e cover lost-right and temporarily illegal castling branches.
+- [x] **King release on castling square distinguishes legal start from illegal attempt.** Releasing
+  the king on g1/c1/g8/c8 starts an incomplete castling move only when castling on that side is
+  legal. If castling is temporarily or permanently illegal, the same release is adjudicated as an
+  illegal castling attempt under FIDE 4.7.2, with the king-move/any-move consequence. Unit and
+  focused e2e pin the attacked-path case.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

@@ -436,6 +436,30 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testKingReleasedOnCastlingSquareWhenPathIsAttackedIsIllegalCastlingAttempt() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/8/4K2R w K - 0 1");
+
+    // White releases the king on g1, but f1 is attacked by the rook on f8. The same release square
+    // is no longer an incomplete legal castle; it is an illegal castling attempt under FIDE 4.7.2.
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+
+    final BitboardPosition afterKingOnly = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_KING).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterKingOnly, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertTrue(response.message().contains("Illegal move: castling is not possible"));
+    assertTrue(response.message().contains("the king would travel over a field that is in check"));
+    assertTrue(response.message().contains("Because you released the king on g1, which attempts to castle"));
+    assertTrue(response.message().contains("you must make a legal move with the king"));
+    assertFalse(response.message().contains("complete the castling move"));
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  @Test
   void testKingThenRookTouchThenKingMoveUsesCastlingTouchMessage() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = Board.fromFenStrict("4k3/8/8/8/8/8/8/4K2R w K - 0 1");

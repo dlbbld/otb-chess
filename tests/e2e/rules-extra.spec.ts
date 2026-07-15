@@ -264,6 +264,22 @@ test('incomplete castling has no Revert button and informs the opponent passivel
   await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
 });
 
+test('king released on castling square is illegal when the castling path is attacked', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k4r2/8/8/8/8/8/8/4K2R w K - 0 1' });
+  const { white } = game;
+
+  await dragPiece(white, 'e1', 'g1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'the king would travel over a field that is in check');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Because you released the king on g1, which attempts to castle');
+  await expect(white.locator('#arbiterMessage')).toContainText('you must make a legal move with the king');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('complete the castling move');
+});
+
 test('king-then-rook touch before incomplete castling uses the touch-castling reason', async ({
   browser,
 }) => {

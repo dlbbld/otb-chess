@@ -555,7 +555,8 @@ public class ArbiterEngine {
   /**
    * Physical move inferred from the player's board manipulations.
    */
-  private record AttemptedMove(MoveSpecification moveSpecification, boolean castlingAttempt, Square kingReleaseSquare) {
+  private record AttemptedMove(MoveSpecification moveSpecification, boolean castlingAttempt, Square kingReleaseSquare,
+      boolean fullPhysicalCastlingAttempt) {
   }
 
   private record IllegalMoveReason(String playerReason, String opponentReason) {
@@ -631,7 +632,7 @@ public class ArbiterEngine {
   private static Optional<AttemptedMove> inferPhysicalCastlingAttempt(Board board, BitboardPosition afterPosition,
       List<BoardEvent> events) {
     return CastlingAttemptDetector.findPhysicalAttempt(board, afterPosition, events)
-        .map(attempt -> new AttemptedMove(attempt.moveSpecification(), true, attempt.kingReleaseSquare()));
+        .map(attempt -> new AttemptedMove(attempt.moveSpecification(), true, attempt.kingReleaseSquare(), true));
   }
 
   private static boolean shouldBypassReleasedPieceForInvalidCastlingAttempt(Board board, AttemptedMove attempt) {
@@ -699,7 +700,7 @@ public class ArbiterEngine {
 
     final MoveSpecification moveSpecification = createMoveSpecification(moveEvent);
     return Optional.of(new AttemptedMove(moveSpecification, moveSpecification.isCastling(),
-        moveSpecification.isCastling() ? moveEvent.targetSquare() : Square.NONE));
+        moveSpecification.isCastling() ? moveEvent.targetSquare() : Square.NONE, false));
   }
 
   private static MoveSpecification createMoveSpecification(BoardEvent event) {
@@ -760,11 +761,14 @@ public class ArbiterEngine {
     }
 
     final Square kingFrom = attemptedMove.moveSpecification().castlingMove().kingFromSquare(board.getSideToMove());
+    final String actionDescription = attemptedMove.fullPhysicalCastlingAttempt()
+        ? "attempted to castle by moving the king and rook"
+        : "released the king on " + attemptedMove.kingReleaseSquare().getName() + ", which attempts to castle";
     if (hasLegalMovesFromSquare(board.getLegalMoves(), kingFrom)) {
       return opponent
-          ? " Because your opponent attempted to castle by moving the king and rook, and castling on this side is"
+          ? " Because your opponent " + actionDescription + ", and castling on this side is"
               + " illegal, after restoring the position they must make a legal move with the king."
-          : " Because you attempted to castle by moving the king and rook, and castling on this side is illegal,"
+          : " Because you " + actionDescription + ", and castling on this side is illegal,"
               + " after restoring the position you must make a legal move with the king.";
     }
 
@@ -775,9 +779,9 @@ public class ArbiterEngine {
     }
 
     return opponent
-        ? " Because your opponent attempted to castle by moving the king and rook, and castling on this side is"
+        ? " Because your opponent " + actionDescription + ", and castling on this side is"
             + " illegal, but the king has no legal move, after restoring the position they may make any legal move."
-        : " Because you attempted to castle by moving the king and rook, and castling on this side is illegal,"
+        : " Because you " + actionDescription + ", and castling on this side is illegal,"
             + " but the king has no legal move, after restoring the position you may make any legal move.";
   }
 
