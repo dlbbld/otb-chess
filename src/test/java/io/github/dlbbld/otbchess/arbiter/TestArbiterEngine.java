@@ -950,7 +950,8 @@ class TestArbiterEngine {
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
     assertTrue(response.message().contains("castling is not possible"));
     assertTrue(response.message().contains("there is no castling right anymore on this side"), response.message());
-    assertTrue(response.message().contains("Because you touched your king first, and the king has legal moves"));
+    assertTrue(response.message().contains(
+        "Because you attempted to castle by moving the king and rook, and castling on this side is illegal"));
     assertTrue(response.message().contains("you must make a legal move with the king"));
     assertFalse(response.message().contains("Castling counts as a king move"));
     assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
@@ -975,19 +976,20 @@ class TestArbiterEngine {
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
     assertTrue(response.message().contains("castling is not possible"));
     assertTrue(response.message().contains("the king would travel over a field that is in check"));
-    assertTrue(response.message().contains("Because you touched your king first, and the king has legal moves"));
+    assertTrue(response.message().contains(
+        "Because you attempted to castle by moving the king and rook, and castling on this side is illegal"));
     assertTrue(response.message().contains("you must make a legal move with the king"));
     assertFalse(response.message().contains("Castling counts as a king move"));
     assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
   }
 
   @Test
-  void testFailedCastlingAttemptWithNoKingMovesBindsTouchedRookWhenRookCanMove() {
+  void testFailedCastlingAttemptWithNoKingMovesAllowsAnyLegalMoveEvenWhenRookCanMove() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = Board.fromFenStrict("k7/8/8/8/8/7b/3PPP2/3QK2R w - - 0 1");
 
-    // White attempts to castle without castling rights. The king has no legal moves, but the
-    // rook on h1 can move, so the king touch creates no obligation and the later rook touch binds.
+    // White attempts to castle without castling rights. The king has no legal moves, so FIDE
+    // 4.4.3/4.7.2 frees the player to make any legal move; the rook touch does not bind.
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
     sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
     sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
@@ -1000,12 +1002,12 @@ class TestArbiterEngine {
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, failedCastling.type());
     assertTrue(failedCastling.message().contains("castling is not possible"));
-    assertTrue(failedCastling.message().contains("you first touched your king, which has no legal moves"));
-    assertTrue(failedCastling.message().contains("then touched your rook, which has legal moves"));
-    assertTrue(failedCastling.message().contains("you must make a legal move with the rook"));
+    assertTrue(failedCastling.message().contains(
+        "Because you attempted to castle by moving the king and rook, and castling on this side is illegal"));
+    assertTrue(failedCastling.message().contains("the king has no legal move"));
+    assertTrue(failedCastling.message().contains("you may make any legal move"));
 
-    // After restoring the original position, a different legal move is not acceptable because
-    // the rook touch is binding.
+    // After restoring the original position, a different legal move is acceptable.
     sequence.resetReleasedPieceRule();
     sequence.addEvent(BoardEvent.dragMove(Square.D2, Square.D3, Piece.WHITE_PAWN, 2));
     final BitboardPosition afterPawnMove = BitboardPositions.from(board.getBitboardPosition())
@@ -1013,20 +1015,10 @@ class TestArbiterEngine {
 
     final ArbiterResponse laterMove = engine.evaluateClockPress(board, afterPawnMove, sequence);
 
-    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, laterMove.type());
-    assertTrue(laterMove.message().contains("move the rook from h1"));
-
-    sequence.resetReleasedPieceRule();
-    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.G1, Piece.WHITE_ROOK, 3));
-    final BitboardPosition afterRookMove = BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.H1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_ROOK).build();
-
-    final ArbiterResponse rookMove = engine.evaluateClockPress(board, afterRookMove, sequence);
-
-    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, rookMove.type());
-    assertTrue(rookMove.acceptedMove().isPresent());
-    assertEquals(Square.H1, rookMove.acceptedMove().get().moveSpecification().fromSquare());
-    assertEquals(Square.G1, rookMove.acceptedMove().get().moveSpecification().toSquare());
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, laterMove.type());
+    assertTrue(laterMove.acceptedMove().isPresent());
+    assertEquals(Square.D2, laterMove.acceptedMove().get().moveSpecification().fromSquare());
+    assertEquals(Square.D3, laterMove.acceptedMove().get().moveSpecification().toSquare());
   }
 
   @Test
@@ -1046,9 +1038,10 @@ class TestArbiterEngine {
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, failedCastling.type());
     assertTrue(failedCastling.message().contains("castling is not possible"));
-    assertTrue(failedCastling.message().contains("you touched your king and then your rook"));
-    assertTrue(failedCastling.message().contains("neither piece has legal moves"));
-    assertTrue(failedCastling.message().contains("you may make any other legal move"));
+    assertTrue(failedCastling.message().contains(
+        "Because you attempted to castle by moving the king and rook, and castling on this side is illegal"));
+    assertTrue(failedCastling.message().contains("the king has no legal move"));
+    assertTrue(failedCastling.message().contains("you may make any legal move"));
 
     sequence.resetReleasedPieceRule();
     sequence.addEvent(BoardEvent.dragMove(Square.D1, Square.E2, Piece.WHITE_QUEEN, 2));

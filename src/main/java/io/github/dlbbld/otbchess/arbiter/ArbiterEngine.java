@@ -762,28 +762,10 @@ public class ArbiterEngine {
     final Square kingFrom = attemptedMove.moveSpecification().castlingMove().kingFromSquare(board.getSideToMove());
     if (hasLegalMovesFromSquare(board.getLegalMoves(), kingFrom)) {
       return opponent
-          ? " Because your opponent touched their king first, and the king has legal moves, after restoring the"
-              + " position they must make a legal move with the king."
-          : " Because you touched your king first, and the king has legal moves, after restoring the position"
-              + " you must make a legal move with the king.";
-    }
-
-    final Optional<Square> touchedRook = touchedCastlingRookSquare(sequence, board.getSideToMove(),
-        attemptedMove.moveSpecification().castlingMove());
-    if (touchedRook.isPresent() && hasLegalMovesFromSquare(board.getLegalMoves(), touchedRook.get())) {
-      return opponent
-          ? " Because your opponent first touched their king, which has no legal moves, and then touched their rook,"
-              + " which has legal moves, after restoring the position they must make a legal move with the rook."
-          : " Because you first touched your king, which has no legal moves, and then touched your rook, which has"
-              + " legal moves, after restoring the position you must make a legal move with the rook.";
-    }
-
-    if (touchedRook.isPresent()) {
-      return opponent
-          ? " Because your opponent touched their king and then their rook, but neither piece has legal moves, after"
-              + " restoring the position they may make any other legal move."
-          : " Because you touched your king and then your rook, but neither piece has legal moves, after restoring"
-              + " the position you may make any other legal move.";
+          ? " Because your opponent attempted to castle by moving the king and rook, and castling on this side is"
+              + " illegal, after restoring the position they must make a legal move with the king."
+          : " Because you attempted to castle by moving the king and rook, and castling on this side is illegal,"
+              + " after restoring the position you must make a legal move with the king.";
     }
 
     final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
@@ -793,20 +775,10 @@ public class ArbiterEngine {
     }
 
     return opponent
-        ? " Because the touched king has no legal moves, after restoring the position they may make another legal move."
-        : " Because the touched king has no legal moves, after restoring the position you may make another legal move.";
-  }
-
-  private static Optional<Square> touchedCastlingRookSquare(ActionSequence sequence, Side sideToMove,
-      CastlingMove castlingMove) {
-    final Square rookFrom = CastlingAttemptDetector.calculateRookCastlingFrom(sideToMove, castlingMove);
-    final Piece rookPiece = Piece.of(sideToMove, PieceType.ROOK);
-    for (final BoardEvent event : sequence.getEvents()) {
-      if (event.piece() == rookPiece && event.square() == rookFrom) {
-        return Optional.of(rookFrom);
-      }
-    }
-    return Optional.empty();
+        ? " Because your opponent attempted to castle by moving the king and rook, and castling on this side is"
+            + " illegal, but the king has no legal move, after restoring the position they may make any legal move."
+        : " Because you attempted to castle by moving the king and rook, and castling on this side is illegal,"
+            + " but the king has no legal move, after restoring the position you may make any legal move.";
   }
 
   private static boolean hasLegalMovesFromSquare(List<LegalMove> legalMoves, Square square) {

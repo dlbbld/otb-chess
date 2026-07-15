@@ -14,6 +14,7 @@ import io.github.dlbbld.ashlarchess.board.enums.PieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.board.LegalMove;
+import io.github.dlbbld.otbchess.castling.CastlingAttemptDetector;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 
@@ -72,6 +73,10 @@ public class TouchMoveEvaluator {
     boolean unmovableOwnTouchSeen = false;
 
     for (int i = 0; i < events.size(); i++) {
+      if (CastlingAttemptDetector.isFailedAttemptWithNoLegalKingMove(events, i, sideToMove, legalMoves)) {
+        i++;
+        continue;
+      }
       final BoardEvent event = events.get(i);
       final Optional<TouchMoveObligation> obligation = evaluateEvent(event, sideToMove, legalMoves);
       if (obligation.isPresent()) {

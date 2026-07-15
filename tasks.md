@@ -388,9 +388,9 @@ public launch. Released as **v0.1.1** (still beta).
   focused e2e covers both colours.
 - [x] **Illegal castling attempts explain the touch-move consequence.** When a player physically
   tries to castle on a side where castling is illegal, the message no longer says "Castling
-  counts as a king move." It now follows the touch order: move the king if the first-touched king
-  has legal moves; otherwise move the touched rook if that rook has legal moves; otherwise make
-  any other legal move. Unit and focused e2e cover all three branches.
+  counts as a king move." It now follows FIDE 4.4.3/4.7.2: move the king if the king has legal
+  moves; otherwise make any legal move. The touched rook does not bind after an illegal castling
+  attempt. Unit and focused e2e cover lost-right and temporarily illegal castling branches.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

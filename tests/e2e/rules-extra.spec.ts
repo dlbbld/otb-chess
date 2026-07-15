@@ -328,12 +328,12 @@ test('illegal castling without the side right obliges the first-touched king whe
   await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
   await expect(white.locator('#arbiterMessage')).toContainText('there is no castling right anymore on this side');
   await expect(white.locator('#arbiterMessage')).toContainText(
-    'Because you touched your king first, and the king has legal moves');
+    'Because you attempted to castle by moving the king and rook, and castling on this side is illegal');
   await expect(white.locator('#arbiterMessage')).toContainText('you must make a legal move with the king');
   await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
 });
 
-test('illegal castling with no king moves obliges the touched rook when it can move', async ({ browser }) => {
+test('illegal castling with no king moves leaves any legal move free even when the rook can move', async ({ browser }) => {
   game = await startTwoPlayerGame(browser, { fen: 'k7/8/8/8/8/7b/3PPP2/3QK2R w - - 0 1' });
   const { white } = game;
 
@@ -343,10 +343,10 @@ test('illegal castling with no king moves obliges the touched rook when it can m
 
   await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
   await expect(white.locator('#arbiterMessage')).toContainText(
-    'you first touched your king, which has no legal moves');
-  await expect(white.locator('#arbiterMessage')).toContainText(
-    'then touched your rook, which has legal moves');
-  await expect(white.locator('#arbiterMessage')).toContainText('you must make a legal move with the rook');
+    'Because you attempted to castle by moving the king and rook, and castling on this side is illegal');
+  await expect(white.locator('#arbiterMessage')).toContainText('the king has no legal move');
+  await expect(white.locator('#arbiterMessage')).toContainText('you may make any legal move');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('legal move with the rook');
   await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
 });
 
@@ -359,9 +359,10 @@ test('illegal castling with no king or rook moves leaves any other legal move fr
   await pressClock(white);
 
   await expect(white.locator('#arbiterMessage')).toContainText('Illegal move: castling is not possible');
-  await expect(white.locator('#arbiterMessage')).toContainText('you touched your king and then your rook');
-  await expect(white.locator('#arbiterMessage')).toContainText('neither piece has legal moves');
-  await expect(white.locator('#arbiterMessage')).toContainText('you may make any other legal move');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Because you attempted to castle by moving the king and rook, and castling on this side is illegal');
+  await expect(white.locator('#arbiterMessage')).toContainText('the king has no legal move');
+  await expect(white.locator('#arbiterMessage')).toContainText('you may make any legal move');
   await expect(white.locator('#arbiterMessage')).not.toContainText('Castling counts as a king move');
 });
 
