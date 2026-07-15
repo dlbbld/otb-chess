@@ -15,7 +15,7 @@ and verified (incl. unattended reboot — see [`SETUP.md`](SETUP.md) §11), and 
 the public. Decision: **hold the public launch** until several known gameplay flaws are fixed and the
 game is properly play-tested, so the first impression is strong. Re-gate the deployment with
 Cloudflare Access (or take it down) in the meantime; a privacy policy will be re-added before any
-public launch. Released as **v0.1.1** (still beta).
+public launch. Released as **v0.1.2** (still beta).
 
 ### Done
 - [x] Remove the testing-only `/api/lastGameId` endpoint and lobby join-code prefill (`fdf067b`).
