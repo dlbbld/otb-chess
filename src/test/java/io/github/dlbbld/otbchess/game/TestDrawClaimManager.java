@@ -85,6 +85,29 @@ class TestDrawClaimManager {
   }
 
   @Test
+  void testAcceptedWithMoveClaimsUseRuleSpecificMessageAndCanonicalSan() {
+    final Board threefoldBoard = new Board();
+    threefoldBoard.movesStrict("Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8");
+
+    final DrawClaimResult threefold = manager.processClaim(threefoldBoard, DrawClaimType.THREEFOLD_WITH_MOVE, "nf3");
+
+    assertTrue(threefold.accepted());
+    assertEquals("Your claim for threefold repetition for move Nf3 was accepted.", threefold.message());
+    assertTrue(threefold.opponentMessage().get().contains("after the move Nf3"));
+    assertFalse(threefold.message().contains("nf3"));
+
+    final Board fiftyMoveBoard = Board.fromFenStrict("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
+
+    final DrawClaimResult fiftyMove = manager.processClaim(fiftyMoveBoard, DrawClaimType.FIFTY_MOVE_WITH_MOVE,
+        "rd1+");
+
+    assertTrue(fiftyMove.accepted());
+    assertEquals("Your claim under the 50-move rule for move Rd1 was accepted.", fiftyMove.message());
+    assertTrue(fiftyMove.opponentMessage().get().contains("after the move Rd1"));
+    assertFalse(fiftyMove.message().contains("rd1+"));
+  }
+
+  @Test
   void testInvalidClaimMoveMessageHidesParserInternals() {
     final Board board = new Board();
 

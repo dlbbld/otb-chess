@@ -257,7 +257,8 @@ test('50-move claim with the move that reaches it draws and informs the opponent
   await expectGameResult(black, SCORE_DRAW);
   await expect(black.locator('#gameResultReason')).toContainText('50-move');
   // The claimant's own message now names the move that was claimed.
-  await expect(white.locator('#arbiterMessage')).toContainText('Rd1');
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Your claim under the 50-move rule for move Rd1 was accepted.');
 });
 
 test('a with-move claim accepts a lenient SAN (spurious check mark)', async ({ browser }) => {
@@ -269,7 +270,8 @@ test('a with-move claim accepts a lenient SAN (spurious check mark)', async ({ b
 
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
-  await expect(white.locator('#arbiterMessage')).toContainText('Rd1+');
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Your claim under the 50-move rule for move Rd1 was accepted.');
 });
 
 test('an unsuccessful with-move claim names the owed move and offers a Revert', async ({ browser }) => {
@@ -369,6 +371,37 @@ test('50-move claim with a legal move that does not satisfy the rule is rejected
 });
 
 // ---- threefold repetition ----------------------------------------------------------------------
+
+test('threefold claim with the move that reaches it draws and normalizes the SAN in the message', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'g1', 'f3');
+  await pressClock(white);
+  await dragPiece(black, 'g8', 'f6');
+  await pressClock(black);
+  await dragPiece(white, 'f3', 'g1');
+  await pressClock(white);
+  await dragPiece(black, 'f6', 'g8');
+  await pressClock(black);
+  await dragPiece(white, 'g1', 'f3');
+  await pressClock(white);
+  await dragPiece(black, 'g8', 'f6');
+  await pressClock(black);
+  await dragPiece(white, 'f3', 'g1');
+  await pressClock(white);
+  await dragPiece(black, 'f6', 'g8');
+  await pressClock(black);
+
+  await claimThreefoldWithMove(white, 'nf3');
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Your claim for threefold repetition for move Nf3 was accepted.');
+});
 
 test('threefold claim without a repetition is rejected and informs the opponent', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);

@@ -358,6 +358,11 @@ public launch. Released as **v0.1.1** (still beta).
   counts as a draw offer for the opponent, who can accept or reject it. Invalid/not-considered
   claims are unchanged. Unit coverage pins all four considered rejection forms; focused claims e2e
   pins the visible player messages.
+- [x] **Accepted with-move claim messages name the rule and canonical SAN.** Successful threefold
+  and 50-move claims made with a declared move now say which rule was claimed and print the
+  canonical SAN for the resolved legal move, not the player's raw input. Unit coverage pins
+  lowercase/spurious-check SAN normalization; focused claims e2e pins live threefold and 50-move
+  accepted messages.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.game;
 
+import java.util.List;
+
 import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.board.LegalMove;
 import io.github.dlbbld.ashlarchess.board.MoveSpecification;
+import io.github.dlbbld.ashlarchess.san.LenientSanParseResult;
 import io.github.dlbbld.ashlarchess.san.LenientSanParser;
 import io.github.dlbbld.ashlarchess.san.LenientSanParserValidationException;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
@@ -48,18 +52,20 @@ public class DrawClaimManager {
     if (san == null || san.isBlank()) {
       return DrawClaimResult.invalidMove("Please enter a move in SAN notation for the claim.");
     }
-    final MoveSpecification moveSpec;
+    final LenientSanParseResult parseResult;
     try {
-      moveSpec = LenientSanParser.parse(san, board).moveSpecification();
+      parseResult = LenientSanParser.parse(san, board);
     } catch (final LenientSanParserValidationException e) {
       return DrawClaimResult.invalidMove(invalidClaimMoveMessage(san, e));
     }
+    final MoveSpecification moveSpec = parseResult.moveSpecification();
+    final String canonicalSan = canonicalSan(board, moveSpec);
 
     if (!board.canClaimThreefoldRepetitionRuleWithOwnMove()) {
       return DrawClaimResult.rejected(
           "Claim rejected, because no move from the current position can lead to a threefold"
               + " repetition. Please play." + REJECTED_CLAIM_COUNTS_AS_OFFER,
-          "Your opponent claimed a draw by threefold repetition with the move " + san + ", but the claim is not"
+          "Your opponent claimed a draw by threefold repetition with the move " + canonicalSan + ", but the claim is not"
               + " valid. It still counts as a draw offer. Do you accept the draw?");
     }
 
@@ -68,15 +74,17 @@ public class DrawClaimManager {
     board.unmove();
 
     if (isThreefold) {
-      return DrawClaimResult.accepted("Your claim was accepted after your move " + san + ".",
-          "Your opponent requested a draw for threefold repetition after the move " + san + ".", THREEFOLD_ENDED);
+      return DrawClaimResult.accepted("Your claim for threefold repetition for move " + canonicalSan
+          + " was accepted.",
+          "Your opponent requested a draw for threefold repetition after the move " + canonicalSan + ".",
+          THREEFOLD_ENDED);
     }
 
     return DrawClaimResult.rejectedWithMove(
-        "Claim rejected, because there is no threefold repetition after the mentioned move " + san + ". Please play."
-            + REJECTED_CLAIM_COUNTS_AS_OFFER,
-        "Your opponent claimed a draw by threefold repetition with the move " + san + ", but the claim is not valid."
-            + " It still counts as a draw offer. Do you accept the draw?",
+        "Claim rejected, because there is no threefold repetition after the mentioned move " + canonicalSan
+            + ". Please play." + REJECTED_CLAIM_COUNTS_AS_OFFER,
+        "Your opponent claimed a draw by threefold repetition with the move " + canonicalSan
+            + ", but the claim is not valid. It still counts as a draw offer. Do you accept the draw?",
         moveSpec);
   }
 
@@ -96,19 +104,21 @@ public class DrawClaimManager {
     if (san == null || san.isBlank()) {
       return DrawClaimResult.invalidMove("Please enter a move in SAN notation for the claim.");
     }
-    final MoveSpecification moveSpec;
+    final LenientSanParseResult parseResult;
     try {
-      moveSpec = LenientSanParser.parse(san, board).moveSpecification();
+      parseResult = LenientSanParser.parse(san, board);
     } catch (final LenientSanParserValidationException e) {
       return DrawClaimResult.invalidMove(invalidClaimMoveMessage(san, e));
     }
+    final MoveSpecification moveSpec = parseResult.moveSpecification();
+    final String canonicalSan = canonicalSan(board, moveSpec);
 
     if (!board.canClaimFiftyMoveRuleWithOwnMove()) {
       return DrawClaimResult.rejected(
           "Claim rejected, because no move from the current position can satisfy the 50-move" + " rule. Please play."
               + REJECTED_CLAIM_COUNTS_AS_OFFER,
-          "Your opponent claimed a draw by the 50-move rule with the move " + san + ", but the claim is not valid."
-              + " It still counts as a draw offer. Do you accept the draw?");
+          "Your opponent claimed a draw by the 50-move rule with the move " + canonicalSan
+              + ", but the claim is not valid. It still counts as a draw offer. Do you accept the draw?");
     }
 
     board.move(moveSpec);
@@ -116,16 +126,29 @@ public class DrawClaimManager {
     board.unmove();
 
     if (isFiftyMove) {
-      return DrawClaimResult.accepted("Your claim was accepted after your move " + san + ".",
-          "Your opponent requested a draw by the 50-move rule after the move " + san + ".", FIFTY_MOVE_ENDED);
+      return DrawClaimResult.accepted("Your claim under the 50-move rule for move " + canonicalSan
+          + " was accepted.",
+          "Your opponent requested a draw by the 50-move rule after the move " + canonicalSan + ".",
+          FIFTY_MOVE_ENDED);
     }
 
     return DrawClaimResult.rejectedWithMove(
-        "Claim rejected, because the 50-move rule does not apply after the mentioned move " + san + ". Please play."
-            + REJECTED_CLAIM_COUNTS_AS_OFFER,
-        "Your opponent claimed a draw by the 50-move rule with the move " + san + ", but the claim is not valid."
-            + " It still counts as a draw offer. Do you accept the draw?",
+        "Claim rejected, because the 50-move rule does not apply after the mentioned move " + canonicalSan
+            + ". Please play." + REJECTED_CLAIM_COUNTS_AS_OFFER,
+        "Your opponent claimed a draw by the 50-move rule with the move " + canonicalSan
+            + ", but the claim is not valid. It still counts as a draw offer. Do you accept the draw?",
         moveSpec);
+  }
+
+  private static String canonicalSan(Board board, MoveSpecification moveSpec) {
+    final List<LegalMove> legalMoves = board.getLegalMoves();
+    final List<String> legalMovesAsSan = board.getLegalMovesAsSan();
+    for (int i = 0; i < legalMoves.size(); i++) {
+      if (legalMoves.get(i).moveSpecification().equals(moveSpec)) {
+        return legalMovesAsSan.get(i);
+      }
+    }
+    throw new IllegalStateException("Resolved claim move is not legal in the current position.");
   }
 
   private static String invalidClaimMoveMessage(String san, LenientSanParserValidationException exception) {

@@ -1184,7 +1184,7 @@ class TestGameSession {
   @Test
   void testClaimWithMoveAcceptsLenientSanAndNamesTheMove() {
     // Strict SAN rejects the spurious "+" (Rd1 is not check); the lenient parser forgives it.
-    // The accepted-claim message names the move the player entered.
+    // The accepted-claim message names the canonical SAN for the resolved move.
     final Board startingBoard = Board.fromFenStrict("4k3/8/8/8/3R4/8/8/4K3 w - - 99 51");
     final GameSession session = new GameSession(TEST_TIME,
         io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES, true, startingBoard);
@@ -1194,7 +1194,8 @@ class TestGameSession {
 
     assertTrue(result.accepted(), "Lenient SAN should forgive the spurious check mark: " + result.message());
     assertFalse(result.invalidMove());
-    assertTrue(result.message().contains("Rd1+"), "Claimant message should name the move: " + result.message());
+    assertEquals("Your claim under the 50-move rule for move Rd1 was accepted.", result.message());
+    assertFalse(result.message().contains("Rd1+"));
     assertEquals(GameState.ENDED, session.getState());
   }
 
