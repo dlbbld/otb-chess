@@ -343,6 +343,11 @@ public launch. Released as **v0.1.1** (still beta).
   White's c2-c4 and moves b4-c3 without removing the captured pawn on c4, the arbiter now reports
   an illegal incomplete en-passant capture instead of a released-piece violation. Unit + focused
   e2e pin the beginner b4/c4/c3 journey and preserve completed en passant.
+- [x] **Not-considered wrong-time draw offers clear stale rejection notices.** After a first
+  wrong-time draw offer is rejected, a second offer on the same move is passive information for
+  the opponent; it now clears the opponent's old "You rejected the draw offer" arbiter message so
+  only the below-clock info remains. Unit + focused wrong-time-offer e2e pin the flag and live
+  screen behavior.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

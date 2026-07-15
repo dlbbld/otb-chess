@@ -599,6 +599,9 @@ class Game {
     // the info window below the clock — the player should see it, like at a real board, but no
     // action is required, so it stays out of the arbiter message window.
     this.ws.on('opponentInfo', (data) => {
+      if (data.clearArbiterMessage) {
+        this.clearArbiterMessage();
+      }
       this.showOpponentInfo(data.message);
     });
 
@@ -1292,6 +1295,13 @@ class Game {
     el.textContent = message;
     el.className = 'arbiter-message';
     if (style) el.classList.add(style);
+  }
+
+  clearArbiterMessage() {
+    const el = document.getElementById('arbiterMessage');
+    if (!el) return;
+    el.textContent = '';
+    el.className = 'arbiter-message';
   }
 
   // Transient Lichess-style banner over the board for game-level events ("Game started",

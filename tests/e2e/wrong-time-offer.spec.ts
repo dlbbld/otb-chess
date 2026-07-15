@@ -76,3 +76,28 @@ test('the wrong-time offer count resets every move — the first offer of a new 
   await expect(black.locator('#arbiterMessage')).not.toContainText('Warning');
   await expect(white.locator('#drawOfferPanel')).toBeVisible();
 });
+
+test('a not-considered wrong-time offer clears the opponent stale rejection notice', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // White has the move and offers too early. The first offer is still real, so Black rejects it.
+  await white.locator('#offerDrawBtn').click();
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'should be made after making your move and before pressing the clock');
+  await expect(black.locator('#drawOfferPanel')).toBeVisible();
+  await expect(black.locator('#arbiterMessage')).toContainText('Your opponent offers a draw');
+
+  await black.locator('#rejectDrawBtn').click();
+  await expect(black.locator('#arbiterMessage')).toContainText('You rejected the draw offer');
+  await expect(white.locator('#arbiterMessage')).toContainText('Your opponent rejected the draw offer');
+
+  // The second wrong-time offer is passive information for Black; the old rejection message no
+  // longer describes the situation and must disappear from the action-relevant window.
+  await white.locator('#offerDrawBtn').click();
+  await expect(white.locator('#arbiterMessage')).toContainText('This offer was not considered');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('not considered');
+  await expect(black.locator('#arbiterMessage')).toHaveText('');
+});

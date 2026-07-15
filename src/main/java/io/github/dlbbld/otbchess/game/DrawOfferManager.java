@@ -60,36 +60,40 @@ public class DrawOfferManager {
   /**
    * Result of a draw offer attempt.
    *
-   * @param accepted     true iff a real offer was registered (and must be forwarded to the opponent)
-   * @param opponentInfo passive information for the opponent (info window below the clock), or {@code null}: set when
-   *                     a wrong-time offer was NOT considered (the second on the same move, carrying the warning)
+   * @param accepted                    true iff a real offer was registered (and must be forwarded to the opponent)
+   * @param opponentInfo                passive information for the opponent (info window below the clock), or
+   *                                    {@code null}: set when a wrong-time offer was NOT considered (the second on the
+   *                                    same move, carrying the warning)
+   * @param clearOpponentArbiterMessage true iff the opponent's active arbiter window should be cleared before showing
+   *                                    the passive info (the old rejection message is stale once a not-considered repeat
+   *                                    happens)
    */
   public record DrawOfferResult(boolean accepted, boolean gameLost, boolean isWrongTime, String arbiterMessage,
-      String opponentInfo) {
+      String opponentInfo, boolean clearOpponentArbiterMessage) {
 
     public static DrawOfferResult ok() {
-      return new DrawOfferResult(true, false, false, null, null);
+      return new DrawOfferResult(true, false, false, null, null, false);
     }
 
     public static DrawOfferResult wrongTime(String message) {
-      return new DrawOfferResult(true, false, true, message, null);
+      return new DrawOfferResult(true, false, true, message, null, false);
     }
 
     /** Wrong-time offer NOT considered (second on the same move): not forwarded; both players informed. */
     public static DrawOfferResult wrongTimeNotConsidered(String message, String opponentInfo) {
-      return new DrawOfferResult(false, false, true, message, opponentInfo);
+      return new DrawOfferResult(false, false, true, message, opponentInfo, true);
     }
 
     public static DrawOfferResult wrongTimeGameLost(String message) {
-      return new DrawOfferResult(false, true, true, message, null);
+      return new DrawOfferResult(false, true, true, message, null, false);
     }
 
     public static DrawOfferResult repeated(String message) {
-      return new DrawOfferResult(false, false, false, message, null);
+      return new DrawOfferResult(false, false, false, message, null, false);
     }
 
     public static DrawOfferResult repeatedGameLost(String message) {
-      return new DrawOfferResult(false, true, false, message, null);
+      return new DrawOfferResult(false, true, false, message, null, false);
     }
   }
 

@@ -732,6 +732,9 @@ public class GameWebSocketServer extends WebSocketServer {
       final JsonObject info = new JsonObject();
       info.addProperty("type", "opponentInfo");
       info.addProperty("message", result.opponentInfo());
+      if (result.clearOpponentArbiterMessage()) {
+        info.addProperty("clearArbiterMessage", true);
+      }
       room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
     }
 

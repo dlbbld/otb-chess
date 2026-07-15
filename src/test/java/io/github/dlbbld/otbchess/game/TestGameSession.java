@@ -794,6 +794,7 @@ class TestGameSession {
     final var first = session.offerDrawWrongTime(Side.BLACK);
     assertTrue(first.accepted()); // a REAL offer — forwarded, the opponent can accept it
     assertTrue(first.arbiterMessage().contains("The offer still counts as a draw offer"));
+    assertFalse(first.clearOpponentArbiterMessage());
     assertTrue(session.getDrawOfferManager().isDrawOffered());
 
     // The opponent rejects; Black offers again on the same move: NOT considered, warned.
@@ -805,6 +806,7 @@ class TestGameSession {
     assertTrue(second.arbiterMessage().contains("Warning: your next draw offer on this move loses the game"));
     assertTrue(second.opponentInfo().contains("not considered"));
     assertTrue(second.opponentInfo().contains("been warned"));
+    assertTrue(second.clearOpponentArbiterMessage());
     assertFalse(session.getDrawOfferManager().isDrawOffered()); // nothing was forwarded
     assertEquals(GameState.IN_PROGRESS, session.getState());
 
