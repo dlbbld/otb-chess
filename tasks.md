@@ -363,6 +363,13 @@ public launch. Released as **v0.1.1** (still beta).
   canonical SAN for the resolved legal move, not the player's raw input. Unit coverage pins
   lowercase/spurious-check SAN normalization; focused claims e2e pins live threefold and 50-move
   accepted messages.
+- [x] **Draw offers stay alive after the offerer presses the clock.** A correct-time draw offer,
+  including one automatically created by a rejected threefold/50-move claim, now remains
+  acceptable/rejectable after the offering player completes the move with the clock press and
+  until the opponent touches a piece. The draw-offer panel now carries the offer text itself so
+  the top arbiter message can change to "Your turn" without losing the offer context. Unit +
+  focused e2e cover ordinary offers from both colours and claim-converted offers after the
+  claimant's clock press.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

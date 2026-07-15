@@ -340,10 +340,60 @@ test('the draw offer converted from a rejected claim can be accepted and draws t
   await claimThreefoldOnBoard(white);
   await expect(black.locator('#drawOfferPanel')).toBeVisible();
 
-  // Black accepts: the game is drawn like any agreed draw.
+  // White can still make and complete their move; the offer remains available until Black
+  // touches a piece.
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(black.locator('#drawOfferPanel')).toContainText('threefold repetition');
+
+  // Black accepts after White's clock press: the game is drawn like any agreed draw.
   await acceptDraw(black);
   await expectGameResult(white, SCORE_DRAW);
   await expectGameResult(black, SCORE_DRAW);
+});
+
+test('the draw offer converted from a rejected with-move 50-move claim can be rejected after the clock press', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/3R4/4P3/8/4K3 w - - 99 51' });
+  const { white, black } = game;
+
+  await claimFiftyMoveWithMove(white, 'e4'); // legal, considered, rejected; White must still play e4
+  await expect(black.locator('#drawOfferPanel')).toContainText('50-move rule with the move e4');
+
+  await dragPiece(white, 'e3', 'e4');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(black.locator('#drawOfferPanel')).toContainText('50-move rule with the move e4');
+
+  await black.locator('#rejectDrawBtn').click();
+
+  await expect(black.locator('#arbiterMessage')).toContainText('You rejected the draw offer');
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Your opponent rejected the draw offer, which was automatically part of your claim under the 50-move rule.');
+});
+
+test('Black claim-converted draw offer survives Black clock press symmetrically', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+
+  await claimThreefoldOnBoard(black);
+  await expect(white.locator('#drawOfferPanel')).toContainText('threefold repetition');
+
+  await dragPiece(black, 'e7', 'e5');
+  await pressClock(black);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(white.locator('#drawOfferPanel')).toContainText('threefold repetition');
+
+  await white.locator('#rejectDrawBtn').click();
+
+  await expect(white.locator('#arbiterMessage')).toContainText('You rejected the draw offer');
+  await expect(black.locator('#arbiterMessage')).toHaveText(
+    'Your opponent rejected the draw offer, which was automatically part of your claim for threefold repetition.');
 });
 
 test('50-move claim with a legal move that does not satisfy the rule is rejected and informs the opponent', async ({

@@ -419,6 +419,48 @@ class TestGameSession {
   }
 
   @Test
+  void testCorrectTimeDrawOfferSurvivesOffererClockPress() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final Side white = session.getHavingMove();
+    session.recordEvent(white, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));
+    final BitboardPosition afterE4 = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+
+    session.offerDrawCorrectTime(white, afterE4);
+    final ArbiterResponse acceptedMove = session.pressClockButton(white, afterE4);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, acceptedMove.type());
+    assertTrue(session.getDrawOfferManager().isDrawOffered());
+    assertEquals(Side.WHITE, session.getDrawOfferManager().getOfferingSide());
+
+    final Optional<GameResult> result = session.acceptDraw(Side.BLACK);
+    assertTrue(result.isPresent());
+    assertEquals(GameResultType.DRAW_AGREEMENT, result.get().type());
+  }
+
+  @Test
+  void testClaimConvertedDrawOfferSurvivesClaimantClockPress() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+
+    final DrawClaimResult claim = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(claim.convertsToDrawOffer());
+    assertTrue(session.getDrawOfferManager().isDrawOffered());
+
+    final ArbiterResponse acceptedMove = makeMove(session, Square.E2, Square.E4, Piece.WHITE_PAWN);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, acceptedMove.type());
+    assertTrue(session.getDrawOfferManager().isDrawOffered());
+    assertEquals(Side.WHITE, session.getDrawOfferManager().getOfferingSide());
+
+    final String rejectionMessage = session.rejectDraw(Side.BLACK);
+    assertTrue(rejectionMessage.contains("automatically part of your claim for threefold repetition"));
+    assertFalse(session.getDrawOfferManager().isDrawOffered());
+  }
+
+  @Test
   void testDrawOfferTouchedPiecePreventsAcceptance() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();

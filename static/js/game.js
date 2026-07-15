@@ -529,10 +529,12 @@ class Game {
     });
 
     this.ws.on('drawOffered', (data) => {
+      const message = data.message || 'Your opponent offers a draw.';
+      document.getElementById('drawOfferMessage').textContent = message;
       document.getElementById('drawOfferPanel').style.display = 'flex';
       // Server-rendered: a plain offer says "Your opponent offers a draw."; a rejected claim
       // converted per FIDE 9.5 explains the claim and that it still counts as an offer.
-      this.showArbiterMessage(data.message || 'Your opponent offers a draw.');
+      this.showArbiterMessage(message);
     });
 
     // Bare acknowledgment to the offering player after a correct-time draw offer:

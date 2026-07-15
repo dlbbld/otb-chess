@@ -263,8 +263,9 @@ public class GameSession {
 
     // Normal evaluation
     final ArbiterResponse response = arbiter.evaluateClockPress(board, afterPosition, currentSequence);
+    final boolean keepDrawOffer = drawOfferManager.isDrawOffered() && drawOfferManager.getOfferingSide() == side;
 
-    return handleArbiterResponse(response, side, false);
+    return handleArbiterResponse(response, side, keepDrawOffer);
   }
 
   /**

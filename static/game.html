@@ -121,9 +121,10 @@
         <button id="newGameBtn" class="action-btn">New Game</button>
       </div>
 
-      <!-- Draw offer received — the "Your opponent offers a draw." text already appears in
-           the arbiter message panel above, so the inline panel only carries the buttons. -->
+      <!-- Draw offer received. The panel keeps the offer context visible even when the
+           arbiter message above changes to turn/status text. -->
       <div id="drawOfferPanel" class="inline-panel" style="display:none;">
+        <span id="drawOfferMessage"></span>
         <button id="acceptDrawBtn" class="action-btn">Accept</button>
         <button id="rejectDrawBtn" class="action-btn">Reject</button>
       </div>

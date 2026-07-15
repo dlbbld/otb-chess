@@ -202,6 +202,9 @@ test('a draw offer accepted by the opponent ends the game as a draw', async ({ b
   // FIDE: offer a draw after making your move, before pressing the clock.
   await dragPiece(white, 'e2', 'e4');
   await offerDraw(white);
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
   await acceptDraw(black);
 
   await expectGameResult(white, SCORE_DRAW);
@@ -213,16 +216,36 @@ test('a draw offer accepted by the opponent ends the game as a draw', async ({ b
   await expect(white.locator('#arbiterMessage')).toContainText('Your opponent accepted the draw offer');
 });
 
-test('a rejected draw offer names who rejected, for both players', async ({ browser }) => {
+test('a draw offer by Black can be accepted after Black presses the clock', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await dragPiece(black, 'e7', 'e5');
+  await offerDraw(black);
+  await pressClock(black);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+  await expect(white.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
+  await acceptDraw(white);
+
+  await expectGameResult(white, SCORE_DRAW);
+  await expectGameResult(black, SCORE_DRAW);
+});
+
+test('a rejected draw offer after the offerer clock press names who rejected, for both players', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
 
   await dragPiece(white, 'e2', 'e4');
   await offerDraw(white);
+  await pressClock(white);
+  await expect(black.locator('#drawOfferPanel')).toContainText('Your opponent offers a draw');
   await black.locator('#rejectDrawBtn').click();
 
   await expect(black.locator('#arbiterMessage')).toContainText('You rejected the draw offer');
   await expect(white.locator('#arbiterMessage')).toContainText('Your opponent rejected the draw offer');
+  await expect(black.locator('#drawOfferPanel')).toBeHidden();
   // The game continues — no result panel.
   await expect(white.locator('#gameResultPanel')).toBeHidden();
 });
