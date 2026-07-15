@@ -370,6 +370,11 @@ public launch. Released as **v0.1.1** (still beta).
   the top arbiter message can change to "Your turn" without losing the offer context. Unit +
   focused e2e cover ordinary offers from both colours and claim-converted offers after the
   claimant's clock press.
+- [x] **With-move claim rejections do not reveal whether any drawing move exists.** Once the
+  submitted SAN resolves to a legal move, rejected threefold and 50-move claims now explain why
+  that move failed and bind the player to that move; they no longer say that no move from the
+  current position could satisfy the rule. Unit coverage pins the message and must-play state;
+  focused claims e2e pins the visible player messages.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

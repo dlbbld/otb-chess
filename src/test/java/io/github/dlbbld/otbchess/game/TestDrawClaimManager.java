@@ -71,10 +71,14 @@ class TestDrawClaimManager {
     assertTrue(fiftyOnBoard.message().contains("50 moves have not been played"));
 
     final DrawClaimResult threefoldWithMove = manager.processClaim(board, DrawClaimType.THREEFOLD_WITH_MOVE, "Nf3");
-    assertTrue(threefoldWithMove.message().contains("no move from the current position can lead to a threefold"));
+    assertTrue(threefoldWithMove.message()
+        .contains("Threefold claim for move Nf3 was rejected because this does not result in a threefold repetition."));
+    assertFalse(threefoldWithMove.message().contains("no move from the current position"));
 
     final DrawClaimResult fiftyWithMove = manager.processClaim(board, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Nf3");
-    assertTrue(fiftyWithMove.message().contains("no move from the current position can satisfy the 50-move rule"));
+    assertTrue(fiftyWithMove.message()
+        .contains("50-move rule claim for move Nf3 was rejected because the 50-move rule does not apply after this move."));
+    assertFalse(fiftyWithMove.message().contains("no move from the current position"));
 
     for (final DrawClaimResult result : new DrawClaimResult[] { threefoldOnBoard, fiftyOnBoard, threefoldWithMove,
         fiftyWithMove }) {

@@ -1241,44 +1241,42 @@ class TestGameSession {
     assertEquals(GameState.ENDED, session.getState());
   }
 
-  /**
-   * When no move from the current position can possibly create a threefold repetition, the with-move claim
-   * short-circuits with a generic "no move could satisfy" rejection BEFORE the SAN is even validated. The player's SAN
-   * is not tested for legality (no invalidMove flag set), and no must-execute-move is established — the player is free
-   * to play any legal move.
-   */
   @Test
-  void testThreefoldClaimWithMoveShortCircuitsWhenImpossibleFromCurrentPosition() {
+  void testThreefoldClaimWithMoveRejectedForSubmittedMoveWhenImpossibleFromCurrentPosition() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
     // From the initial position, no legal move can possibly produce a threefold repetition.
-    // The SAN ("e4") is legal, so it passes SAN validation; the short-circuit then fires
-    // on the impossibility of ever reaching threefold and rejects the claim without
-    // performing the move.
-    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "e4");
+    // The legal submitted move is still the considered claim move and must be played.
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_WITH_MOVE, "a3");
 
     assertFalse(result.accepted());
     assertFalse(result.invalidMove());
-    assertTrue(result.moveToPerform().isEmpty());
-    assertTrue(result.message().contains("no move from the current position can lead to" + " a threefold repetition"));
-    assertNull(session.getMustExecuteMove());
+    assertTrue(result.moveToPerform().isPresent());
+    assertEquals("Threefold claim for move a3 was rejected because this does not result in a threefold repetition."
+        + " Please play. The claim also counts as a draw offer for your opponent, which he can accept or reject.",
+        result.message());
+    assertFalse(result.message().contains("no move from the current position"));
+    assertNotNull(session.getMustExecuteMove());
     assertEquals(Side.WHITE, session.getHavingMove());
     assertEquals(GameState.IN_PROGRESS, session.getState());
   }
 
   @Test
-  void testFiftyMoveClaimWithMoveShortCircuitsWhenClockIsBelowThreshold() {
+  void testFiftyMoveClaimWithMoveRejectedForSubmittedMoveWhenClockIsBelowThreshold() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
-    // Half-move clock 0; canClaimFiftyMoveRuleWithOwnMove() requires 99+. SAN ("e4") is
-    // legal, so SAN validation passes and the short-circuit then rejects the claim.
+    // Half-move clock 0; canClaimFiftyMoveRuleWithOwnMove() requires 99+. The legal
+    // submitted move is still the considered claim move and must be played.
     final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "e4");
 
     assertFalse(result.accepted());
     assertFalse(result.invalidMove());
-    assertTrue(result.moveToPerform().isEmpty());
-    assertTrue(result.message().contains("no move from the current position can satisfy" + " the 50-move rule"));
-    assertNull(session.getMustExecuteMove());
+    assertTrue(result.moveToPerform().isPresent());
+    assertEquals("50-move rule claim for move e4 was rejected because the 50-move rule does not apply after this move."
+        + " Please play. The claim also counts as a draw offer for your opponent, which he can accept or reject.",
+        result.message());
+    assertFalse(result.message().contains("no move from the current position"));
+    assertNotNull(session.getMustExecuteMove());
   }
 
   /**
