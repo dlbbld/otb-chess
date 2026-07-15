@@ -474,6 +474,15 @@ body:has(.game-layout) {
   background: #6a6764;
 }
 
+.arbiter-buttons .abort-game-btn {
+  border-color: #b76e6e;
+  color: #ffdede;
+}
+
+.arbiter-buttons .abort-game-btn:hover:not(:disabled) {
+  background: #704040;
+}
+
 .game-code-display {
   display: flex;
   align-items: center;

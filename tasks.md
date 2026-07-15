@@ -61,6 +61,13 @@ public launch. Released as **v0.1.2** (still beta).
 
 ## Backlog (not scheduled)
 
+- [x] **Make the waiting creator's Abort action discoverable again.** The control-bar redesign
+  reduced the original text button to an ambiguous `!` icon below the board. Move an explicit
+  **Abort game** button beside the share code / Copy-code action in the arbiter panel, where the
+  creator is already looking while waiting. It must remove the unstarted room and return to the
+  lobby, remain colour-symmetric, survive a waiting-page refresh, and disappear when play starts.
+  Verified with a Java server test plus the literal lobby → create as White → abort → lobby browser
+  journey; full unit and 124-test e2e suites pass.
 - [x] **User-friendly message when opening/joining a game that is not active.** When a player opens a
   game that is no longer playable — game ended, code not found, expired/reaped, or the server
   restarted — the UI showed a technical error. Now replaced with a calm, friendly message plus a

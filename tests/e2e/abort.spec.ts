@@ -13,13 +13,25 @@ test.afterEach(async () => {
   game = undefined;
 });
 
-test('the creator sees Abort (not Resign) while waiting for an opponent', async ({ browser }) => {
+test('the creator sees an explicit Abort game action beside the join code', async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await createGame(page); // creator alone, no opponent yet
+  const gameId = await createGame(page); // creator alone, no opponent yet
 
-  await expect(page.locator('#abortBtn')).toBeVisible();
+  let waitingActions = page.locator('#arbiterButtons');
+  await expect(waitingActions.locator('.game-code-value')).toBeVisible();
+  await expect(waitingActions.getByRole('button', { name: 'Copy code' })).toBeVisible();
+  await expect(waitingActions.locator('#abortBtn')).toHaveText('Abort game');
+  await expect(waitingActions.locator('#abortBtn')).toBeVisible();
+  await expect(page.locator('.board-controls #abortBtn')).toHaveCount(0);
   await expect(page.locator('#resignBtn')).toBeHidden();
+
+  // A waiting-page refresh resumes the same room and must restore the explicit action too.
+  await page.reload();
+  waitingActions = page.locator('#arbiterButtons');
+  await expect(waitingActions.locator('.game-code-value')).toHaveText(gameId);
+  await expect(waitingActions.locator('#abortBtn')).toHaveText('Abort game');
+  await expect(waitingActions.locator('#abortBtn')).toBeVisible();
 
   await context.close();
 });
@@ -38,12 +50,20 @@ test('a black creator also gets Abort while waiting (symmetry)', async ({ browse
 test('aborting returns the creator to the lobby to start a new challenge', async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await createGame(page);
 
-  await page.locator('#abortBtn').click();
+  // Literal reported journey: start in the lobby, keep the default White side, and create.
+  await page.goto('/');
+  await expect(page.locator('input[name="side"][value="white"]')).toBeChecked();
+  await page.locator('#createGameBtn').click();
+  await expect(page.locator('.game-code-value')).toBeVisible({ timeout: 15_000 });
 
-  // Back on the start screen, where a new game can be created.
+  await page.locator('#arbiterButtons #abortBtn').click();
+
+  // The server confirms the abort, the client clears the saved seat, and the creator returns to
+  // the lobby where a fresh challenge can be created.
+  await expect(page).toHaveURL(/\/$/);
   await expect(page.locator('#createGameBtn')).toBeVisible();
+  await expect(page.locator('#gameInProgress')).toBeHidden();
 
   await context.close();
 });
