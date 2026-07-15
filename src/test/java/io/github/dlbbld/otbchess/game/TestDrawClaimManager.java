@@ -59,6 +59,32 @@ class TestDrawClaimManager {
   }
 
   @Test
+  void testRejectedClaimPlayerMessagesAnnounceAutomaticDrawOffer() {
+    final Board board = new Board(); // initial position: no repetition, no 50-move progress
+    final String offerSentence =
+        "The claim also counts as a draw offer for your opponent, which he can accept or reject.";
+
+    final DrawClaimResult threefoldOnBoard = manager.processClaim(board, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(threefoldOnBoard.message().contains("The position has not occurred three times."));
+
+    final DrawClaimResult fiftyOnBoard = manager.processClaim(board, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertTrue(fiftyOnBoard.message().contains("50 moves have not been played"));
+
+    final DrawClaimResult threefoldWithMove = manager.processClaim(board, DrawClaimType.THREEFOLD_WITH_MOVE, "Nf3");
+    assertTrue(threefoldWithMove.message().contains("no move from the current position can lead to a threefold"));
+
+    final DrawClaimResult fiftyWithMove = manager.processClaim(board, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Nf3");
+    assertTrue(fiftyWithMove.message().contains("no move from the current position can satisfy the 50-move rule"));
+
+    for (final DrawClaimResult result : new DrawClaimResult[] { threefoldOnBoard, fiftyOnBoard, threefoldWithMove,
+        fiftyWithMove }) {
+      assertFalse(result.accepted());
+      assertTrue(result.convertsToDrawOffer());
+      assertTrue(result.message().contains(offerSentence), result.message());
+    }
+  }
+
+  @Test
   void testInvalidClaimMoveMessageHidesParserInternals() {
     final Board board = new Board();
 

@@ -353,6 +353,11 @@ public launch. Released as **v0.1.1** (still beta).
   claimant now sees that the rejected offer was automatically part of that claim. Unit coverage
   pins all four claim forms; focused claims e2e pins the live threefold-position and 50-move
   with-move rejection messages.
+- [x] **Rejected claim messages tell the claimant about the draw offer.** For every considered but
+  rejected threefold or 50-move claim, the claimant-side rejection message now also says the claim
+  counts as a draw offer for the opponent, who can accept or reject it. Invalid/not-considered
+  claims are unchanged. Unit coverage pins all four considered rejection forms; focused claims e2e
+  pins the visible player messages.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

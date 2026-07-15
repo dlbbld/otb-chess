@@ -322,6 +322,8 @@ test('rejected on-board 50-move claim announces the claim and the offer to the o
   await claimFiftyMoveOnBoard(white); // nowhere near the rule -> rejected
 
   await expect(white.locator('#arbiterMessage')).toContainText('rejected');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'The claim also counts as a draw offer for your opponent, which he can accept or reject.');
   await expect(black.locator('#arbiterMessage')).toContainText(
     'claimed a draw by the 50-move rule on the current position');
   await expect(black.locator('#arbiterMessage')).toContainText('still counts as a draw offer');
@@ -351,6 +353,8 @@ test('50-move claim with a legal move that does not satisfy the rule is rejected
   await claimFiftyMoveWithMove(white, 'Rd1'); // legal, but the rule is nowhere near satisfied
 
   await expect(white.locator('#arbiterMessage')).toContainText('Claim rejected');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'The claim also counts as a draw offer for your opponent, which he can accept or reject.');
   // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer — announced with
   // what actually happened, not a bare "offers a draw".
   await expect(black.locator('#arbiterMessage')).toContainText(
@@ -373,6 +377,8 @@ test('threefold claim without a repetition is rejected and informs the opponent'
   await claimThreefoldOnBoard(white);
 
   await expect(white.locator('#arbiterMessage')).toContainText('rejected');
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'The claim also counts as a draw offer for your opponent, which he can accept or reject.');
   // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer — announced with
   // what actually happened, not a bare "offers a draw".
   await expect(black.locator('#arbiterMessage')).toContainText(
@@ -407,6 +413,8 @@ test('threefold claim with a legal move that creates no repetition is rejected a
   await claimThreefoldWithMove(white, 'Nf3'); // legal move, but no repetition results
 
   await expect(white.locator('#arbiterMessage')).toContainText(/reject/i);
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'The claim also counts as a draw offer for your opponent, which he can accept or reject.');
   // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer — announced with
   // what actually happened, not a bare "offers a draw".
   await expect(black.locator('#arbiterMessage')).toContainText(
