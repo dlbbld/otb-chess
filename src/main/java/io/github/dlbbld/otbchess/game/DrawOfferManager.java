@@ -23,10 +23,12 @@ public class DrawOfferManager {
   private static final int PENALTY_INFO = 1;
   private static final int PENALTY_WARNING = 2;
   private static final int PENALTY_GAME_LOST = 3;
+  private static final String DEFAULT_OFFERER_REJECTION_MESSAGE = "Your opponent rejected the draw offer.";
 
   private boolean drawOffered;
   private Side offeringSide;
   private boolean opponentTouchedPiece;
+  private String offererRejectionMessage;
   /**
    * True iff the active offer was made at the correct time (offerer on move, after making a move). Used to choose the
    * right "offer-no-longer-acceptable" trigger: correct-time → opponent's TOUCH invalidates the offer (FIDE 9.1.2.1);
@@ -51,6 +53,7 @@ public class DrawOfferManager {
     this.offeringSide = Side.NONE;
     this.opponentTouchedPiece = false;
     this.wasOfferedAtCorrectTime = false;
+    this.offererRejectionMessage = DEFAULT_OFFERER_REJECTION_MESSAGE;
     this.whiteRepeatCount = 0;
     this.blackRepeatCount = 0;
     this.whiteWrongTimeCount = 0;
@@ -101,6 +104,13 @@ public class DrawOfferManager {
    * Attempts to offer a draw at the correct time (after making a move, before pressing clock).
    */
   public DrawOfferResult offerDrawCorrectTime(Side side) {
+    return offerDrawCorrectTime(side, DEFAULT_OFFERER_REJECTION_MESSAGE);
+  }
+
+  /**
+   * Registers a correct-time draw offer with a custom message for the offerer if the opponent rejects it.
+   */
+  public DrawOfferResult offerDrawCorrectTime(Side side, String offererRejectionMessage) {
     // Check for repeated offer
     if (drawOffered && offeringSide == side) {
       return handleRepeatedOffer(side);
@@ -111,6 +121,9 @@ public class DrawOfferManager {
     this.offeringSide = side;
     this.opponentTouchedPiece = false;
     this.wasOfferedAtCorrectTime = true;
+    this.offererRejectionMessage = (offererRejectionMessage == null || offererRejectionMessage.isBlank())
+        ? DEFAULT_OFFERER_REJECTION_MESSAGE
+        : offererRejectionMessage;
     return DrawOfferResult.ok();
   }
 
@@ -153,6 +166,7 @@ public class DrawOfferManager {
     this.offeringSide = side;
     this.opponentTouchedPiece = false;
     this.wasOfferedAtCorrectTime = false;
+    this.offererRejectionMessage = DEFAULT_OFFERER_REJECTION_MESSAGE;
 
     // Wording depends on whether the offerer has the move.
     if (offererHasMove) {
@@ -226,6 +240,10 @@ public class DrawOfferManager {
     return Optional.empty();
   }
 
+  public String offererRejectionMessage() {
+    return offererRejectionMessage;
+  }
+
   /**
    * Clears the current draw offer. Called after rejection, clock press by opponent, or invalid move.
    */
@@ -234,6 +252,7 @@ public class DrawOfferManager {
     this.offeringSide = Side.NONE;
     this.opponentTouchedPiece = false;
     this.wasOfferedAtCorrectTime = false;
+    this.offererRejectionMessage = DEFAULT_OFFERER_REJECTION_MESSAGE;
   }
 
   public boolean wasOfferedAtCorrectTime() {

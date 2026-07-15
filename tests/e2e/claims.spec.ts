@@ -358,6 +358,10 @@ test('50-move claim with a legal move that does not satisfy the rule is rejected
   await expect(black.locator('#arbiterMessage')).toContainText('still counts as a draw offer');
   await expect(black.locator('#drawOfferPanel')).toBeVisible();
   await expect(white.locator('#gameResultPanel')).toBeHidden();
+
+  await black.locator('#rejectDrawBtn').click();
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Your opponent rejected the draw offer, which was automatically part of your claim under the 50-move rule.');
 });
 
 // ---- threefold repetition ----------------------------------------------------------------------
@@ -376,6 +380,10 @@ test('threefold claim without a repetition is rejected and informs the opponent'
   await expect(black.locator('#arbiterMessage')).toContainText('still counts as a draw offer');
   await expect(black.locator('#drawOfferPanel')).toBeVisible();
   await expect(white.locator('#gameResultPanel')).toBeHidden();
+
+  await black.locator('#rejectDrawBtn').click();
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Your opponent rejected the draw offer, which was automatically part of your claim for threefold repetition.');
 });
 
 test('threefold claim with an invalid SAN reports a validation message', async ({ browser }) => {

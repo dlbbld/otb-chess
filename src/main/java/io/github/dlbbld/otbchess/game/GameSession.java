@@ -529,8 +529,10 @@ public class GameSession {
   /**
    * Player rejects a draw offer.
    */
-  public synchronized void rejectDraw(Side side) {
+  public synchronized String rejectDraw(Side side) {
+    final String offererMessage = drawOfferManager.offererRejectionMessage();
     drawOfferManager.rejectDraw(side);
+    return offererMessage;
   }
 
   // ===== Draw claims =====
@@ -583,10 +585,19 @@ public class GameSession {
     // correct-time offer (the claimer is on the move) so it follows the standard accept /
     // reject / touch-piece-invalidation flow without going through the wrong-time escalation.
     if (claimResult.convertsToDrawOffer()) {
-      drawOfferManager.offerDrawCorrectTime(side);
+      drawOfferManager.offerDrawCorrectTime(side, rejectedClaimDrawOfferMessage(type));
     }
 
     return claimResult;
+  }
+
+  private static String rejectedClaimDrawOfferMessage(DrawClaimType type) {
+    return switch (type) {
+      case THREEFOLD_ON_BOARD, THREEFOLD_WITH_MOVE ->
+          "Your opponent rejected the draw offer, which was automatically part of your claim for threefold repetition.";
+      case FIFTY_MOVE_ON_BOARD, FIFTY_MOVE_WITH_MOVE ->
+          "Your opponent rejected the draw offer, which was automatically part of your claim under the 50-move rule.";
+    };
   }
 
   /**

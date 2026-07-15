@@ -1413,6 +1413,32 @@ class TestGameSession {
   }
 
   @Test
+  void testRejectingClaimConvertedDrawOfferNamesClaimSourceForOfferer() {
+    final String threefold = "Your opponent rejected the draw offer, which was automatically part of your claim"
+        + " for threefold repetition.";
+    final String fiftyMove = "Your opponent rejected the draw offer, which was automatically part of your claim"
+        + " under the 50-move rule.";
+
+    assertEquals(threefold, rejectOfferFromClaim(new Board(), DrawClaimType.THREEFOLD_ON_BOARD, null));
+    assertEquals(threefold, rejectOfferFromClaim(new Board(), DrawClaimType.THREEFOLD_WITH_MOVE, "Nf3"));
+    assertEquals(fiftyMove, rejectOfferFromClaim(Board.fromFenStrict("4k3/8/8/8/3R4/8/8/4K3 w - - 0 1"),
+        DrawClaimType.FIFTY_MOVE_ON_BOARD, null));
+    assertEquals(fiftyMove, rejectOfferFromClaim(Board.fromFenStrict("4k3/8/8/8/3R4/8/8/4K3 w - - 0 1"),
+        DrawClaimType.FIFTY_MOVE_WITH_MOVE, "Rd1"));
+  }
+
+  private String rejectOfferFromClaim(Board board, DrawClaimType type, String san) {
+    final GameSession session = new GameSession(TEST_TIME, 2, true, board);
+    session.startGame();
+
+    final DrawClaimResult result = session.claimDraw(Side.WHITE, type, san);
+
+    assertTrue(result.convertsToDrawOffer());
+    assertTrue(session.getDrawOfferManager().isDrawOffered());
+    return session.rejectDraw(Side.BLACK);
+  }
+
+  @Test
   void testInvalidSanClaimIsNotConsideredAndDoesNotLockClaimsForThisTurn() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();

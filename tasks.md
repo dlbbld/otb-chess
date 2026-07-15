@@ -348,6 +348,11 @@ public launch. Released as **v0.1.1** (still beta).
   the opponent; it now clears the opponent's old "You rejected the draw offer" arbiter message so
   only the below-clock info remains. Unit + focused wrong-time-offer e2e pin the flag and live
   screen behavior.
+- [x] **Rejected claim-converted draw offers name the originating claim.** When an incorrect
+  threefold or 50-move claim becomes a draw offer under FIDE 9.5 and the opponent rejects it, the
+  claimant now sees that the rejected offer was automatically part of that claim. Unit coverage
+  pins all four claim forms; focused claims e2e pins the live threefold-position and 50-move
+  with-move rejection messages.
 
 ## Notes
 - Workflow: commit locally per verified change; push when the feature is complete (reviewed on the remote); PRs only when asked.

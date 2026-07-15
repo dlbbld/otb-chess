@@ -799,7 +799,7 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final Side side = room.getSide(conn);
-    room.getSession().rejectDraw(side);
+    final String offererRejectionMessage = room.getSession().rejectDraw(side);
 
     // Personalised per player so it is unambiguous who rejected.
     final JsonObject toRejecter = new JsonObject();
@@ -809,7 +809,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final JsonObject toOfferer = new JsonObject();
     toOfferer.addProperty("type", "drawRejected");
-    toOfferer.addProperty("message", "Your opponent rejected the draw offer.");
+    toOfferer.addProperty("message", offererRejectionMessage);
     room.sendToSide(side.getOppositeSide(), GSON.toJson(toOfferer));
   }
 
