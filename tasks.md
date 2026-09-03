@@ -3,6 +3,13 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## Further hardening (beta bug fixes)
+
+- [x] Start `codex/further-hardening` from current `main` for the next round of beta bug fixes.
+- [x] Record the absolute branch-and-PR rule in `AGENTS.md` and `CLAUDE.md`: no direct commits
+  or pushes to `main`, including documentation and task tracking. Keep the already-pushed
+  branch-cleanup record (`20c3cb0`) as requested.
+
 ## Publish the server (beta)
 
 Architecture (reviewed): iMac running native `launchd` services → Cloudflare Tunnel
