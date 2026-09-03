@@ -2,7 +2,7 @@
 
 All notable changes to OTB Chess are documented here.
 
-## 0.1.4 — Abort Button Regression Guard — Unreleased
+## 0.1.4 — Abort Button Regression Guard — 2026-09-03
 
 Post-launch maintenance: strengthen the regression tests around the readable Abort button restored
 in `0.1.3`. This does not change gameplay or the released button's appearance.

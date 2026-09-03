@@ -17,7 +17,7 @@ and an experimental/no-warranty notice. Source release publication and deploymen
 the iMac must be updated and restarted before its runtime reports `0.1.3`. The previously deferred
 privacy notice remains open.
 
-### 0.1.4 — Abort Button Regression Guard (prepared for PR; not released)
+### 0.1.4 — Abort Button Regression Guard
 
 - [x] Delete the fully merged GitHub branches `aquaman-testing`, `publish-server-beta`, and
   `testing-hardening`; start `codex/abort-regression-guard` from released `main`.
@@ -26,6 +26,8 @@ privacy notice remains open.
 - [x] Run the full Java and Playwright suites before opening the PR: `mvn -q package` passed all
   213 Java tests; `npx playwright test` passed all 125 e2e tests (6.5 minutes). The rebuilt local
   jar's `/api/version` reports `0.1.4`. No gameplay or application UI code changed.
+- [x] Open PR #15 after full verification and finalize the dated changelog, README release link,
+  and matching publication notes. Finalization changes documentation only.
 - [ ] After merging the replacement PR, retire `claude/reading-session-3b64af`.
 
 ### 0.1.3 — Public Beta Launch
