@@ -9,6 +9,14 @@ release's tasks until it ships.
 - [x] Record the absolute branch-and-PR rule in `AGENTS.md` and `CLAUDE.md`: no direct commits
   or pushes to `main`, including documentation and task tracking. Keep the already-pushed
   branch-cleanup record (`20c3cb0`) as requested.
+- [x] Keep a completed legal release final across later touches and Revert: Black's Ke8-f8,
+  Rh8-e8, clock, Revert, clock must accept Kf8 and never replacement castling. Latch the final
+  move independently of recovery state and guard every session move-application path.
+  Cover the literal journey and repeated replacement attempts in Playwright, plus Java
+  recovery-reset and deliberately faulty arbiter-acceptance regressions.
+  Verified with `mvn -q package` (217 Java tests), the five focused released-piece e2e tests,
+  and the full `npx playwright test` suite (127 passed, 6.4 minutes). Full browser coverage
+  checks the shared acceptance, castling, claims, automatic-ending and restoration paths.
 
 ## Publish the server (beta)
 

@@ -22,6 +22,29 @@ import io.github.dlbbld.otbchess.message.Messages;
 class TestArbiterEngine {
 
   @Test
+  void completedKingMoveTakesPrecedenceOverLaterRookTouches() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("4k2r/8/8/8/8/8/8/4K3 b k - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.BLACK);
+    sequence.addEvent(BoardEvent.dragMove(Square.E8, Square.F8, Piece.BLACK_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H8, Square.E8, Piece.BLACK_ROOK, 1));
+    final BitboardPosition finalPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E8, Piece.NONE).createChangedPosition(Square.F8, Piece.BLACK_KING).build();
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, engine.evaluateClockPress(board, finalPosition, sequence).type());
+
+    // Even explicit king/rook clicks after the release cannot create a new castling obligation.
+    sequence.addEvent(BoardEvent.click(Square.E8, Piece.BLACK_KING, 2));
+    sequence.addEvent(BoardEvent.click(Square.H8, Piece.BLACK_ROOK, 3));
+    final var castling = board.getLegalMoves().stream().filter(move -> move.moveSpecification().isCastling())
+        .findFirst().orElseThrow();
+    final BitboardPosition castled = board.getBitboardPosition().afterMove(castling.moveSpecification(), Side.BLACK);
+    final ArbiterResponse rejected = engine.evaluateClockPress(board, castled, sequence);
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, rejected.type());
+    assertEquals(finalPosition, rejected.restorePosition().orElseThrow());
+    assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.BLACK));
+  }
+
+  @Test
   void testValidSimpleMove() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = new Board();

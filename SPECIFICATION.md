@@ -264,6 +264,8 @@ If the player **first touches their own king on its starting square and then tou
 - **Side selection:** the touched rook's starting square determines the side -- kingside if h1/h8, queenside if a1/a8. If both sides would be legal but the player touched only one rook, the touched rook decides; the other side does **not** satisfy the obligation.
 - **Legality precondition:** the rule activates **only if castling on that side is legal in the current position**. If castling on the touched rook's side is not legal, the new rule does **not** fire and the existing rules apply (king touch establishes a normal own-piece obligation; the rook touch may add another own-piece obligation under those existing rules).
 - **Precedence:** the CASTLING obligation supersedes the OWN_PIECE obligation that the king touch would otherwise have created. They cannot both apply -- castling is the strictly more specific commitment.
+- **Completed move:** this obligation cannot replace a legal move already completed by release. For example,
+  releasing Black's king from e8 on f8 commits Kf8; touching or moving the h8 rook afterwards cannot require castling.
 
 #### Violation message (CASTLING)
 
@@ -290,6 +292,11 @@ Touching is one step short of committing. **Releasing a piece on a legal target 
   release.
 - A castling attempt is treated as a multi-step legal move: the king's release on its castled square commits to castling; the rook drag then completes the move.
 - The committed-release detection is scoped per turn: it resets at the start of each turn and after any restoration that legitimately rewinds back to the start of the turn.
+- A completed legal move that satisfied the obligations at release is latched separately for the remainder of the
+  turn. Revert, readiness handshakes and later touches cannot erase or replace it. Restoration preserves that final
+  position, and pressing the clock accepts the committed move. Every session path that applies a move checks this
+  commitment before changing the official board, including automatic endings and specified draw-claim moves; a
+  conflicting acceptance is blocked even if arbiter evaluation incorrectly approved it.
 - Released-piece does not override an earlier opponent-piece touch obligation. If the player touched a capturable opponent piece and later released their own piece on a legal non-capturing square, the arbiter reports the unsatisfied touch-move obligation.
 
 ### Draw claims and touch-move
