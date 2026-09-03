@@ -2,6 +2,23 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.1.4 — Abort Button Regression Guard — Unreleased
+
+Post-launch maintenance: strengthen the regression tests around the readable Abort button restored
+in `0.1.3`. This does not change gameplay or the released button's appearance.
+
+### Test hardening
+
+- Check the Abort button's rendered label, minimum width, and lack of horizontal clipping for
+  White and Black creators, including a waiting-page refresh.
+- Check widths only for rendered board-control buttons, and require that set to be non-empty.
+- Carry forward the workflow instructions requiring finished fixes to be committed and pushed,
+  with explicit reporting of whether they have reached `main`.
+
+Recovered from `7910bdd` on `claude/reading-session-3b64af`; the obsolete cross-machine handover
+document is intentionally excluded. Verified before PR with all 213 Java tests and all 125
+Playwright tests passing against the rebuilt `0.1.4` jar.
+
 ## 0.1.3 — Public Beta Launch — 2026-09-03
 
 OTB Chess is now available to try at [play.otb-chess.app](https://play.otb-chess.app/):

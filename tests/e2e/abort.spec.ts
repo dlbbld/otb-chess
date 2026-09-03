@@ -1,8 +1,13 @@
 import { test, expect } from '@playwright/test';
-import { createGame, startTwoPlayerGame, TwoPlayerGame } from './helpers/app';
+import { createGame, expectLegibleAction, startTwoPlayerGame, TwoPlayerGame } from './helpers/app';
 
 // A challenge can be aborted while the creator waits alone, like cancelling a Lichess challenge.
 // Once the opponent joins, Abort is replaced by Resign.
+//
+// Abort is the waiting creator's only way out, so these tests pin that it stays *legible*, not just
+// present. A control-bar redesign once silently reduced it to a 42x36 "!" icon: it stayed in the
+// DOM with a correct aria-label, so `toBeVisible()` and the role query both kept passing while the
+// action was, in practice, unfindable. See expectLegibleAction() for what that costs us.
 
 let game: TwoPlayerGame | undefined;
 
@@ -21,8 +26,7 @@ test('the creator sees an explicit Abort game action beside the join code', asyn
   let waitingActions = page.locator('#arbiterButtons');
   await expect(waitingActions.locator('.game-code-value')).toBeVisible();
   await expect(waitingActions.getByRole('button', { name: 'Copy code' })).toBeVisible();
-  await expect(waitingActions.locator('#abortBtn')).toHaveText('Abort game');
-  await expect(waitingActions.locator('#abortBtn')).toBeVisible();
+  await expectLegibleAction(waitingActions.locator('#abortBtn'), 'Abort game');
   await expect(page.locator('.board-controls #abortBtn')).toHaveCount(0);
   await expect(page.locator('#resignBtn')).toBeHidden();
 
@@ -30,8 +34,7 @@ test('the creator sees an explicit Abort game action beside the join code', asyn
   await page.reload();
   waitingActions = page.locator('#arbiterButtons');
   await expect(waitingActions.locator('.game-code-value')).toHaveText(gameId);
-  await expect(waitingActions.locator('#abortBtn')).toHaveText('Abort game');
-  await expect(waitingActions.locator('#abortBtn')).toBeVisible();
+  await expectLegibleAction(waitingActions.locator('#abortBtn'), 'Abort game');
 
   await context.close();
 });
@@ -41,7 +44,7 @@ test('a black creator also gets Abort while waiting (symmetry)', async ({ browse
   const page = await context.newPage();
   await createGame(page, { side: 'black' });
 
-  await expect(page.locator('#abortBtn')).toBeVisible();
+  await expectLegibleAction(page.locator('#arbiterButtons #abortBtn'), 'Abort game');
   await expect(page.locator('#resignBtn')).toBeHidden();
 
   await context.close();

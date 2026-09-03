@@ -12,9 +12,21 @@ A Linux VPS with a Dockerfile is the later portability path, not the initial run
 
 **Status (2026-09-03): public beta available.** The lobby, health endpoint, and version endpoint at
 [play.otb-chess.app](https://play.otb-chess.app/) respond without login; the live server reports
-`0.1.2`. **0.1.3 — Public Beta Launch** is the next source release, with the public URL and an experimental/no-warranty
-notice. Source release publication and deployment are separate: the iMac must be updated and
-restarted before its runtime reports `0.1.3`. The previously deferred privacy notice remains open.
+`0.1.2` at the last check. **0.1.3 — Public Beta Launch** is published on GitHub with the public URL
+and an experimental/no-warranty notice. Source release publication and deployment are separate:
+the iMac must be updated and restarted before its runtime reports `0.1.3`. The previously deferred
+privacy notice remains open.
+
+### 0.1.4 — Abort Button Regression Guard (prepared for PR; not released)
+
+- [x] Delete the fully merged GitHub branches `aquaman-testing`, `publish-server-beta`, and
+  `testing-hardening`; start `codex/abort-regression-guard` from released `main`.
+- [x] Recover `7910bdd`'s Abort-legibility assertions, rendered-control width checks, and workflow
+  instructions, excluding the obsolete handover document. Prepare matching `0.1.4` release notes.
+- [x] Run the full Java and Playwright suites before opening the PR: `mvn -q package` passed all
+  213 Java tests; `npx playwright test` passed all 125 e2e tests (6.5 minutes). The rebuilt local
+  jar's `/api/version` reports `0.1.4`. No gameplay or application UI code changed.
+- [ ] After merging the replacement PR, retire `claude/reading-session-3b64af`.
 
 ### 0.1.3 — Public Beta Launch
 

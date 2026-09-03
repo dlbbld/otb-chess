@@ -1,4 +1,4 @@
-import { Browser, BrowserContext, Page, expect } from '@playwright/test';
+import { Browser, BrowserContext, Locator, Page, expect } from '@playwright/test';
 
 export type Side = 'white' | 'black';
 
@@ -54,6 +54,45 @@ export async function colorOf(page: Page): Promise<Side> {
   const text = (await label.textContent())?.trim().toLowerCase();
   if (text === 'white' || text === 'black') return text;
   throw new Error(`Could not determine player colour (bottomClockLabel="${text}")`);
+}
+
+/**
+ * Asserts that an action is not merely present, but findable and hittable by a real player.
+ *
+ * `toBeVisible()` is a weaker claim than it looks: it only means "has a non-empty bounding box".
+ * The icon-only redesign shrank Abort to a 42x36 box whose entire on-screen content was "!", and
+ * every existing assertion still passed — including `getByRole({ name })`, because the button kept
+ * a perfect `aria-label` while becoming unreadable. So the two things worth pinning are the ones
+ * that actually told the good state from the bad one:
+ *
+ *  - `innerText` (what is *rendered*), not textContent/aria-label, which survive the regression.
+ *  - the rendered width, since a label the player cannot read is not an affordance.
+ *
+ * The clipping check catches the inverse failure: a label present in the DOM but cut off by a box
+ * too small to show it (`toHaveText` would still pass, since it reads textContent).
+ *
+ * Height is deliberately not asserted: the buggy 42x36 button was *taller* than the 88x28 fix, so
+ * a height floor discriminates nothing here and would only add a brittle threshold.
+ */
+export async function expectLegibleAction(
+  locator: Locator,
+  label: string,
+  minWidth = 64,
+): Promise<void> {
+  await expect(locator).toBeVisible();
+  const metrics = await locator.evaluate((el) => ({
+    width: el.getBoundingClientRect().width,
+    renderedText: (el as HTMLElement).innerText.replace(/\s+/g, ' ').trim(),
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+
+  expect(metrics.renderedText, `"${label}" must be rendered on the button, not only in aria-label/tooltip`)
+    .toContain(label);
+  expect(metrics.width, `"${label}" is ${metrics.width}px wide — too small to read or hit`)
+    .toBeGreaterThanOrEqual(minWidth);
+  expect(metrics.scrollWidth, `"${label}" label is clipped by its own box`)
+    .toBeLessThanOrEqual(metrics.clientWidth + 1);
 }
 
 export interface TwoPlayerGame {
