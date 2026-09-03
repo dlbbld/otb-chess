@@ -6,9 +6,20 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import org.junit.jupiter.api.Test;
 
 class TestOtbChessServer {
+
+  @Test
+  void testLobbyDescriptionIncludesArbiter() throws IOException {
+    final String lobby = Files.readString(Path.of("static", "index.html"));
+    assertTrue(lobby.contains(
+        "<p>An educational chessboard that simulates physical board play with an arbiter.</p>"));
+  }
 
   /**
    * The version shown in the page footer must be the real Maven project version in EVERY run mode,

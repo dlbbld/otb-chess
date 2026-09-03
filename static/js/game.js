@@ -112,8 +112,10 @@ class Game {
     }
   }
 
-  // Renders the "Share this code" panel with a copy button. Used both on game creation and when a
-  // refreshed creator resumes a game that is still waiting for an opponent.
+  // Renders the waiting creator's actions together: the share code, a copy button, and an explicit
+  // way to abort the unstarted game and return to the lobby. Keeping Abort beside the code makes it
+  // discoverable at the exact point where the creator waits for an opponent; it disappears with
+  // the rest of the waiting actions as soon as the game starts.
   renderShareCode(gameId) {
     const codeContainer = document.createElement('div');
     codeContainer.className = 'game-code-display';
@@ -130,10 +132,18 @@ class Game {
       copyBtn.textContent = 'Copied!';
       setTimeout(() => { copyBtn.textContent = 'Copy code'; }, 2000);
     });
+    const abortBtn = document.createElement('button');
+    abortBtn.id = 'abortBtn';
+    abortBtn.className = 'action-btn abort-game-btn';
+    abortBtn.textContent = 'Abort game';
+    abortBtn.addEventListener('click', () => {
+      this.ws.sendAbort();
+    });
     codeContainer.appendChild(codeLabel);
     codeContainer.appendChild(codeValue);
     document.getElementById('arbiterButtons').appendChild(codeContainer);
     document.getElementById('arbiterButtons').appendChild(copyBtn);
+    document.getElementById('arbiterButtons').appendChild(abortBtn);
   }
 
   // === Clock buttons ===
@@ -280,8 +290,7 @@ class Game {
       this.showArbiterMessage('Game created. Waiting for opponent...');
       this.clearArbiterButtons();
       // While no opponent has joined, the creator can abort the challenge (like Lichess),
-      // not resign. The two swap once the game starts.
-      document.getElementById('abortBtn').style.display = '';
+      // not resign. The explicit abort action is rendered beside the share code below.
       document.getElementById('resignBtn').style.display = 'none';
       // Persist so a page refresh resumes THIS game (same code) instead of creating a new one.
       Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: true });
@@ -306,8 +315,7 @@ class Game {
 
     this.ws.on('gameStarted', (data) => {
       this.gameActive = true;
-      // The opponent has joined: abort is no longer available, resign takes its place.
-      document.getElementById('abortBtn').style.display = 'none';
+      // The opponent has joined: clear the waiting actions (including Abort) and show Resign.
       document.getElementById('resignBtn').style.display = '';
       // Use the server-supplied side to move (necessary for custom-FEN games where
       // Black may be to move first); fall back to White for the normal case.
@@ -340,15 +348,14 @@ class Game {
       const started = data.state !== 'WAITING_FOR_PLAYERS';
       if (started) {
         this.gameActive = data.state !== 'ENDED';
-        document.getElementById('abortBtn').style.display = 'none';
         document.getElementById('resignBtn').style.display = '';
+        this.clearArbiterButtons();
         this.isMyTurn = data.havingMove === this.side;
         // Only let the player move when the game is actually in progress.
         this.board.setEnabled(this.isMyTurn && data.state === 'IN_PROGRESS');
         this.updateButtons();
       } else {
-        // Still waiting for an opponent — keep the abort affordance.
-        document.getElementById('abortBtn').style.display = '';
+        // Still waiting for an opponent — re-render the share code and explicit abort action.
         document.getElementById('resignBtn').style.display = 'none';
         // Refreshed creator: re-show the (unchanged) shareable code.
         if (this.isCreator) {
@@ -759,7 +766,6 @@ class Game {
       rematchBtn.textContent = 'Rematch';
       rematchBtn.classList.remove('rematch-blink');
       document.getElementById('drawOfferPanel').style.display = 'none';
-      document.getElementById('abortBtn').style.display = 'none';
       document.getElementById('resignBtn').style.display = '';
       this.updateButtons();
       this.stopDisconnectCountdown();
@@ -858,11 +864,6 @@ class Game {
     document.getElementById('resignBtn').addEventListener('click', () => {
       if (!this.gameActive) return;
       this.ws.sendResign();
-    });
-
-    document.getElementById('abortBtn').addEventListener('click', () => {
-      // Only meaningful before the opponent joins; the button is hidden otherwise.
-      this.ws.sendAbort();
     });
 
     document.getElementById('acceptDrawBtn').addEventListener('click', () => {
