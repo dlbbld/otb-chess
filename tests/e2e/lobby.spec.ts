@@ -8,6 +8,14 @@ import {
   expectGameResult,
 } from './helpers/app';
 
+test('the starting page describes physical board play with an arbiter', async ({ page }) => {
+  await page.goto('/');
+  const description = page.locator('.lobby > p');
+  await expect(description).toHaveText(
+    'An educational chessboard that simulates physical board play with an arbiter.');
+  await expect(description).toBeVisible();
+});
+
 test('opening the game page without a game id shows guidance and a way back', async ({ page }) => {
   await page.goto('/game.html');
   await expect(page.locator('#arbiterMessage')).toContainText('No game code was provided');

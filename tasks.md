@@ -61,6 +61,9 @@ public launch. Released as **v0.1.2** (still beta).
 
 ## Backlog (not scheduled)
 
+- [x] **Mention the arbiter in the starting-page description.** Updated the sentence to
+  "An educational chessboard that simulates physical board play with an arbiter."
+  Java and focused Playwright coverage pin the exact wording.
 - [x] **Make the waiting creator's Abort action discoverable again.** The control-bar redesign
   reduced the original text button to an ambiguous `!` icon below the board. Move an explicit
   **Abort game** button beside the share code / Copy-code action in the arbiter panel, where the
