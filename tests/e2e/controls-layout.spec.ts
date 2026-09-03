@@ -57,11 +57,18 @@ test('board controls are grouped as game actions, draw claims, and utilities', a
   expect(topY).toBeLessThan(claimY);
   expect(claimY).toBeLessThan(utilityY);
 
-  const tooWide = await white.locator('.board-controls button').evaluateAll((buttons) =>
+  // The board controls are deliberately icon-only, so no button here should grow to label width.
+  // Scope this to *rendered* buttons and prove the set is non-empty: a hidden button reports width
+  // 0 and would sail through the filter, so an unscoped version of this check silently passes for
+  // exactly the controls it fails to look at. It is a rule about this row's icon buttons, not a
+  // site-wide "buttons must be small" — actions that live outside .board-controls (e.g. the waiting
+  // creator's Abort, in #arbiterButtons) are labelled and must stay wide; see abort.spec.ts.
+  const rendered = await white.locator('.board-controls button').evaluateAll((buttons) =>
     buttons
-      .filter((button) => button.getBoundingClientRect().width > 52)
-      .map((button) => button.id));
-  expect(tooWide).toEqual([]);
+      .filter((button) => button.getBoundingClientRect().width > 0)
+      .map((button) => ({ id: button.id, width: button.getBoundingClientRect().width })));
+  expect(rendered.length).toBeGreaterThan(0);
+  expect(rendered.filter((button) => button.width > 52).map((button) => button.id)).toEqual([]);
 });
 
 test('display PGN button toggles the PGN panel', async ({ browser }) => {

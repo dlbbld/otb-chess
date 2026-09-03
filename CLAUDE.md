@@ -26,7 +26,12 @@ Long e2e runtimes are explicitly acceptable when the change has behavioral risk,
 
 ## Workflow
 
-- Commit locally per verified change; push when the feature is complete. PRs only when asked.
+- **Commit and push every finished feature/fix — always, without being asked.** Commit locally per
+  verified change, and push as soon as the feature/fix is done. Never leave completed work sitting
+  only in a local branch or worktree. PRs only when asked.
+- When reporting work as done, say where it landed: branch name, and whether it is pushed and
+  whether it is on `main`. "Committed and pushed" to a side branch is not "in main" — a fix can be
+  safely on `origin/<branch>` and still absent from every release. Do not let those states blur.
 - Stage files explicitly (`git add <paths>`), never `git add -A` — another agent's or the user's
   unrelated work may be sitting uncommitted in the working tree.
 - The e2e suite runs its own server on dedicated ports 18080/18081 — the user's dev server on 8080

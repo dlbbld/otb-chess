@@ -17,7 +17,8 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.1.3 — Public Beta Launch](CHANGELOG.md#013--public-beta-launch--2026-09-03) for this release.
+See [0.1.4 — Abort Button Regression Guard](CHANGELOG.md#014--abort-button-regression-guard--2026-09-03)
+for this release.
 
 ## Documentation
 
