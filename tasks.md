@@ -28,7 +28,10 @@ privacy notice remains open.
   jar's `/api/version` reports `0.1.4`. No gameplay or application UI code changed.
 - [x] Open PR #15 after full verification and finalize the dated changelog, README release link,
   and matching publication notes. Finalization changes documentation only.
-- [ ] After merging the replacement PR, retire `claude/reading-session-3b64af`.
+- [x] After PR #15 was merged and `0.1.4` published, delete the GitHub branches
+  `claude/reading-session-3b64af` and `codex/abort-regression-guard`. Verified the recovered tests
+  and workflow instructions match `main`; only the intentionally excluded handover was unique.
+  Local branches/worktrees and release tags were retained.
 
 ### 0.1.3 — Public Beta Launch
 
