@@ -17,6 +17,13 @@ release's tasks until it ships.
   Verified with `mvn -q package` (217 Java tests), the five focused released-piece e2e tests,
   and the full `npx playwright test` suite (127 passed, 6.4 minutes). Full browser coverage
   checks the shared acceptance, castling, claims, automatic-ending and restoration paths.
+- [x] Make `start.bat` fetch and serve the latest pushed `codex/further-hardening` commit,
+  stopping on fetch failure. Workflow: automated verification, branch push, manual testing,
+  then PR merge. Keep the local working tree isolated from the served snapshot. Verified with
+  two Windows Java launcher failure cases, the license-header check, and a focused Playwright
+  test that launches the real server twice from an isolated remote and checks the browser sees
+  each newly pushed snapshot while local edits and the local checkout remain intact. No game
+  logic changed, so the focused launcher coverage suffices for this follow-up.
 
 ## Publish the server (beta)
 
