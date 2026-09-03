@@ -26,9 +26,12 @@ Long e2e runtimes are explicitly acceptable when the change has behavioral risk,
 
 ## Workflow
 
+- **Never commit or push directly to `main`.** All changes, including documentation, `tasks.md`,
+  and release metadata, must be made on a development branch and reach `main` through a PR.
+  This also prohibits pushing another branch's HEAD directly to `main` (for example `HEAD:main`).
 - **Commit and push every finished feature/fix — always, without being asked.** Commit locally per
-  verified change, and push as soon as the feature/fix is done. Never leave completed work sitting
-  only in a local branch or worktree. PRs only when asked.
+  verified change on the development branch, and push that branch as soon as the feature/fix is done.
+  Never leave completed work sitting only in a local branch or worktree. PRs only when asked.
 - When reporting work as done, say where it landed: branch name, and whether it is pushed and
   whether it is on `main`. "Committed and pushed" to a side branch is not "in main" — a fix can be
   safely on `origin/<branch>` and still absent from every release. Do not let those states blur.
@@ -39,9 +42,9 @@ Long e2e runtimes are explicitly acceptable when the change has behavioral risk,
   packaged jar: rebuild (`npm run build:server` or `npm run e2e`) after Java changes; static
   files (HTML/JS/CSS) are read from disk and need no rebuild. If e2e results look stale, check
   for a leftover java process listening on 18080 and stop it.
-- `start.bat` serves a stable snapshot of the latest commit (the `..\otb-chess-stable` worktree)
-  for the user's manual testing — uncommitted edits never reach it. `start-dev.bat` runs the
-  working tree as-is.
+- `start.bat` fetches and serves the latest pushed `codex/further-hardening` commit from the
+  `..\otb-chess-stable` worktree for manual testing before PR merge. A failed fetch stops startup;
+  uncommitted edits never reach it. `start-dev.bat` runs the working tree as-is.
 - Do not work in this working tree at the same time as another agent; sequential use only.
 - `tasks.md` is the live-planning source of truth: record completed work there (check items in
   place, don't delete).

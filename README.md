@@ -41,6 +41,11 @@ for this release.
 
 Requires a JDK (17+) and Maven.
 
+On Windows, `start.bat` fetches the latest pushed `codex/further-hardening` commit and runs it
+from `..\otb-chess-stable`. Push verified changes to that branch, restart `start.bat`, then test
+at http://localhost:8080 before merging the PR. Local uncommitted edits are excluded; use
+`start-dev.bat` to run those. A failed fetch stops startup instead of serving an older commit.
+
 ```bash
 mvn -DskipTests package
 java -jar target/otb-chess.jar      # http://localhost:8080  (WebSocket on :8081)

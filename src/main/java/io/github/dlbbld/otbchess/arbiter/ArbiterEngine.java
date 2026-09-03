@@ -63,6 +63,70 @@ public class ArbiterEngine {
     return illegalMoveTracker;
   }
 
+  /** A completed legal release, independent of later touches and recovery bookkeeping. */
+  public record FinalMoveCommitment(LegalMove move, BitboardPosition position) {
+  }
+
+  /**
+   * Find the first completed move that satisfied the obligations at the moment it was made.
+   * Later touches cannot retroactively replace it with a castling or capture obligation.
+   * Incomplete castling, promotion and en passant remain subject to the ordinary arbiter flow.
+   */
+  public Optional<FinalMoveCommitment> findFinalMoveCommitment(Board board, ActionSequence sequence) {
+    final ActionSequence prefix = new ActionSequence(sequence.getSideToMove());
+    final int resetIndex = sequence.getEvents().size() - sequence.getEventsSinceReleasedPieceRuleReset().size();
+    BitboardPosition position = board.getBitboardPosition();
+    for (int i = 0; i < sequence.getEvents().size(); i++) {
+      final BoardEvent event = sequence.getEvents().get(i);
+      if (i == resetIndex) {
+        prefix.resetReleasedPieceRule();
+      }
+      prefix.addEvent(event);
+      if (i < resetIndex) {
+        continue;
+      }
+      position = applyEvent(position, event);
+      if (!isReleaseOnBoard(event) && event.type() != BoardEventType.REMOVE) {
+        continue;
+      }
+      final Set<LegalMove> matches = PositionComparator.findMatchingMoves(board, position);
+      if (matches.isEmpty() || hasReleasedPieceViolation(board, position, prefix)) {
+        continue;
+      }
+      final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(prefix, board);
+      for (final LegalMove move : matches) {
+        if (obligation.isEmpty() || TouchMoveEvaluator.satisfiesObligation(obligation.get(), move)) {
+          return Optional.of(new FinalMoveCommitment(move, position));
+        }
+      }
+    }
+    return Optional.empty();
+  }
+
+  /** Evaluate against a latched final move without consulting later touch obligations. */
+  public ArbiterResponse evaluateFinalMove(Board board, BitboardPosition afterPosition,
+      FinalMoveCommitment commitment, ActionSequence sequence) {
+    if (commitment.position().equals(afterPosition)) {
+      return ArbiterResponse.moveAccepted(commitment.move());
+    }
+    final LegalMove move = commitment.move();
+    final MoveSpecification spec = move.moveSpecification();
+    final Square from = spec.isCastling() ? spec.castlingMove().kingFromSquare(move.movingSide()) : spec.fromSquare();
+    final Square to = spec.isCastling() ? spec.castlingMove().kingToSquare(move.movingSide()) : spec.toSquare();
+    final Piece piece = commitment.position().get(to);
+    final ReleasedPieceLock lock = new ReleasedPieceLock(commitment.position(), Set.of(commitment.position()),
+        Set.of(move), piece, to, from, afterPosition.get(to) != piece);
+    final Optional<ArbiterResponse.RookFirstCastlingContext> rookFirst = findRookFirstCastlingContext(board,
+        afterPosition, lock);
+    if (rookFirst.isPresent()) {
+      return ArbiterResponse.releasedPieceViolationRookFirstCastling(rookFirst.get(), commitment.position());
+    }
+    return ArbiterResponse.releasedPieceViolation(
+        new ReleasedPieceContext(piece, to, from, lock.releasedPieceDisplacedAfterRelease()
+            || sequence.getEvents().stream().anyMatch(event -> displacesReleasedPiece(event, lock))),
+        isReleaseOriginAmbiguous(board, lock), commitment.position());
+  }
+
   /**
    * Side-effect-free check used by the auto-end path to find out whether a released-piece commitment (FIDE 4.7)
    * currently binds the player to a final position that the given {@code afterPosition} does not satisfy. If true, no
@@ -112,6 +176,11 @@ public class ArbiterEngine {
    */
   public ArbiterResponse evaluateClockPress(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
     final Side sideToMove = board.getSideToMove();
+
+    final Optional<FinalMoveCommitment> finalMove = findFinalMoveCommitment(board, sequence);
+    if (finalMove.isPresent()) {
+      return evaluateFinalMove(board, afterPosition, finalMove.get(), sequence);
+    }
 
     final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
     final Optional<ArbiterResponse> unfinishedCastlingTouch = evaluateUnfinishedCastlingTouch(board, afterPosition,

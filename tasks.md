@@ -3,6 +3,28 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## Further hardening (beta bug fixes)
+
+- [x] Start `codex/further-hardening` from current `main` for the next round of beta bug fixes.
+- [x] Record the absolute branch-and-PR rule in `AGENTS.md` and `CLAUDE.md`: no direct commits
+  or pushes to `main`, including documentation and task tracking. Keep the already-pushed
+  branch-cleanup record (`20c3cb0`) as requested.
+- [x] Keep a completed legal release final across later touches and Revert: Black's Ke8-f8,
+  Rh8-e8, clock, Revert, clock must accept Kf8 and never replacement castling. Latch the final
+  move independently of recovery state and guard every session move-application path.
+  Cover the literal journey and repeated replacement attempts in Playwright, plus Java
+  recovery-reset and deliberately faulty arbiter-acceptance regressions.
+  Verified with `mvn -q package` (217 Java tests), the five focused released-piece e2e tests,
+  and the full `npx playwright test` suite (127 passed, 6.4 minutes). Full browser coverage
+  checks the shared acceptance, castling, claims, automatic-ending and restoration paths.
+- [x] Make `start.bat` fetch and serve the latest pushed `codex/further-hardening` commit,
+  stopping on fetch failure. Workflow: automated verification, branch push, manual testing,
+  then PR merge. Keep the local working tree isolated from the served snapshot. Verified with
+  two Windows Java launcher failure cases, the license-header check, and a focused Playwright
+  test that launches the real server twice from an isolated remote and checks the browser sees
+  each newly pushed snapshot while local edits and the local checkout remain intact. No game
+  logic changed, so the focused launcher coverage suffices for this follow-up.
+
 ## Publish the server (beta)
 
 Architecture (reviewed): iMac running native `launchd` services → Cloudflare Tunnel
