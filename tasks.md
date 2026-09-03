@@ -10,12 +10,20 @@ Architecture (reviewed): iMac running native `launchd` services → Cloudflare T
 (static + `/ws`) → Java app (HTTP 8080 + WebSocket 8081 in one JVM, in-memory state).
 A Linux VPS with a Dockerfile is the later portability path, not the initial runtime.
 
-**Status (2026-06-27): public release on hold.** The full server stack is built, deployed, hardened,
-and verified (incl. unattended reboot — see [`SETUP.md`](SETUP.md) §11), and it was briefly opened to
-the public. Decision: **hold the public launch** until several known gameplay flaws are fixed and the
-game is properly play-tested, so the first impression is strong. Re-gate the deployment with
-Cloudflare Access (or take it down) in the meantime; a privacy policy will be re-added before any
-public launch. Released as **v0.1.2** (still beta).
+**Status (2026-09-03): public beta available.** The lobby, health endpoint, and version endpoint at
+[play.otb-chess.app](https://play.otb-chess.app/) respond without login; the live server reports
+`0.1.2`. **0.1.3 — Public Beta Launch** is the next source release, with the public URL and an experimental/no-warranty
+notice. Source release publication and deployment are separate: the iMac must be updated and
+restarted before its runtime reports `0.1.3`. The previously deferred privacy notice remains open.
+
+### 0.1.3 — Public Beta Launch
+
+- [x] Prepare the named release: version, README, changelog, and matching PR/release-note text.
+  Verified with 213 Java tests, 14 focused abort/lobby e2e tests, and `/api/version` returning `0.1.3`
+  from the rebuilt local jar. The abort fix previously passed the full 124-test e2e suite; subsequent
+  changes are wording and release metadata only.
+- [ ] Deploy `0.1.3` on the iMac and verify the live version and two-player flow.
+- [ ] Restore an accurate public-service privacy notice, including hosting and logging details.
 
 ### Done
 - [x] Remove the testing-only `/api/lastGameId` endpoint and lobby join-code prefill (`fdf067b`).

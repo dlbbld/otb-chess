@@ -2,6 +2,36 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.1.3 — Public Beta Launch — 2026-09-03
+
+OTB Chess is now available to try at [play.otb-chess.app](https://play.otb-chess.app/):
+an educational chessboard that simulates physical board play with an arbiter.
+
+This is experimental beta software, provided as-is without warranty. Bugs and rule-handling errors
+may occur, and availability is not guaranteed. It is intended for learning and testing, not official
+tournament adjudication.
+
+### Highlights
+
+- Restore a clearly labelled **Abort game** button beside the share code while the creator waits
+  for an opponent. It returns to the lobby, works for either colour, survives refresh, and disappears
+  when the opponent joins.
+- Clarify the starting-page description to explicitly mention the arbiter.
+- Announce public-beta availability, with the play URL and experimental/no-warranty notice.
+
+### Deployment
+
+The public site was reachable without login when this release was prepared, running `0.1.2`.
+Publishing this source release does not deploy the iMac server; update and restart it separately
+using [SETUP.md §12](SETUP.md#12-deploying-updates), then verify `/api/version` reports `0.1.3`.
+
+## 0.1.2 — Rules and Game-Flow Hardening — 2026-07-15
+
+This beta release continued the work toward basic feature completeness. It hardened FIDE/OTB rule
+handling and game flow around draw claims and offers, abandonment/rematch behavior, clock-press
+edge cases, castling, touch-move/released-piece recovery, en passant, promotion, and opponent-piece
+handling. It also polished the in-game controls and player-facing messages.
+
 ## 0.1.1 — 2026-06-27
 
 First release that turns OTB Chess into a **networked, two-player application** (previously a local

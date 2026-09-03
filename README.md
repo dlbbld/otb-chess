@@ -9,9 +9,15 @@ handling, clock discipline, draw claims, and more. Two players, one game code, o
 
 ## Status
 
-🚧 **In active development — not yet publicly released.** The server is built and runs, but several
-gameplay issues are still being worked through; a public launch will follow once they're resolved.
+**Public beta — try it at [play.otb-chess.app](https://play.otb-chess.app/).**
+An educational chessboard that simulates physical board play with an arbiter.
+
+OTB Chess is experimental software, provided as-is without warranty. Bugs and rule-handling errors
+may occur, and availability is not guaranteed. It is intended for learning and testing, not official
+tournament adjudication.
+
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
+See [0.1.3 — Public Beta Launch](CHANGELOG.md#013--public-beta-launch--2026-09-03) for this release.
 
 ## Documentation
 
@@ -25,8 +31,8 @@ See the [Manual](MANUAL.md) for how to create, join, and play a game.
   real-time game communication, in one JVM with in-memory game state.
 - **[Caddy](https://caddyserver.com/)** fronts the app as a single origin (static + `/ws`).
 - **[Cloudflare Tunnel](https://www.cloudflare.com/products/tunnel/)** (`cloudflared`) can expose that
-  origin with no inbound ports (TLS + rate-limiting at the edge); the in-development deployment is
-  access-gated.
+  origin with no inbound ports (TLS + rate-limiting at the edge). The public beta does not require
+  a login.
 - Chess move legality and position logic come from
   **[ashlar-chess](https://github.com/dlbbld/ashlar-chess)**.
 
