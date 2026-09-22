@@ -2,6 +2,33 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.1.5 — Released Move Finality Guard — 2026-09-22
+
+This release closes a released-piece loophole that could replace an already final king move with
+castling after an arbiter recovery.
+
+### Fixed
+
+- Once a legal move has been completed by releasing the piece, later touches cannot retroactively
+  create a different obligation. In the reported Black sequence `Ke8-f8`, `Rh8-e8`, clock,
+  Revert, clock, the final move is Kf8.
+- The final move is latched independently of Revert and readiness state until the turn ends.
+- Every session path that changes the official position now checks the latched move first. This
+  blocks a conflicting move even if a future arbiter-evaluation bug incorrectly accepts it.
+
+### Manual-testing workflow
+
+- `start.bat` fetches the latest pushed `codex/further-hardening` commit and serves it from the
+  stable worktree. A failed fetch stops startup, and local uncommitted edits remain isolated.
+- The release procedure is now documented in `RELEASING.md`, including the rule that the canonical
+  release title is used unchanged for the PR, changelog version name, and GitHub release.
+
+The gameplay fix passed all 217 Java tests and all 127 Playwright tests. The launcher follow-up
+passed two focused Windows Java cases plus a Playwright test that launched successive pushed
+snapshots. Release-version checks pin `0.1.5` in Java, the version API, and both web page footers.
+The final release-preparation build passed all 219 Java tests and the two focused release/launcher
+Playwright tests; the packaged jar reports `0.1.5`.
+
 ## 0.1.4 — Abort Button Regression Guard — 2026-09-03
 
 Post-launch maintenance: strengthen the regression tests around the readable Abort button restored

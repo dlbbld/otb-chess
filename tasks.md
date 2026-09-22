@@ -3,6 +3,36 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.1.5 — Released Move Finality Guard
+
+- [x] Start `codex/further-hardening` from current `main` for the next round of beta bug fixes.
+- [x] Record the absolute branch-and-PR rule in `AGENTS.md` and `CLAUDE.md`: no direct commits
+  or pushes to `main`, including documentation and task tracking. Keep the already-pushed
+  branch-cleanup record (`20c3cb0`) as requested.
+- [x] Keep a completed legal release final across later touches and Revert: Black's Ke8-f8,
+  Rh8-e8, clock, Revert, clock must accept Kf8 and never replacement castling. Latch the final
+  move independently of recovery state and guard every session move-application path.
+  Cover the literal journey and repeated replacement attempts in Playwright, plus Java
+  recovery-reset and deliberately faulty arbiter-acceptance regressions.
+  Verified with `mvn -q package` (217 Java tests), the five focused released-piece e2e tests,
+  and the full `npx playwright test` suite (127 passed, 6.4 minutes). Full browser coverage
+  checks the shared acceptance, castling, claims, automatic-ending and restoration paths.
+- [x] Make `start.bat` fetch and serve the latest pushed `codex/further-hardening` commit,
+  stopping on fetch failure. Workflow: automated verification, branch push, manual testing,
+  then PR merge. Keep the local working tree isolated from the served snapshot. Verified with
+  two Windows Java launcher failure cases, the license-header check, and a focused Playwright
+  test that launches the real server twice from an isolated remote and checks the browser sees
+  each newly pushed snapshot while local edits and the local checkout remain intact. No game
+  logic changed, so the focused launcher coverage suffices for this follow-up.
+- [x] Prepare version `0.1.5`, the dated changelog and README link, and a repeatable release
+  procedure. Use **0.1.5 — Released Move Finality Guard** unchanged for the PR title, changelog
+  version name, and GitHub release title. The release-preparation build passed all 219 Java tests;
+  the two focused release/launcher Playwright tests passed; and the packaged jar reports `0.1.5`.
+- [x] Manually verify the pushed release candidate through `start.bat`, including the reported
+  Kf8/Revert journey and the visible `v0.1.5` (approved 2026-09-22).
+- [ ] Merge PR #16, tag and publish `0.1.5`, deploy it, then verify live health, version, and a
+  two-player flow.
+
 ## Publish the server (beta)
 
 Architecture (reviewed): iMac running native `launchd` services → Cloudflare Tunnel
@@ -10,12 +40,10 @@ Architecture (reviewed): iMac running native `launchd` services → Cloudflare T
 (static + `/ws`) → Java app (HTTP 8080 + WebSocket 8081 in one JVM, in-memory state).
 A Linux VPS with a Dockerfile is the later portability path, not the initial runtime.
 
-**Status (2026-09-03): public beta available.** The lobby, health endpoint, and version endpoint at
+**Status (2026-09-22): public beta available.** The lobby, health endpoint, and version endpoint at
 [play.otb-chess.app](https://play.otb-chess.app/) respond without login; the live server reports
-`0.1.2` at the last check. **0.1.3 — Public Beta Launch** is published on GitHub with the public URL
-and an experimental/no-warranty notice. Source release publication and deployment are separate:
-the iMac must be updated and restarted before its runtime reports `0.1.3`. The previously deferred
-privacy notice remains open.
+`0.1.4`. Source release publication and production deployment remain separate. The previously
+deferred privacy notice remains open.
 
 ### 0.1.4 — Abort Button Regression Guard
 
@@ -39,7 +67,7 @@ privacy notice remains open.
   Verified with 213 Java tests, 14 focused abort/lobby e2e tests, and `/api/version` returning `0.1.3`
   from the rebuilt local jar. The abort fix previously passed the full 124-test e2e suite; subsequent
   changes are wording and release metadata only.
-- [ ] Deploy `0.1.3` on the iMac and verify the live version and two-player flow.
+- [x] Deployment was superseded by `0.1.4`; the live endpoint reported `0.1.4` on 2026-09-22.
 - [ ] Restore an accurate public-service privacy notice, including hosting and logging details.
 
 ### Done

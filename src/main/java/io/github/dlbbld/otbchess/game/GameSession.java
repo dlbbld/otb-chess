@@ -114,6 +114,9 @@ public class GameSession {
   // completeRestoration() preserves the released-piece rule window so the committed move stays final
   // across revert cycles until the player actually plays it. Cleared on a new turn / other violations.
   private boolean restorationFromReleasedPiece;
+  // Latched at the completed legal release; only startNewTurn may clear it. Recovery state
+  // and the action-sequence rule window are deliberately not the authority for move finality.
+  private ArbiterEngine.FinalMoveCommitment finalMoveCommitment;
 
   public GameSession(TimeControl timeControl) {
     this(timeControl, io.github.dlbbld.otbchess.arbiter.IllegalMoveTracker.DEFAULT_MAX_ILLEGAL_MOVES);
@@ -187,8 +190,9 @@ public class GameSession {
     Optional<ArbiterResponse> midPlayResponse = MidPlayValidator.validate(event, side, positionBeforeTurn,
         removedSquaresThisTurn);
     if (midPlayResponse.isPresent()) {
-      final Optional<BitboardPosition> committedReleasePosition = arbiter.findReleasedPieceCommitmentPosition(board,
-          currentSequence);
+      final Optional<BitboardPosition> committedReleasePosition = finalMoveCommitment != null
+          ? Optional.of(finalMoveCommitment.position())
+          : arbiter.findReleasedPieceCommitmentPosition(board, currentSequence);
       if (committedReleasePosition.isPresent()) {
         midPlayResponse = Optional.of(midPlayResponse.get().withRestorePosition(committedReleasePosition.get()));
         restorationFromReleasedPiece = true;
@@ -223,6 +227,12 @@ public class GameSession {
     }
 
     currentSequence.addEvent(event);
+    if (finalMoveCommitment == null) {
+      arbiter.findFinalMoveCommitment(board, currentSequence)
+          .filter(commitment -> mustExecuteMove == null
+              || mustExecuteMove.equals(commitment.move().moveSpecification()))
+          .ifPresent(commitment -> finalMoveCommitment = commitment);
+    }
     return Optional.empty();
   }
 
@@ -262,7 +272,7 @@ public class GameSession {
     }
 
     // Normal evaluation
-    final ArbiterResponse response = arbiter.evaluateClockPress(board, afterPosition, currentSequence);
+    final ArbiterResponse response = evaluateMove(afterPosition);
     final boolean keepDrawOffer = drawOfferManager.isDrawOffered() && drawOfferManager.getOfferingSide() == side;
 
     return handleArbiterResponse(response, side, keepDrawOffer);
@@ -305,7 +315,8 @@ public class GameSession {
     // turn and the current physical position is NOT one of the committed move's allowed final
     // positions, the player must not auto-finish a different move. The clock-press flow will
     // produce a RELEASED_PIECE_VIOLATION and the standard restoration recovery handles it.
-    if (arbiter.hasReleasedPieceViolation(board, afterPosition, currentSequence)) {
+    if ((finalMoveCommitment != null && !finalMoveCommitment.position().equals(afterPosition))
+        || arbiter.hasReleasedPieceViolation(board, afterPosition, currentSequence)) {
       return Optional.empty();
     }
 
@@ -313,7 +324,7 @@ public class GameSession {
     // detection to the clock press so the existing arbiter feedback flow handles it.
     final java.util.Optional<io.github.dlbbld.otbchess.touchmove.TouchMoveObligation> obligation = io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator
         .findObligation(currentSequence, board);
-    if (obligation.isPresent()
+    if (finalMoveCommitment == null && obligation.isPresent()
         && !io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
       return Optional.empty();
     }
@@ -321,7 +332,7 @@ public class GameSession {
     // Speculatively perform the matched move and check whether the resulting position ends the
     // game (checkmate, stalemate, dead position, fivefold, 75-move).
     final MoveSpecification spec = matchedMove.moveSpecification();
-    board.move(spec);
+    applyCommittedMove(spec);
     final Optional<GameResult> ending = checkAutomaticEndings();
     if (ending.isEmpty()) {
       // Not a game-ending move — leave evaluation to the clock press, undo our speculative move.
@@ -341,7 +352,7 @@ public class GameSession {
     switch (response.type()) {
       case MOVE_ACCEPTED -> {
         // Perform the move on the internal board
-        board.move(response.acceptedMove().get().moveSpecification());
+        applyCommittedMove(response.acceptedMove().get().moveSpecification());
 
         // Switch the clock
         clock.switchClock();
@@ -405,7 +416,7 @@ public class GameSession {
       final io.github.dlbbld.ashlarchess.board.LegalMove matchedLegalMove = board.getLegalMoves().stream()
           .filter(lm -> lm.moveSpecification().equals(executedMove)).findFirst()
           .orElseThrow(() -> new IllegalStateException("Specified move is not in the legal move set"));
-      board.move(executedMove);
+      applyCommittedMove(executedMove);
       mustExecuteMove = null;
       mustExecuteMoveSan = null;
       clock.switchClock();
@@ -445,7 +456,7 @@ public class GameSession {
 
     // Validate the move first (no side effects on the move state — evaluateClockPress is
     // pure; the move-performing happens in handleArbiterResponse, which we skip on success).
-    final ArbiterResponse moveResponse = arbiter.evaluateClockPress(board, afterPosition, currentSequence);
+    final ArbiterResponse moveResponse = evaluateMove(afterPosition);
 
     if (moveResponse.type() != ArbiterResponseType.MOVE_ACCEPTED) {
       // Move is not valid — drop any pending offer state and apply the standard intervention
@@ -498,7 +509,7 @@ public class GameSession {
    * flow: an offer arriving after the opponent has committed a move via FIDE 4.7 is rejected outright.
    */
   public synchronized boolean hasReleasedPieceCommitment() {
-    return arbiter.hasReleasedPieceCommitment(board, currentSequence);
+    return finalMoveCommitment != null || arbiter.hasReleasedPieceCommitment(board, currentSequence);
   }
 
   /**
@@ -573,7 +584,7 @@ public class GameSession {
               : GameResultType.FIFTY_MOVE_CLAIM;
 
       if (claimResult.moveToPerform().isPresent()) {
-        board.move(claimResult.moveToPerform().get());
+        applyCommittedMove(claimResult.moveToPerform().get());
       }
 
       // Use the short game-end description for the result panel; the long claim-feedback
@@ -970,7 +981,21 @@ public class GameSession {
 
   // ===== Helpers =====
 
+  private ArbiterResponse evaluateMove(BitboardPosition afterPosition) {
+    return finalMoveCommitment == null ? arbiter.evaluateClockPress(board, afterPosition, currentSequence)
+        : arbiter.evaluateFinalMove(board, afterPosition, finalMoveCommitment, currentSequence);
+  }
+
+  /** Last line of defense: no acceptance path may apply a different move after a legal release. */
+  private void applyCommittedMove(MoveSpecification move) {
+    if (finalMoveCommitment != null && !finalMoveCommitment.move().moveSpecification().equals(move)) {
+      throw new IllegalStateException("Cannot replace the final released move with a different move");
+    }
+    board.move(move);
+  }
+
   private void startNewTurn() {
+    this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
     this.restorationTargetPosition = positionBeforeTurn;
@@ -1016,9 +1041,7 @@ public class GameSession {
    * retroactively bind the resumed play. In particular, a "legal-in-isolation" release that was actually invalid in
    * context (e.g. a pawn drop that violates an active touch-move obligation on a different piece) must not be treated
    * as a commitment after the recovery — otherwise the player can never satisfy the touch-move and the rule deadlocks.
-   * Known trade-off: a player who commits a legal release and then triggers an unrelated arbiter intervention
-   * (wrong-time draw, drawAcceptRejected, opponentClockPressed) before the clock press loses the FIDE 4.7 commitment
-   * after the handshake. Acceptable in practice.
+   * A completed legal move is retained separately in finalMoveCommitment, so unrelated interventions cannot erase it.
    */
   public synchronized void enterWaitingForReady() {
     this.waitingForReady = true;
@@ -1041,7 +1064,11 @@ public class GameSession {
     this.waitingForReady = false;
     this.whiteReady = false;
     this.blackReady = false;
-    this.restorationTargetPosition = restorationTargetPosition;
+    this.restorationTargetPosition = finalMoveCommitment == null ? restorationTargetPosition
+        : finalMoveCommitment.position();
+    if (finalMoveCommitment != null) {
+      this.restorationFromReleasedPiece = true;
+    }
   }
 
   /**
