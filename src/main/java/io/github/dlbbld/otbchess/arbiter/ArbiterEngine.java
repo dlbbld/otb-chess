@@ -28,6 +28,7 @@ import io.github.dlbbld.otbchess.core.PositionComparator;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 import io.github.dlbbld.otbchess.event.BoardEventType;
+import io.github.dlbbld.otbchess.message.IllegalMoveReasons;
 import io.github.dlbbld.otbchess.touchmove.FirstTouchInvariant;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveObligation;
@@ -842,16 +843,13 @@ public class ArbiterEngine {
   }
 
   /**
-   * The library phrases its reasons conditionally ("it would ..."), which fits a move that was only proposed. The
-   * player has made this move on the board, so the arbiter states what it does.
+   * The library phrases its reasons conditionally ("it would ..."), which fits a move that was only presented to it.
+   * The player has made this move on the board, so the arbiter states what it does. The wording comes from
+   * {@link IllegalMoveReasons}; a reason without an entry there is passed through unchanged.
    */
   private static NormalizedReason normalizeIllegalMoveReason(String reason, boolean castlingAttempt) {
-    final String naturalReason = switch (reason) {
-      case "it would leave the own king in check" -> "it leaves the own king in check";
-      case "it would expose the own king to check" -> "it exposes the own king to check";
-      default -> null;
-    };
-    if (naturalReason == null) {
+    final String naturalReason = IllegalMoveReasons.asStatement(reason);
+    if (naturalReason.equals(reason)) {
       return new NormalizedReason(reason, reason);
     }
     if (castlingAttempt) {

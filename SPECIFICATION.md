@@ -823,6 +823,7 @@ User-visible rule messages flow through a typed message infrastructure rather th
 - `Messages.get(key, args...)` -- single English `messages.properties` loaded explicitly as UTF-8; fail-loud on missing keys.
 - `ArbiterResponse` carries structured records (`IllegalMoveDetail`, `ReleasedPieceContext`, `ReleasedPieceCastlingContext`) and renders both player-facing and opponent-facing messages from the same data -- no string surgery.
 - The `CUSTOM_INFO` / `CUSTOM_WARNING` / `CUSTOM_ERROR` keys are transitional escape hatches for messages not yet migrated; severity is preserved.
+- `IllegalMoveReasons.asStatement(reason)` -- the chess library's illegal-move reasons restated for a move that has been played, from `messages/illegal-move-reasons.properties`. Each entry pairs the library's text with the arbiter's wording; an unpaired entry fails at startup, and a reason without an entry is passed through unchanged. New library reasons are added to the file, not to the arbiter.
 
 Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, position-change). Game-flow / draw-offer / draw-claim messages are still inline literals -- slated for a follow-up slice.
 
@@ -841,6 +842,7 @@ Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, p
 | `PositionComparator` | Enumerates legal moves, compares resulting positions with the player's board state. |
 | `TouchMoveEvaluator` | Scans action sequence for the first touch-move obligation; recognises failed castling attempts where the king has no legal moves (via `CastlingAttemptDetector`); detects the king-then-rook combined touch (FIDE 4.4.a) and emits a `CASTLING` obligation when castling on the touched rook's side is legal. |
 | `CastlingAttemptDetector` | Shared helper that recognises a king-then-rook drag pattern; used by `TouchMoveEvaluator` and `ArbiterEngine`. |
+| `IllegalMoveReasons` | Restates the chess library's illegal-move reasons as statements about the move played; pairs live in `messages/illegal-move-reasons.properties`. |
 | `RestoreTargetInvariant` | Fail-closed safety net: every restore target must be the turn start, one legal move from it, or a legal castling intermediate; otherwise it throws. |
 | `FirstTouchInvariant` | Fail-closed safety net: independently re-checks that an accepted move honours the first binding touch (FIDE 4.3) and throws if not, so an evaluator bug stops the move instead of recording it. |
 | `ArbiterEngine` | Two-layer evaluation: position comparison + touch-move + released-piece + castling-attempt explanation. Builds structured `IllegalMoveDetail` / `ReleasedPieceContext` records used by typed message rendering. |
