@@ -1220,4 +1220,79 @@ class TestArbiterEngine {
     // Position is valid (Nc3) and touch-move satisfied (knight from b1 was touched)
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
   }
+
+  // ---- A release binds (FIDE 4.7) only when the whole board matches the legal move ----
+
+  /** 1. b3 b6 2. Bb2 Bb7 3. Nc3 Nc6 4. e4 e5 5. Qh5 Qh4: b1, c1 and d1 are empty, O-O-O is legal. */
+  private static Board queensideCastlingReadyBoard() {
+    final Board board = new Board();
+    for (final String san : new String[] { "b3", "b6", "Bb2", "Bb7", "Nc3", "Nc6", "e4", "e5", "Qh5", "Qh4" }) {
+      board.moveStrict(san);
+    }
+    return board;
+  }
+
+  @Test
+  void testRookReleaseAfterKingPlacedOnUnreachableSquareIsIllegalMove() {
+    // User-reported: Ke1-b1 then Ra1-c1. The king cannot reach b1 and the rook jumped it, so the
+    // rook release is no legal move and binds nothing; the clock press is one illegal move.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = queensideCastlingReadyBoard();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.B1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.A1, Square.C1, Piece.WHITE_ROOK, 1));
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.B1, Piece.WHITE_KING)
+        .createChangedPosition(Square.A1, Piece.NONE).createChangedPosition(Square.C1, Piece.WHITE_ROOK).build();
+
+    assertFalse(engine.hasReleasedPieceCommitment(board, sequence));
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+    assertTrue(response.restorePosition().isEmpty()); // start of the turn
+    assertFalse(response.message().toLowerCase().contains("castl"), response.message());
+  }
+
+  @Test
+  void testLegalLookingReleaseAfterIllegalDisplacementIsIllegalMove() {
+    // Bf1-b5 jumps the e2 pawn, then the ordinary Ng1-f3: the knight release is no legal move in
+    // that position, so it must not hide the illegal bishop move behind a released-piece message.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.F1, Square.B5, Piece.WHITE_BISHOP, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 1));
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.F1, Piece.NONE).createChangedPosition(Square.B5, Piece.WHITE_BISHOP)
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+    assertTrue(response.restorePosition().isEmpty());
+  }
+
+  @Test
+  void testReleaseStillBindsWhenEarlierDisplacementWasUndone() {
+    // The bishop goes back to f1 before the knight is released, so Nf3 is a legal move on the
+    // whole board and binds: moving the knight on to g5 is a released-piece violation.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.F1, Square.B5, Piece.WHITE_BISHOP, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B5, Square.F1, Piece.WHITE_BISHOP, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 2));
+    sequence.addEvent(BoardEvent.dragMove(Square.F3, Square.G5, Piece.WHITE_KNIGHT, 3));
+    final BitboardPosition afterNf3 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.G5, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(afterNf3, response.restorePosition().orElseThrow());
+  }
 }

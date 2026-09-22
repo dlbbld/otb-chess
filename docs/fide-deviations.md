@@ -191,3 +191,18 @@ As with A-003, **the count accumulates across different moves** and never resets
 **Where in code**: [`GameSession.escalateMovedOpponentPiece`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "MOVED_OPPONENT_PIECE_LIMIT"), hooked into the mid-play validation; the passive opponent notice travels as `opponentInfo`.
 
 **Rationale**: Same as the other ladders — the board models the physical world where the fault is possible; the arbiter teaches through escalation instead of making the fault impossible.
+
+### A-008 — King and rook touched around an illegal king placement (FIDE 4.4.1 vs. 7.5.1)
+
+**FIDE**: Article 4.4.1 — touching the king and a rook obliges castling on that side if it is legal. Article 7.5.1 — after an illegal move the position before it is reinstated, and "Articles 4.3 and 4.7" apply to the replacing move; 4.4 is not named. The Laws also do not say whether *moving* a piece counts as touching it for 4.4.1.
+
+**The case**: after 1. b3 b6 2. Bb2 Bb7 3. Nc3 Nc6 4. e4 e5 5. Qh5 Qh4, a beginner "castles" with Ke1-b1, then Ra1-c1, and presses the clock.
+
+**Our policy**:
+
+1. The clock press is **one illegal move** with the standard penalty. The king's release on b1 is neither a legal move nor a castling start (the king was not released on c1), and the rook release on c1 is no legal move either, because the rook jumped the king already standing on b1. Nothing was committed under 4.7, and the Laws judge only the move completed by the clock press, so there is no separate "illegal king movement".
+2. After the restoration, the king and rook touches still bind under **4.4.1**: White must castle queenside. A plain king move (Kd1, Ke2) is a touch-move violation.
+
+**Rationale**: once the king's release on b1 has no effect of its own, what remains is the touch record — king first, then rook — with castling legal, which is exactly 4.4.1. Moving a piece includes touching it, and the specification already counts a drag as a touch for the king-then-rook rule. The literal reading of 7.5.1 (only 4.3: any king move, castling included) would need an exception no article mentions. Castling queenside is what the player was trying to do, so the stricter reading costs them nothing they intended.
+
+**Where in code**: the 4.7 check is [`ArbiterEngine.isReleasePartOfLegalMove`](../src/main/java/io/github/dlbbld/otbchess/arbiter/ArbiterEngine.java) (a release binds only when the whole board matches the legal move); the castling obligation is [`TouchMoveEvaluator.findCastlingObligation`](../src/main/java/io/github/dlbbld/otbchess/touchmove/TouchMoveEvaluator.java). Pinned by `TestGameSessionFlow.beginnerCastlingWithKingOnB1IsIllegalMoveThenQueensideCastlingIsRequired` and the matching `rules-extra.spec.ts` journey.

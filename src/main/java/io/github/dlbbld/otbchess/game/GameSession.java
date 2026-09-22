@@ -21,6 +21,7 @@ import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse.IllegalMoveDetail;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.arbiter.MidPlayValidator;
+import io.github.dlbbld.otbchess.arbiter.RestoreTargetInvariant;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
@@ -190,6 +191,7 @@ public class GameSession {
       final Optional<BitboardPosition> committedReleasePosition = arbiter.findReleasedPieceCommitmentPosition(board,
           currentSequence);
       if (committedReleasePosition.isPresent()) {
+        RestoreTargetInvariant.verify(board, committedReleasePosition.get());
         midPlayResponse = Optional.of(midPlayResponse.get().withRestorePosition(committedReleasePosition.get()));
         restorationFromReleasedPiece = true;
       } else {
@@ -343,6 +345,8 @@ public class GameSession {
   }
 
   private ArbiterResponse handleArbiterResponse(ArbiterResponse response, Side side, boolean keepDrawOffer) {
+    // Safety net: stop before any state change if the arbiter asks for an unjustifiable restore.
+    response.restorePosition().ifPresent(target -> RestoreTargetInvariant.verify(board, target));
     switch (response.type()) {
       case MOVE_ACCEPTED -> {
         // Perform the move on the internal board
@@ -1041,6 +1045,7 @@ public class GameSession {
   }
 
   public synchronized void enterWaitingForRestoration(BitboardPosition restorationTargetPosition) {
+    RestoreTargetInvariant.verify(board, restorationTargetPosition);
     this.waitingForRestoration = true;
     this.restorationResumePending = false;
     this.waitingForReady = false;

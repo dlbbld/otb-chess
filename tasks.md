@@ -97,6 +97,12 @@ privacy notice remains open.
   captured material beside the board until it was released. The side-area count now treats a
   piece lifted off its square as still in play. Client-only fix; the literal e2e journey (White
   holds a2, Black holds h7) pins both colours.
+- [x] **Beginner castling Ke1-b1, Ra1-c1 got a released-piece violation instead of an illegal
+  move.** The rook release counted as the legal Rc1 although the king already stood on b1, so the
+  illegal move escaped its penalty and the "revert" target was the illegal board itself. A release
+  now binds only when the whole board matches the legal move. Afterwards White must castle
+  queenside (FIDE 4.4.1; interpretation documented as A-008). Added `RestoreTargetInvariant`, a
+  fail-closed check of every restore target. Unit tests and the literal e2e journey pin it.
 
 ## Backlog (not scheduled)
 

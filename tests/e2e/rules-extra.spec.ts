@@ -396,3 +396,60 @@ test('moving two pieces (a knight shuffle around a pin) is an illegal move', asy
 
   await expect(black.locator('#arbiterMessage')).toContainText(/illegal move/i);
 });
+
+// User-reported beginner castling: after 1. b3 b6 2. Bb2 Bb7 3. Nc3 Nc6 4. e4 e5 5. Qh5 Qh4,
+// White plays Ke1-b1, Ra1-c1 and presses the clock. That is one illegal move (the rook release is
+// no legal move with the king already on b1), not a released-piece violation. The king and rook
+// touches then bind (FIDE 4.4.1, documented interpretation): only queenside castling is accepted.
+test('beginner castling with the king on b1 is an illegal move, then queenside castling is required', async ({
+  browser,
+}) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  const opening: [typeof white, string, string][] = [
+    [white, 'b2', 'b3'], [black, 'b7', 'b6'],
+    [white, 'c1', 'b2'], [black, 'c8', 'b7'],
+    [white, 'b1', 'c3'], [black, 'b8', 'c6'],
+    [white, 'e2', 'e4'], [black, 'e7', 'e5'],
+    [white, 'd1', 'h5'], [black, 'd8', 'h4'],
+  ];
+  for (const [page, from, to] of opening) {
+    await dragPiece(page, from, to);
+    await pressClock(page);
+    await expect(page.locator('#arbiterMessage')).toContainText('Move accepted');
+  }
+
+  await dragPiece(white, 'e1', 'b1');
+  await dragPiece(white, 'a1', 'c1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move. This is your 1st illegal move.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText(/released-piece|castl/i);
+  await expect(black.locator('#opponentInfoPanel')).toContainText('Your opponent made an illegal move');
+  await expect(white.locator('#topClockTime')).toHaveText(/^(4:5\d|5:00)$/); // Black +2:00
+
+  // Putting only the king back does not restore the position; the clock stays paused.
+  await dragPiece(white, 'b1', 'e1');
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Please restore the position');
+  await dragPiece(white, 'c1', 'a1');
+  await expect(white.locator('#arbiterMessage')).toContainText('Clock restarted', { timeout: 15_000 });
+
+  await dragPiece(white, 'e1', 'd1');
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'Because you touched the king and the rook, and castling is legal, please perform the castling move.');
+
+  await clickRestore(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Clock restarted', { timeout: 15_000 });
+  await dragPiece(white, 'e1', 'c1');
+  await dragPiece(white, 'a1', 'd1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expectPiece(black, 'c1', 'WHITE_KING');
+  await expectPiece(black, 'd1', 'WHITE_ROOK');
+  await expectEmpty(black, 'a1');
+});
