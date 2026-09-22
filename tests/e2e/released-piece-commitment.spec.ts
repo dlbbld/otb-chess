@@ -21,6 +21,67 @@ async function expectRestoredAndResumed(white: import('@playwright/test').Page):
   await expect(white.locator('#arbiterMessage')).toContainText('Clock restarted', { timeout: 15_000 });
 }
 
+for (const attemptReplacementCastle of [false, true]) {
+  test(`Black Kf8 then Rh8-e8 and Revert keeps Kf8 final${attemptReplacementCastle ? ' against replacement castling' : ''}`, async ({ browser }) => {
+    game = await startTwoPlayerGame(browser, { fen: '4k2r/8/8/8/8/8/8/4K3 b k - 0 1' });
+    const { white, black } = game;
+
+    // Replay the reported journey literally: release Kf8, release Rh8-e8, clock, Revert, clock.
+    await dragPiece(black, 'e8', 'f8');
+    await dragPiece(black, 'h8', 'e8');
+    await pressClock(black);
+    await expect(black.locator('#arbiterMessage')).toContainText('king release on f8');
+    await expect(black.getByRole('button', { name: 'Revert' })).toBeVisible();
+    await expect(white.locator('#opponentInfoPanel')).toContainText('king release on f8');
+    await expect(white.getByRole('button', { name: 'Revert' })).toBeHidden();
+    await clickRestore(black);
+    await expect(black.locator('#arbiterMessage')).toContainText('your move is final');
+    await expect(black.locator('#arbiterMessage')).toContainText(/press the clock/i);
+    await expectRestoredAndResumed(black);
+    await expect(white.locator('#arbiterMessage')).not.toContainText('Your move is final');
+
+    if (attemptReplacementCastle) {
+      // After recovery try replacing the final move with legal-from-turn-start short castling.
+      // Repeating the recovery must neither erase the lock nor restore the king to e8.
+      for (let cycle = 0; cycle < 2; cycle++) {
+        await dragPiece(black, 'f8', 'e8');
+        await dragPiece(black, 'e8', 'g8');
+        await dragPiece(black, 'h8', 'f8');
+        await pressClock(black);
+        await expect(black.locator('#arbiterMessage')).toContainText('put the king back on f8');
+        await expect(black.locator('#arbiterMessage')).not.toContainText('please perform the castling move');
+        await expect(white.locator('#opponentInfoPanel')).toContainText('f8');
+        await expect(white.locator('#arbiterMessage')).not.toContainText('Your turn');
+        await clickRestore(black);
+        await expectRestoredAndResumed(black);
+      }
+    }
+
+    for (const page of [white, black]) {
+      await expectPiece(page, 'f8', 'BLACK_KING');
+      await expectPiece(page, 'h8', 'BLACK_ROOK');
+      await expectEmpty(page, 'e8');
+      await expectEmpty(page, 'g8');
+    }
+    await pressClock(black);
+    await expect(black.locator('#arbiterMessage')).toContainText('Move accepted');
+    await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+    await expect(black.getByRole('button', { name: 'Revert' })).toBeHidden();
+    await expect(white.locator('#gameResultPanel')).toBeHidden();
+    await expect(black.locator('#gameResultPanel')).toBeHidden();
+
+    // The next turn is playable, while the king stays on its final square on both boards.
+    await dragPiece(white, 'e1', 'f2');
+    await pressClock(white);
+    await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+    await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+    for (const page of [white, black]) {
+      await expectPiece(page, 'f8', 'BLACK_KING');
+      await expectPiece(page, 'f2', 'WHITE_KING');
+    }
+  });
+}
+
 test('released-piece commitment survives repeated reverts; only the committed move is accepted', async ({
   browser,
 }) => {

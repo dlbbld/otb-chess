@@ -267,6 +267,8 @@ If the player **first touches their own king on its starting square and then tou
 - **Precedence:** the CASTLING obligation supersedes the OWN_PIECE obligation that the king touch would otherwise have created. They cannot both apply -- castling is the strictly more specific commitment.
 - **Moving is touching:** a drag counts as a touch even if the king was first released on a square it cannot reach. After 1. b3 b6 2. Bb2 Bb7 3. Nc3 Nc6 4. e4 e5 5. Qh5 Qh4, `Ke1-b1`, `Ra1-c1` and the clock is one illegal move; after the restoration White must castle queenside. The Laws leave this open (7.5.1 names only 4.3 and 4.7 for the replacing move); see [A-008](docs/fide-deviations.md#a-008--king-and-rook-touched-around-an-illegal-king-placement-fide-441-vs-751).
 - **Earlier binding touch wins:** the rule only replaces the king touch's own obligation. If, before touching the king, the player touched an own piece that can move or an opponent piece that can be captured, that earlier touch stays binding (FIDE 4.3) and no castling commitment arises -- castling is then a touch-move violation. This includes a touch made during an earlier illegal move in the same turn (see [Persistence across interventions](#persistence-across-interventions)). Example: after 1. g3 e5 2. Bg2 d5 3. Nf3 Nc6, White plays `Nb1-b3`, presses the clock (illegal move), puts the knight back and castles short: rejected, the knight on b1 must move.
+- **Completed move:** this obligation cannot replace a legal move already completed by release. For example,
+  releasing Black's king from e8 on f8 commits Kf8; touching or moving the h8 rook afterwards cannot require castling.
 
 #### Violation message (CASTLING)
 
@@ -294,6 +296,11 @@ Touching is one step short of committing. **Releasing a piece on a legal target 
   release.
 - A castling attempt is treated as a multi-step legal move: the king's release on its castled square commits to castling; the rook drag then completes the move.
 - The committed-release detection is scoped per turn: it resets at the start of each turn and after any restoration that legitimately rewinds back to the start of the turn.
+- A completed legal move that satisfied the obligations at release is latched separately for the remainder of the
+  turn. Revert, readiness handshakes and later touches cannot erase or replace it. Restoration preserves that final
+  position, and pressing the clock accepts the committed move. Every session path that applies a move checks this
+  commitment before changing the official board, including automatic endings and specified draw-claim moves; a
+  conflicting acceptance is blocked even if arbiter evaluation incorrectly approved it.
 - Released-piece does not override an earlier opponent-piece touch obligation. If the player touched a capturable opponent piece and later released their own piece on a legal non-capturing square, the arbiter reports the unsatisfied touch-move obligation.
 
 ### Draw claims and touch-move
