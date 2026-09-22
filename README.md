@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.1.5 — Released Move Finality Guard](CHANGELOG.md#015--released-move-finality-guard--2026-09-22)
+See [0.1.6 — Touch-Move and Release Guards](CHANGELOG.md#016--touch-move-and-release-guards--2026-09-22)
 for this release.
 
 ## Documentation

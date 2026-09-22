@@ -3,6 +3,27 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.1.6 — Touch-Move and Release Guards
+
+- [x] Keep an earlier binding touch over the king-and-rook castling commitment, including a touch
+  made during an illegal move earlier in the same turn. Added `FirstTouchInvariant`, an independent
+  fail-closed re-check of FIDE 4.3 before any move is accepted, extended to 0.1.5's latched final
+  move after the merge.
+- [x] Stop listing a piece held in a player's hand as captured material on the opponent's screen.
+- [x] Bind a release only when the whole board matches that legal move, so an illegal displacement
+  followed by a legal-looking one is the illegal move it is, with its penalty. Added
+  `RestoreTargetInvariant` over every restore target. Documented the FIDE 4.4.1 reading as A-008.
+- [x] State the king exposure instead of predicting it, and move the library's reason wording into
+  `messages/illegal-move-reasons.properties`.
+- [x] Merge released `main` (0.1.5) into `claude/fixing` and reconcile both released-piece designs.
+- [x] Prepare version `0.1.6`, the dated changelog and README link. Use **0.1.6 — Touch-Move and
+  Release Guards** unchanged for the PR title, changelog version name, and GitHub release title.
+- [ ] Manually verify the pushed release candidate through `start.bat`, including the three
+  reported journeys and the visible `v0.1.6`.
+- [ ] Merge the PR, then tag and publish `0.1.6`.
+- [ ] Deploy `0.1.6` (supersedes the pending `0.1.5` deployment; production is on `0.1.4`), then
+  verify live health, version, and a two-player flow.
+
 ## 0.1.5 — Released Move Finality Guard
 
 - [x] Start `codex/further-hardening` from current `main` for the next round of beta bug fixes.
