@@ -209,12 +209,28 @@ curl -s -o /dev/null -w '%{http_code}\n' https://play.otb-chess.app/        # 20
 
 ## 12. Deploying updates
 
+Publishing a release does not change what this host serves: it keeps running the built jar until
+it is updated here. Run the commands as `chess-server` in `/Users/chess-server/Claude/otb-chess`.
+
 - **Static** (HTML/JS/CSS): served `no-store` from disk → a normal browser refresh shows changes.
-- **Java**: rebuild + restart the app daemon:
+- **Java**: move the checkout to the published tag, rebuild, restart the app daemon:
   ```bash
+  cd /Users/chess-server/Claude/otb-chess
+  git fetch origin --tags
+  git checkout --detach 0.1.6   # the tag being deployed
   mvn -DskipTests package
   sudo launchctl kickstart -k system/io.github.dlbbld.otbchess.app
   ```
+  The daemon is installed system-wide in `/Library/LaunchDaemons` and runs as `chess-server`, so
+  the restart asks for an administrator password. The build itself does not.
+- **Verify**: `/api/version` reports the deployed version, `/api/health` reports
+  `{"status":"ok","websocket":true}`, then play a two-player flow through the public URL:
+  ```bash
+  curl -s http://localhost:8080/api/version
+  curl -s http://localhost:8080/api/health
+  ```
+- **Roll back**: check out the previous tag and repeat the rebuild and restart. The game state is
+  in memory only, so a restart ends running games — deploy when the site is idle.
 
 ## Reference
 
