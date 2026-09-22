@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.1.4 — Abort Button Regression Guard](CHANGELOG.md#014--abort-button-regression-guard--2026-09-03)
+See [0.1.5 — Released Move Finality Guard](CHANGELOG.md#015--released-move-finality-guard--2026-09-22)
 for this release.
 
 ## Documentation
@@ -25,6 +25,7 @@ for this release.
 - [Manual](MANUAL.md): how to create, join, and play a game.
 - [Manifesto](MANIFESTO.md): why this project exists.
 - [Specification](SPECIFICATION.md): detailed rule and behavior reference.
+- [Release procedure](RELEASING.md): naming, verification, publication, and deployment steps.
 
 ## How it works
 

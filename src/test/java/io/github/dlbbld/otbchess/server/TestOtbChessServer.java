@@ -3,6 +3,7 @@
 package io.github.dlbbld.otbchess.server;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,6 +32,7 @@ class TestOtbChessServer {
   @Test
   void testAppVersionComesFromFilteredResourceNotFallback() {
     final String version = OtbChessServer.appVersion();
+    assertEquals("0.1.5", version);
     assertNotEquals("development", version);
     assertFalse(version.contains("${"), "version.properties was not Maven-filtered: " + version);
     assertTrue(version.matches("\\d+\\.\\d+.*"), "unexpected version format: " + version);
