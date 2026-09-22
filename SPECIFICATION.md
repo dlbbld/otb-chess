@@ -204,6 +204,7 @@ While the opponent is moving, the player sees a translucent floating piece follo
 - `DRAG_HOVER` (square-throttled) moves the floating piece to the centre of the new square on the observer's screen. Look-up is by square name in the observer's own DOM, so it works correctly even when the two players have flipped boards.
 - Any non-cosmetic event (`DRAG_MOVE`, `DRAG_CAPTURE`, `REMOVE`, `RESTORE_*`, `CLICK`) ends the floating-piece visualisation on the observer's side and applies the new state.
 - Forwarded events are suppressed during restoration-resume-pending (the moving player has agreed to a restored position; the observer has already updated).
+- A lifted piece is in the player's hand, not captured: while its source square shows empty (on either screen), the side areas still count it as on the board and do not list it among the off-board pieces.
 
 ### Freedom of movement
 
@@ -876,6 +877,7 @@ Each row names a verification path: an automated test (where applicable) or a ma
 | Second draw claim on same move silently allowed | No per-turn ledger | Automated -- `TestGameSession.testSecondClaimOnSameMoveIsRejected` |
 | Rejected claim didn't become a draw offer | No conversion path from `DrawClaimResult` to `DrawOfferManager` | Automated -- `TestGameSession.testRejectedClaimRegistersDrawOfferToOpponent` |
 | Castling accepted after an earlier touch of another piece | King-then-rook castling commitment ignored own/opponent touches made before the king (only rook-first was guarded); no independent check of accepted moves | Automated -- `TestGameSessionFlow.knightTouchedInIllegalMoveStillBindsWhenCastlingAfterRestoration`, `TestTouchMoveEvaluator`, `TestFirstTouchInvariant`, touch-move e2e |
+| Held piece listed as captured on the opponent's screen | `DRAG_START` empties the source square on the observer's board and `recomputeSideArea` derives off-board pieces from the board | Automated -- `opponent-drag.spec.ts` (client-only fix) |
 | Internal exceptions leaked technical text into the arbiter panel | Catch-all sent raw `e.getMessage()` to the client | Manual -- `sendInternalError` separates friendly `message` from `devDetail`; verified via dev console |
 
 ---

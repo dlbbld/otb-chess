@@ -92,9 +92,11 @@ privacy notice remains open.
   applies only when no earlier touch binds. Added `FirstTouchInvariant`, an independent fail-closed
   re-check of the first-touch rule before any move is accepted. Unit tests and the literal e2e
   journey pin both.
-- [ ] **Pressed piece shows as captured material on the opponent's screen.** While the player on
-  move holds a piece (e.g. White presses the a2 pawn), the opponent's view lists it among the
-  captured material beside the board until it is released.
+- [x] **Pressed piece shows as captured material on the opponent's screen.** While the player on
+  move held a piece (e.g. White pressed the a2 pawn), the opponent's view listed it among the
+  captured material beside the board until it was released. The side-area count now treats a
+  piece lifted off its square as still in play. Client-only fix; the literal e2e journey (White
+  holds a2, Black holds h7) pins both colours.
 
 ## Backlog (not scheduled)
 
