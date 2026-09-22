@@ -184,6 +184,19 @@ test('illegal move while in check says it leaves the own king in check', async (
   await expect(black.locator('#opponentInfoPanel')).toContainText('it leaves the own king in check');
 });
 
+test('illegal move with a shielding piece says it exposes the own king to check', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: 'k3r3/8/8/8/8/8/4R3/4K3 w - - 0 1' });
+  const { white, black } = game;
+
+  await dragPiece(white, 'e2', 'd2'); // moves the shield away from the e-file
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move because it exposes the own king to check.');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('would expose');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('it exposes the own king to check');
+});
+
 test('moving an opponent piece is rejected immediately', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white } = game;

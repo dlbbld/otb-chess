@@ -841,11 +841,19 @@ public class ArbiterEngine {
         formattedOpponentReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, true));
   }
 
+  /**
+   * The library phrases its reasons conditionally ("it would ..."), which fits a move that was only proposed. The
+   * player has made this move on the board, so the arbiter states what it does.
+   */
   private static NormalizedReason normalizeIllegalMoveReason(String reason, boolean castlingAttempt) {
-    if (!reason.equals("it would leave the own king in check")) {
+    final String naturalReason = switch (reason) {
+      case "it would leave the own king in check" -> "it leaves the own king in check";
+      case "it would expose the own king to check" -> "it exposes the own king to check";
+      default -> null;
+    };
+    if (naturalReason == null) {
       return new NormalizedReason(reason, reason);
     }
-    final String naturalReason = "it leaves the own king in check";
     if (castlingAttempt) {
       return new NormalizedReason(naturalReason, naturalReason);
     }

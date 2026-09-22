@@ -145,6 +145,11 @@ deferred privacy notice remains open.
   now binds only when the whole board matches the legal move. Afterwards White must castle
   queenside (FIDE 4.4.1; interpretation documented as A-008). Added `RestoreTargetInvariant`, a
   fail-closed check of every restore target. Unit tests and the literal e2e journey pin it.
+- [x] **Illegal-move reason stated the exposure conditionally.** A move that took a shielding
+  piece off the king's line was reported as "it would expose the own king to check" — the library's
+  wording for a move that was only proposed. The player made the move, so the arbiter now states
+  "it exposes the own king to check", matching the existing "it leaves the own king in check".
+  The conditional wording stays for a draw claim's presented SAN move, which was not played.
 
 ## Backlog (not scheduled)
 

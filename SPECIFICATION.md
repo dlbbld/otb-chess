@@ -475,8 +475,10 @@ To match the experience of a real board, certain game-ending moves end the game 
   > _"This is your 3rd illegal move. Your 5th illegal move will lose the game."_ (limit 5)
 - When the limit is reached, the message is _"You have made N illegal moves. You lose the game."_
 - When the limit is **Unlimited**, the message stops at the count and never threatens game loss.
-- If a move does not answer an existing check (or otherwise leaves the moving side's king in check), the player-facing reason is phrased naturally:
-  > _"Illegal move because it leaves the own king in check."_
+- The chess library phrases its reasons conditionally ("it would ..."), which fits a move that was only proposed. The player has made this move on the board, so the arbiter states what the move does:
+  > _"Illegal move because it leaves the own king in check."_ (the move does not answer an existing check)
+  >
+  > _"Illegal move because it exposes the own king to check."_ (the move takes a shielding piece off the king's line)
 
 ---
 

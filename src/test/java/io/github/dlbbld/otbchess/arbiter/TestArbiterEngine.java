@@ -89,6 +89,28 @@ class TestArbiterEngine {
   }
 
   @Test
+  void testIllegalMoveExposingOwnKingUsesNaturalWording() {
+    // The white rook on e2 shields the king on e1 from the black rook on e8: moving it aside
+    // exposes the king. The player made that move, so the arbiter states it, not "would expose".
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/4R3/4K3 w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.D2, Piece.WHITE_ROOK, 0));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.D2, Piece.WHITE_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertEquals("because it exposes the own king to check", response.illegalMoveDetail().get().playerReason().get());
+    assertEquals("it exposes the own king to check", response.illegalMoveDetail().get().opponentReason().get());
+    assertTrue(response.message().startsWith("Illegal move because it exposes the own king to check."));
+    assertFalse(response.message().contains("would expose"));
+  }
+
+  @Test
   void testIllegalMoveLeavingKingInCheckUsesNaturalWording() {
     final ArbiterEngine engine = new ArbiterEngine();
     final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/8/4K2R w - - 0 1");
