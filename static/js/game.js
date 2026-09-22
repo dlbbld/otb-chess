@@ -997,6 +997,10 @@ class Game {
     for (const p of onBoard) {
       onBoardCounts[p] = (onBoardCounts[p] || 0) + 1;
     }
+    // A piece lifted off its square is in a player's hand, not captured.
+    for (const p of this.board.getLiftedBoardPieces()) {
+      onBoardCounts[p] = (onBoardCounts[p] || 0) + 1;
+    }
 
     const initialCounts = {};
     for (const p of Game.INITIAL_PIECES) {

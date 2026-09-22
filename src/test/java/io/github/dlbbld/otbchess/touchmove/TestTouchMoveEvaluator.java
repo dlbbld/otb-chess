@@ -521,6 +521,61 @@ class TestTouchMoveEvaluator {
   }
 
   @Test
+  void testMovableOwnPieceTouchedBeforeKingThenRookStaysBinding() {
+    // White touches the b1 knight (legal moves Na3/Nc3), then castles kingside. The knight is the
+    // first touched piece that can move, so it binds; castling must not satisfy the obligation.
+    final Board board = whiteKingsideClearBoard();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.B1, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 2));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OWN_PIECE, obligation.get().type());
+    assertEquals(Square.B1, obligation.get().square());
+
+    final var castling = board.getLegalMoves().stream().filter(
+        m -> m.moveSpecification().castlingMove() == io.github.dlbbld.ashlarchess.board.enums.CastlingMove.KING_SIDE)
+        .findFirst().orElseThrow();
+    assertFalse(TouchMoveEvaluator.satisfiesObligation(obligation.get(), castling));
+  }
+
+  @Test
+  void testCapturableOpponentPieceTouchedBeforeKingThenRookStaysBinding() {
+    // White touches the capturable black knight on e4 first, then king and kingside rook. The
+    // opponent-piece touch binds (FIDE 4.3.2), so no castling commitment is established.
+    final Board board = Board.fromFenStrict("4k3/8/8/8/4n3/5P2/8/4K2R w K - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.E4, Piece.BLACK_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 1));
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 2));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.OPPONENT_PIECE, obligation.get().type());
+    assertEquals(Square.E4, obligation.get().square());
+  }
+
+  @Test
+  void testUnmovableOwnPieceTouchedBeforeKingThenRookStillCommitsToCastling() {
+    // The a2 pawn cannot move (a3 blocked), so touching it creates no obligation and the
+    // following king-then-rook touch still commits White to castling.
+    final Board board = Board.fromFenStrict("4k3/8/8/8/8/n7/P7/4K2R w K - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.A2, Piece.WHITE_PAWN, 0));
+    sequence.addEvent(BoardEvent.click(Square.E1, Piece.WHITE_KING, 1));
+    sequence.addEvent(BoardEvent.click(Square.H1, Piece.WHITE_ROOK, 2));
+
+    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+
+    assertTrue(obligation.isPresent());
+    assertEquals(TouchMoveType.CASTLING, obligation.get().type());
+  }
+
+  @Test
   void testCastlingMoveSatisfiesCastlingObligation() {
     final Board board = whiteKingsideClearBoard();
     final TouchMoveObligation obligation = new TouchMoveObligation(TouchMoveType.CASTLING, Square.E1, Piece.WHITE_KING,

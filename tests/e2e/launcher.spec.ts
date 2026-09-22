@@ -51,7 +51,7 @@ test('start.bat fetches the branch on each launch and serves its snapshot withou
     git(seed, 'push', 'origin', 'main');
     git(root, 'clone', '--branch', 'main', remote, checkout);
     const checkoutSha = git(checkout, 'rev-parse', 'HEAD');
-    git(seed, 'switch', '-c', 'codex/further-hardening');
+    git(seed, 'switch', '-c', 'claude/fixing');
 
     const index = await readFile(join(seed, 'static', 'index.html'), 'utf8');
     const description = 'An educational chessboard that simulates physical board play with an arbiter.';
@@ -65,7 +65,7 @@ test('start.bat fetches the branch on each launch and serves its snapshot withou
       await writeFile(join(seed, 'static', 'index.html'), index.replace(description, marker));
       git(seed, 'add', 'static/index.html');
       git(seed, 'commit', '-m', marker);
-      git(seed, 'push', 'origin', 'codex/further-hardening');
+      git(seed, 'push', 'origin', 'claude/fixing');
       const expectedSha = git(seed, 'rev-parse', 'HEAD');
       const httpPort = await freePort();
       const wsPort = await freePort();

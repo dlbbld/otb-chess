@@ -42,7 +42,7 @@ Long e2e runtimes are explicitly acceptable when the change has behavioral risk,
   packaged jar: rebuild (`npm run build:server` or `npm run e2e`) after Java changes; static
   files (HTML/JS/CSS) are read from disk and need no rebuild. If e2e results look stale, check
   for a leftover java process listening on 18080 and stop it.
-- `start.bat` fetches and serves the latest pushed `codex/further-hardening` commit from the
+- `start.bat` fetches and serves the latest pushed `claude/fixing` commit from the
   `..\otb-chess-stable` worktree for manual testing before PR merge. A failed fetch stops startup;
   uncommitted edits never reach it. `start-dev.bat` runs the working tree as-is.
 - Do not work in this working tree at the same time as another agent; sequential use only.

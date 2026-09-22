@@ -439,6 +439,22 @@ class ChessBoard {
   }
 
   /**
+   * Pieces currently held in a hand after being lifted off a board square: this player's own drag
+   * and the opponent's mirrored drag. Their squares show empty while held, but the pieces are
+   * still in play, not captured.
+   */
+  getLiftedBoardPieces() {
+    const lifted = [];
+    if (this.dragging && !this.dragging.fromSideArea && this.dragging.squareName) {
+      lifted.push(this.dragging.piece);
+    }
+    if (this.opponentDragSource && this.opponentDragSource !== 'NONE' && this.opponentDragPiece) {
+      lifted.push(this.opponentDragPiece);
+    }
+    return lifted;
+  }
+
+  /**
    * Removes the floating piece spawned by the opponent's drag stream and, if the
    * source square was emptied at DRAG_START, puts the piece back. Safe to call
    * when no opponent drag is in progress. Called automatically before any

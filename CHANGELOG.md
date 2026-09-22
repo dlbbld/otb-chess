@@ -2,6 +2,52 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.1.6 — Touch-Move and Release Guards — 2026-09-22
+
+This release fixes three arbiter faults found in play, and adds two fail-closed checks that stop
+the game rather than let it continue on a move the arbiter cannot justify.
+
+### Fixed
+
+- A touch that binds keeps binding. Touching a piece that can move — including during an earlier
+  illegal move in the same turn — is no longer overridden by a later king-and-rook castling touch.
+  In the reported sequence 1. g3 e5 2. Bg2 d5 3. Nf3 Nc6, `Nb1-b3`, clock, knight back, castling
+  short, the knight on b1 must move.
+- A piece counts as released "as a legal move" only when the whole board matches that move. The
+  beginner castling `Ke1-b1`, `Ra1-c1`, clock is now one illegal move with its penalty, instead of
+  a released-piece violation whose restore target was the illegal position itself. The same fault
+  hid the penalty whenever an illegal displacement was followed by a legal-looking move, such as a
+  bishop jumping its own pawn and then an ordinary knight move.
+- A piece held in a player's hand is no longer listed as captured material on the opponent's
+  screen while it is off its square.
+- An illegal move that takes a shielding piece off the king's line now states "it exposes the own
+  king to check" instead of predicting what it would do.
+
+### Added
+
+- `FirstTouchInvariant`: before any move is accepted, an independent check that it honours the
+  first binding touch (FIDE 4.3). A violation stops the move instead of recording it.
+- `RestoreTargetInvariant`: every position the arbiter asks the player to restore must be the turn
+  start, one legal move from it, or a legal castling intermediate.
+- The chess library's illegal-move reasons and the arbiter's restatements now live in
+  `messages/illegal-move-reasons.properties`, paired per reason.
+
+### Rules interpretation
+
+- A-008 in [`docs/fide-deviations.md`](docs/fide-deviations.md): king and rook touched around an
+  illegal king placement. The clock press is one illegal move; after the restoration the touches
+  bind under FIDE 4.4.1 and queenside castling must be played.
+
+### Documentation
+
+- The release procedure names where the version is pinned, the changelog anchor form, the branch
+  hardcoded in the manual-testing launcher, and the case of a branch older than the last release.
+- Deploying updates ([SETUP.md §12](SETUP.md#12-deploying-updates)) covers what it was missing:
+  moving the production checkout to the published tag, the scoped ACL and `NOPASSWD` grant an
+  operator other than `chess-server` needs (including the `delete_child` gotcha that failed the
+  0.1.4 deploy), rolling back, and verifying through the public URL and WebSocket rather than
+  localhost alone.
+
 ## 0.1.5 — Released Move Finality Guard — 2026-09-22
 
 This release closes a released-piece loophole that could replace an already final king move with

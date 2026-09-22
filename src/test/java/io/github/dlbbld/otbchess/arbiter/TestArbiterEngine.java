@@ -4,12 +4,14 @@ package io.github.dlbbld.otbchess.arbiter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.board.LegalMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
@@ -84,6 +86,28 @@ class TestArbiterEngine {
     assertEquals(Side.WHITE, response.illegalMoveDetail().get().side());
     assertEquals("the knight cannot move in this way", response.illegalMoveDetail().get().playerReason().get());
     assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  @Test
+  void testIllegalMoveExposingOwnKingUsesNaturalWording() {
+    // The white rook on e2 shields the king on e1 from the black rook on e8: moving it aside
+    // exposes the king. The player made that move, so the arbiter states it, not "would expose".
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/4R3/4K3 w - - 0 1");
+
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.D2, Piece.WHITE_ROOK, 0));
+
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.D2, Piece.WHITE_ROOK).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertEquals("because it exposes the own king to check", response.illegalMoveDetail().get().playerReason().get());
+    assertEquals("it exposes the own king to check", response.illegalMoveDetail().get().opponentReason().get());
+    assertTrue(response.message().startsWith("Illegal move because it exposes the own king to check."));
+    assertFalse(response.message().contains("would expose"));
   }
 
   @Test
@@ -1242,5 +1266,101 @@ class TestArbiterEngine {
 
     // Position is valid (Nc3) and touch-move satisfied (knight from b1 was touched)
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, response.type());
+  }
+
+  // ---- A release binds (FIDE 4.7) only when the whole board matches the legal move ----
+
+  /** 1. b3 b6 2. Bb2 Bb7 3. Nc3 Nc6 4. e4 e5 5. Qh5 Qh4: b1, c1 and d1 are empty, O-O-O is legal. */
+  private static Board queensideCastlingReadyBoard() {
+    final Board board = new Board();
+    for (final String san : new String[] { "b3", "b6", "Bb2", "Bb7", "Nc3", "Nc6", "e4", "e5", "Qh5", "Qh4" }) {
+      board.moveStrict(san);
+    }
+    return board;
+  }
+
+  @Test
+  void testRookReleaseAfterKingPlacedOnUnreachableSquareIsIllegalMove() {
+    // User-reported: Ke1-b1 then Ra1-c1. The king cannot reach b1 and the rook jumped it, so the
+    // rook release is no legal move and binds nothing; the clock press is one illegal move.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = queensideCastlingReadyBoard();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.B1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.A1, Square.C1, Piece.WHITE_ROOK, 1));
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.B1, Piece.WHITE_KING)
+        .createChangedPosition(Square.A1, Piece.NONE).createChangedPosition(Square.C1, Piece.WHITE_ROOK).build();
+
+    assertFalse(engine.hasReleasedPieceCommitment(board, sequence));
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+    assertTrue(response.restorePosition().isEmpty()); // start of the turn
+    assertFalse(response.message().toLowerCase().contains("castl"), response.message());
+  }
+
+  @Test
+  void testLegalLookingReleaseAfterIllegalDisplacementIsIllegalMove() {
+    // Bf1-b5 jumps the e2 pawn, then the ordinary Ng1-f3: the knight release is no legal move in
+    // that position, so it must not hide the illegal bishop move behind a released-piece message.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.F1, Square.B5, Piece.WHITE_BISHOP, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 1));
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.F1, Piece.NONE).createChangedPosition(Square.B5, Piece.WHITE_BISHOP)
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, response.type());
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+    assertTrue(response.restorePosition().isEmpty());
+  }
+
+  @Test
+  void testReleaseStillBindsWhenEarlierDisplacementWasUndone() {
+    // The bishop goes back to f1 before the knight is released, so Nf3 is a legal move on the
+    // whole board and binds: moving the knight on to g5 is a released-piece violation.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.dragMove(Square.F1, Square.B5, Piece.WHITE_BISHOP, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B5, Square.F1, Piece.WHITE_BISHOP, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.F3, Piece.WHITE_KNIGHT, 2));
+    sequence.addEvent(BoardEvent.dragMove(Square.F3, Square.G5, Piece.WHITE_KNIGHT, 3));
+    final BitboardPosition afterNf3 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.F3, Piece.WHITE_KNIGHT).build();
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.G5, Piece.WHITE_KNIGHT).build();
+
+    final ArbiterResponse response = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
+    assertEquals(afterNf3, response.restorePosition().orElseThrow());
+  }
+
+  @Test
+  void testLatchedFinalMoveThatBreaksTheFirstTouchStopsTheGame() {
+    // A latched move is exempt from later touches, never from the touch that bound the player when
+    // it was completed. findFinalMoveCommitment never latches such a move; the net is the guard if
+    // it ever did.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
+    final BitboardPosition afterE4 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+    final LegalMove pawnMove = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.E2)
+        .filter(m -> m.moveSpecification().toSquare() == Square.E4).findFirst().orElseThrow();
+
+    assertTrue(engine.findFinalMoveCommitment(board, sequence).isEmpty());
+    final ArbiterEngine.FinalMoveCommitment latched = new ArbiterEngine.FinalMoveCommitment(pawnMove, afterE4);
+    assertThrows(IllegalStateException.class, () -> engine.evaluateFinalMove(board, afterE4, latched, sequence));
   }
 }

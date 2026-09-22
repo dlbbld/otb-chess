@@ -145,6 +145,11 @@ public class TouchMoveEvaluator {
           // obligation scan, which binds the touched rook as a normal own-piece obligation. A
           // later king/rook castling motion must then NOT be accepted as castling.
           return Optional.empty();
+        } else if (evaluateEvent(event, sideToMove, legalMoves).isPresent()) {
+          // FIDE 4.3: an earlier touch that already binds (an own piece that can move, or an
+          // opponent piece that can be captured) stays binding. A later king-then-rook touch
+          // cannot replace it with a castling commitment; the first-obligation scan binds it.
+          return Optional.empty();
         }
         continue;
       }

@@ -28,6 +28,8 @@ import io.github.dlbbld.otbchess.core.PositionComparator;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 import io.github.dlbbld.otbchess.event.BoardEventType;
+import io.github.dlbbld.otbchess.message.IllegalMoveReasons;
+import io.github.dlbbld.otbchess.touchmove.FirstTouchInvariant;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveObligation;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveType;
@@ -107,6 +109,9 @@ public class ArbiterEngine {
   public ArbiterResponse evaluateFinalMove(Board board, BitboardPosition afterPosition,
       FinalMoveCommitment commitment, ActionSequence sequence) {
     if (commitment.position().equals(afterPosition)) {
+      // Same safety net as the ordinary acceptance below: a latched move is exempt from LATER
+      // touches, never from the first touch that bound the player when the move was completed.
+      FirstTouchInvariant.verify(sequence, board, commitment.move());
       return ArbiterResponse.moveAccepted(commitment.move());
     }
     final LegalMove move = commitment.move();
@@ -257,6 +262,10 @@ public class ArbiterEngine {
         return handleTouchMoveViolation(obligation.get());
       }
     }
+
+    // Safety net: an independent re-check of the first-touch rule. Throws, so the move is never
+    // recorded, if the obligation chain above accepted a move it should have rejected.
+    FirstTouchInvariant.verify(sequence, board, matchedMove);
 
     // Move accepted
     return ArbiterResponse.moveAccepted(matchedMove);
@@ -532,6 +541,36 @@ public class ArbiterEngine {
 
   private static boolean isReleasePartOfLegalMove(Side havingMove, BoardEvent event, LegalMove legalMove,
       BitboardPosition positionBeforeEvent, BitboardPosition turnStartPosition) {
+    if (!releaseMatchesMove(havingMove, event, legalMove)) {
+      return false;
+    }
+    // FIDE 4.7 binds a piece released "as a legal move or part of a legal move". Matching the
+    // released piece alone is not enough: the rest of the board must still be the turn-start
+    // position. Otherwise Ke1-b1 followed by Ra1-c1 made the rook release count as the legal Rc1
+    // although the rook jumped the misplaced king, and b2xa1 (own pawn parked on a1) followed by
+    // Ra8-a1 counted as Ra8xa1 although it captured the player's own pawn.
+    return applyEvent(positionBeforeEvent, event)
+        .equals(positionAfterRelease(havingMove, legalMove, turnStartPosition));
+  }
+
+  /**
+   * The board right after the release that completes (or, for castling, starts) {@code legalMove}: the position after
+   * the move, or for castling the king-first intermediate with only the king moved.
+   */
+  private static BitboardPosition positionAfterRelease(Side havingMove, LegalMove legalMove,
+      BitboardPosition turnStartPosition) {
+    final MoveSpecification spec = legalMove.moveSpecification();
+    if (spec.isCastling()) {
+      return BitboardPositions.from(turnStartPosition)
+          .createChangedPosition(spec.castlingMove().kingFromSquare(havingMove), Piece.NONE)
+          .createChangedPosition(spec.castlingMove().kingToSquare(havingMove), Piece.of(havingMove, PieceType.KING))
+          .build();
+    }
+    return turnStartPosition.afterMove(spec, havingMove);
+  }
+
+  /** Whether the released piece and squares are those of {@code legalMove}, ignoring the rest of the board. */
+  private static boolean releaseMatchesMove(Side havingMove, BoardEvent event, LegalMove legalMove) {
     final MoveSpecification spec = legalMove.moveSpecification();
     if (spec.isCastling()) {
       return event.piece() == Piece.of(havingMove, PieceType.KING)
@@ -557,19 +596,10 @@ public class ArbiterEngine {
     if (event.square() != spec.fromSquare() || event.targetSquare() != spec.toSquare()) {
       return false;
     }
-    if (legalMove.isEnPassant()) {
-      return false;
-    }
-    // The release physically IS this move only if the destination square was not tampered with
-    // earlier in the turn. Example: after b2xa1 (own pawn parked on a1 mid-promotion), dragging
-    // the a8 rook onto a1 used to match the legal Ra8xa1 of the turn-start position — but the
-    // physical act captured the player's OWN pawn, which is no move at all (and produced an
-    // unsatisfiable commitment: restore target = the tampered position itself). Comparing the
-    // destination's content at release time with the turn start rejects that, while normal
-    // moves and captures stay committed. En passant is deliberately excluded above: physically,
-    // landing on the en-passant square is only half of the capture, and the clock-press position
-    // must decide whether the captured pawn was also removed.
-    return positionBeforeEvent.get(spec.toSquare()) == turnStartPosition.get(spec.toSquare());
+    // En passant is deliberately excluded: physically, landing on the en-passant square is only
+    // half of the capture, and the clock-press position must decide whether the captured pawn was
+    // also removed.
+    return !legalMove.isEnPassant();
   }
 
   private static BitboardPosition applyEvent(BitboardPosition position, BoardEvent event) {
@@ -812,11 +842,16 @@ public class ArbiterEngine {
         formattedOpponentReason + formatCastlingTouchMoveConsequence(board, sequence, attemptedMove, true));
   }
 
+  /**
+   * The library phrases its reasons conditionally ("it would ..."), which fits a move that was only presented to it.
+   * The player has made this move on the board, so the arbiter states what it does. The wording comes from
+   * {@link IllegalMoveReasons}; a reason without an entry there is passed through unchanged.
+   */
   private static NormalizedReason normalizeIllegalMoveReason(String reason, boolean castlingAttempt) {
-    if (!reason.equals("it would leave the own king in check")) {
+    final String naturalReason = IllegalMoveReasons.asStatement(reason);
+    if (naturalReason.equals(reason)) {
       return new NormalizedReason(reason, reason);
     }
-    final String naturalReason = "it leaves the own king in check";
     if (castlingAttempt) {
       return new NormalizedReason(naturalReason, naturalReason);
     }

@@ -41,6 +41,11 @@ class TestWindowsLauncher {
       runGit(checkout, "init", "--bare", remote.toString());
     }
     runGit(checkout, "remote", "add", "origin", remote.toString());
+    if (remoteExists) {
+      // The old testing branch exists, but the requested claude/fixing branch does not.
+      // Startup must fail rather than silently serving the previous release branch.
+      runGit(checkout, "push", "origin", "HEAD:refs/heads/codex/further-hardening");
+    }
     Files.writeString(bin.resolve("mvn.cmd"), "@echo off\r\necho started>\"" + started + "\"\r\n");
     final Path output = temp.resolve("output.txt");
     final ProcessBuilder builder = new ProcessBuilder("cmd.exe", "/d", "/c", "call \"" + launcher + "\"")

@@ -204,6 +204,7 @@ While the opponent is moving, the player sees a translucent floating piece follo
 - `DRAG_HOVER` (square-throttled) moves the floating piece to the centre of the new square on the observer's screen. Look-up is by square name in the observer's own DOM, so it works correctly even when the two players have flipped boards.
 - Any non-cosmetic event (`DRAG_MOVE`, `DRAG_CAPTURE`, `REMOVE`, `RESTORE_*`, `CLICK`) ends the floating-piece visualisation on the observer's side and applies the new state.
 - Forwarded events are suppressed during restoration-resume-pending (the moving player has agreed to a restored position; the observer has already updated).
+- A lifted piece is in the player's hand, not captured: while its source square shows empty (on either screen), the side areas still count it as on the board and do not list it among the off-board pieces.
 
 ### Freedom of movement
 
@@ -264,6 +265,8 @@ If the player **first touches their own king on its starting square and then tou
 - **Side selection:** the touched rook's starting square determines the side -- kingside if h1/h8, queenside if a1/a8. If both sides would be legal but the player touched only one rook, the touched rook decides; the other side does **not** satisfy the obligation.
 - **Legality precondition:** the rule activates **only if castling on that side is legal in the current position**. If castling on the touched rook's side is not legal, the new rule does **not** fire and the existing rules apply (king touch establishes a normal own-piece obligation; the rook touch may add another own-piece obligation under those existing rules).
 - **Precedence:** the CASTLING obligation supersedes the OWN_PIECE obligation that the king touch would otherwise have created. They cannot both apply -- castling is the strictly more specific commitment.
+- **Moving is touching:** a drag counts as a touch even if the king was first released on a square it cannot reach. After 1. b3 b6 2. Bb2 Bb7 3. Nc3 Nc6 4. e4 e5 5. Qh5 Qh4, `Ke1-b1`, `Ra1-c1` and the clock is one illegal move; after the restoration White must castle queenside. The Laws leave this open (7.5.1 names only 4.3 and 4.7 for the replacing move); see [A-008](docs/fide-deviations.md#a-008--king-and-rook-touched-around-an-illegal-king-placement-fide-441-vs-751).
+- **Earlier binding touch wins:** the rule only replaces the king touch's own obligation. If, before touching the king, the player touched an own piece that can move or an opponent piece that can be captured, that earlier touch stays binding (FIDE 4.3) and no castling commitment arises -- castling is then a touch-move violation. This includes a touch made during an earlier illegal move in the same turn (see [Persistence across interventions](#persistence-across-interventions)). Example: after 1. g3 e5 2. Bg2 d5 3. Nf3 Nc6, White plays `Nb1-b3`, presses the clock (illegal move), puts the knight back and castles short: rejected, the knight on b1 must move.
 - **Completed move:** this obligation cannot replace a legal move already completed by release. For example,
   releasing Black's king from e8 on f8 commits Kf8; touching or moving the h8 rook afterwards cannot require castling.
 
@@ -284,6 +287,7 @@ Touch-move obligations persist across arbiter interventions and restorations. If
 Touching is one step short of committing. **Releasing a piece on a legal target square** commits the player to that move (or to one of the moves consistent with that release):
 
 - After the player drops a piece on a square that completes a legal move, the *committed move set* is the set of legal moves that end with that piece on that square.
+- A drop completes a legal move only if the **whole board** right after it is the position that legal move produces (for castling: the king-first intermediate). If another piece is still displaced -- e.g. `Ke1-b1` then `Ra1-c1`, or `Bf1-b5` jumping the e2 pawn then `Ng1-f3` -- the drop is no legal move in that position and commits nothing; the clock press is then one illegal move. A displacement that was undone before the drop does not matter.
 - Any subsequent manipulation that would change the final position to something **not** in the committed move set is a **released-piece violation**.
 - Restoration after a released-piece violation restores the board to the **release position** (not the start of the turn) -- the player must complete a legal move from the committed set.
 - The recovery message distinguishes what must be restored: if the released piece itself was later picked up or displaced,
@@ -421,6 +425,17 @@ Opponent-side castling-start notices are passive information only. They are show
 - If a touch-move obligation exists, the matched move must satisfy it.
 - If not satisfied -> touch-move violation (not counted as illegal move).
 
+### Touch-move safety net (fail closed)
+
+The touch-move obligation is chosen by ordered special rules (castling commitment, specific capture, first touch). A wrong choice would be silent: the move satisfies the wrong obligation and is accepted. So before a move is accepted, `FirstTouchInvariant` independently re-checks the FIDE 4.3 core from the raw action sequence: the first touched own piece that can move must be the moving piece (castling counts as a king move), and the first touched opponent piece that can be captured must be captured. The only exemption is the specified failed-castling case where the king has no legal move. Every special rule narrows this core but never overrides it.
+
+- **Clock press / correct-time draw offer / latched final move:** if the arbiter accepted a move that breaks the core rule, the check throws. A latched final move (see the released-piece rule) is exempt from *later* touches, never from the touch that bound the player when the move was completed. The move is not recorded; the player gets the generic internal-error message and the server logs the violation. The game never continues on a move the arbiter cannot justify.
+- **Auto-end:** a game-ending move that breaks the core rule is not auto-accepted; the clock press then hits the check above.
+
+### Restore-target safety net (fail closed)
+
+Every position the arbiter asks the player to restore must be the turn-start position, the position after one legal move (a released-piece commitment), or the king-first intermediate of a legal castling move. `RestoreTargetInvariant` checks this before the session acts on a violation response or enters the restoration state; anything else throws, so the game stops instead of continuing from a position the arbiter cannot justify.
+
 ### Released-piece check (FIDE 4.7)
 
 - If the player has committed to a released-piece move set (see "Released-piece rule") and the final position is **not** in that set -> released-piece violation. Restoration target is the release position.
@@ -460,8 +475,10 @@ To match the experience of a real board, certain game-ending moves end the game 
   > _"This is your 3rd illegal move. Your 5th illegal move will lose the game."_ (limit 5)
 - When the limit is reached, the message is _"You have made N illegal moves. You lose the game."_
 - When the limit is **Unlimited**, the message stops at the count and never threatens game loss.
-- If a move does not answer an existing check (or otherwise leaves the moving side's king in check), the player-facing reason is phrased naturally:
-  > _"Illegal move because it leaves the own king in check."_
+- The chess library phrases its reasons conditionally ("it would ..."), which fits a move that was only proposed. The player has made this move on the board, so the arbiter states what the move does:
+  > _"Illegal move because it leaves the own king in check."_ (the move does not answer an existing check)
+  >
+  > _"Illegal move because it exposes the own king to check."_ (the move takes a shielding piece off the king's line)
 
 ---
 
@@ -806,6 +823,7 @@ User-visible rule messages flow through a typed message infrastructure rather th
 - `Messages.get(key, args...)` -- single English `messages.properties` loaded explicitly as UTF-8; fail-loud on missing keys.
 - `ArbiterResponse` carries structured records (`IllegalMoveDetail`, `ReleasedPieceContext`, `ReleasedPieceCastlingContext`) and renders both player-facing and opponent-facing messages from the same data -- no string surgery.
 - The `CUSTOM_INFO` / `CUSTOM_WARNING` / `CUSTOM_ERROR` keys are transitional escape hatches for messages not yet migrated; severity is preserved.
+- `IllegalMoveReasons.asStatement(reason)` -- the chess library's illegal-move reasons restated for a move that has been played, from `messages/illegal-move-reasons.properties`. Each entry pairs the library's text with the arbiter's wording; an unpaired entry fails at startup, and a reason without an entry is passed through unchanged. New library reasons are added to the file, not to the arbiter.
 
 Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, position-change). Game-flow / draw-offer / draw-claim messages are still inline literals -- slated for a follow-up slice.
 
@@ -824,6 +842,9 @@ Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, p
 | `PositionComparator` | Enumerates legal moves, compares resulting positions with the player's board state. |
 | `TouchMoveEvaluator` | Scans action sequence for the first touch-move obligation; recognises failed castling attempts where the king has no legal moves (via `CastlingAttemptDetector`); detects the king-then-rook combined touch (FIDE 4.4.a) and emits a `CASTLING` obligation when castling on the touched rook's side is legal. |
 | `CastlingAttemptDetector` | Shared helper that recognises a king-then-rook drag pattern; used by `TouchMoveEvaluator` and `ArbiterEngine`. |
+| `IllegalMoveReasons` | Restates the chess library's illegal-move reasons as statements about the move played; pairs live in `messages/illegal-move-reasons.properties`. |
+| `RestoreTargetInvariant` | Fail-closed safety net: every restore target must be the turn start, one legal move from it, or a legal castling intermediate; otherwise it throws. |
+| `FirstTouchInvariant` | Fail-closed safety net: independently re-checks that an accepted move honours the first binding touch (FIDE 4.3) and throws if not, so an evaluator bug stops the move instead of recording it. |
 | `ArbiterEngine` | Two-layer evaluation: position comparison + touch-move + released-piece + castling-attempt explanation. Builds structured `IllegalMoveDetail` / `ReleasedPieceContext` records used by typed message rendering. |
 | `IllegalMoveTracker` | Tracks illegal-move count per side; configurable limit (1-10 or unlimited, default 2). |
 | `MidPlayValidator` | Validates opponent-piece movement and piece-restoration during play. Allows opponent-piece **removal** (capture-by-removal); blocks opponent-piece drag-on-board. |
@@ -873,6 +894,9 @@ Each row names a verification path: an automated test (where applicable) or a ma
 | Claim-accepted text duplicated under result panel | `GameResult.description` reused the long claim-accepted text | Automated -- `TestGameSession.testAcceptedClaimCarriesShortGameEndDescriptionAndPerPlayerMessages` |
 | Second draw claim on same move silently allowed | No per-turn ledger | Automated -- `TestGameSession.testSecondClaimOnSameMoveIsRejected` |
 | Rejected claim didn't become a draw offer | No conversion path from `DrawClaimResult` to `DrawOfferManager` | Automated -- `TestGameSession.testRejectedClaimRegistersDrawOfferToOpponent` |
+| Castling accepted after an earlier touch of another piece | King-then-rook castling commitment ignored own/opponent touches made before the king (only rook-first was guarded); no independent check of accepted moves | Automated -- `TestGameSessionFlow.knightTouchedInIllegalMoveStillBindsWhenCastlingAfterRestoration`, `TestTouchMoveEvaluator`, `TestFirstTouchInvariant`, touch-move e2e |
+| Held piece listed as captured on the opponent's screen | `DRAG_START` empties the source square on the observer's board and `recomputeSideArea` derives off-board pieces from the board | Automated -- `opponent-drag.spec.ts` (client-only fix) |
+| Illegal move hidden behind a released-piece violation | A release counted as a legal move when only the released piece matched it, ignoring a piece displaced earlier (`Ke1-b1` then `Ra1-c1`); the restore target was the illegal board itself, so no penalty and nothing to revert | Automated -- `TestArbiterEngine` (release-binding tests), `TestGameSessionFlow.beginnerCastlingWithKingOnB1IsIllegalMoveThenQueensideCastlingIsRequired`, `TestRestoreTargetInvariant`, `rules-extra.spec.ts` |
 | Internal exceptions leaked technical text into the arbiter panel | Catch-all sent raw `e.getMessage()` to the client | Manual -- `sendInternalError` separates friendly `message` from `devDetail`; verified via dev console |
 
 ---

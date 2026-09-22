@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.1.5 — Released Move Finality Guard](CHANGELOG.md#015--released-move-finality-guard--2026-09-22)
+See [0.1.6 — Touch-Move and Release Guards](CHANGELOG.md#016--touch-move-and-release-guards--2026-09-22)
 for this release.
 
 ## Documentation
@@ -42,7 +42,7 @@ for this release.
 
 Requires a JDK (17+) and Maven.
 
-On Windows, `start.bat` fetches the latest pushed `codex/further-hardening` commit and runs it
+On Windows, `start.bat` fetches the latest pushed `claude/fixing` commit and runs it
 from `..\otb-chess-stable`. Push verified changes to that branch, restart `start.bat`, then test
 at http://localhost:8080 before merging the PR. Local uncommitted edits are excluded; use
 `start-dev.bat` to run those. A failed fetch stops startup instead of serving an older commit.

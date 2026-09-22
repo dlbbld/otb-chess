@@ -3,6 +3,31 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.1.6 — Touch-Move and Release Guards
+
+- [x] Keep an earlier binding touch over the king-and-rook castling commitment, including a touch
+  made during an illegal move earlier in the same turn. Added `FirstTouchInvariant`, an independent
+  fail-closed re-check of FIDE 4.3 before any move is accepted, extended to 0.1.5's latched final
+  move after the merge.
+- [x] Stop listing a piece held in a player's hand as captured material on the opponent's screen.
+- [x] Bind a release only when the whole board matches that legal move, so an illegal displacement
+  followed by a legal-looking one is the illegal move it is, with its penalty. Added
+  `RestoreTargetInvariant` over every restore target. Documented the FIDE 4.4.1 reading as A-008.
+- [x] State the king exposure instead of predicting it, and move the library's reason wording into
+  `messages/illegal-move-reasons.properties`.
+- [x] Merge released `main` (0.1.5) into `claude/fixing` and reconcile both released-piece designs.
+- [x] Prepare version `0.1.6`, the dated changelog and README link. Use **0.1.6 — Touch-Move and
+  Release Guards** unchanged for the PR title, changelog version name, and GitHub release title.
+- [x] Fill the gaps in the release and deployment documentation found while following it: version
+  pins, changelog anchor, launcher branch, a branch older than the last release, and deployment's
+  update half. Deploy-operator access (ACL + `NOPASSWD` grant, `delete_child` gotcha) and the
+  public-path verification came from the deployment session.
+- [ ] Manually verify the pushed release candidate through `start.bat`, including the three
+  reported journeys and the visible `v0.1.6`.
+- [ ] Merge the PR, then tag and publish `0.1.6`.
+- [ ] Deploy `0.1.6` (supersedes the pending `0.1.5` deployment; production is on `0.1.4`), then
+  verify live health, version, and a two-player flow.
+
 ## 0.1.5 — Released Move Finality Guard
 
 - [x] Start `codex/further-hardening` from current `main` for the next round of beta bug fixes.
@@ -30,8 +55,8 @@ release's tasks until it ships.
   the two focused release/launcher Playwright tests passed; and the packaged jar reports `0.1.5`.
 - [x] Manually verify the pushed release candidate through `start.bat`, including the reported
   Kf8/Revert journey and the visible `v0.1.5` (approved 2026-09-22).
-- [ ] Merge PR #16, tag and publish `0.1.5`, deploy it, then verify live health, version, and a
-  two-player flow.
+- [x] Merge PR #16, tag and publish `0.1.5` (merge commit `d06d89b`, 2026-09-22).
+- [ ] Deploy `0.1.5`, then verify live health, version, and a two-player flow.
 
 ## Publish the server (beta)
 
@@ -111,6 +136,45 @@ deferred privacy notice remains open.
 - Smoke test: `node tools/smoke-ws.mjs ws://localhost:9000` (or `wss://<prod-host>` once live).
 - Deploying updates: static (HTML/JS/CSS) is served with `Cache-Control: no-store` and read from disk per request, so client changes go live on a normal browser refresh. Java changes need `mvn -DskipTests package` + `sudo launchctl kickstart -k system/io.github.dlbbld.otbchess.app`. **One-time gotcha (resolved):** Cloudflare had edge-cached the old `game.js` (origin sent no cache headers), silently serving stale client code after deploys; fixed by the `no-store` header + a one-off Cloudflare **Purge Everything**. If a deploy ever looks stale again, verify the origin with a `?v=` cache-buster, then purge.
 - Remaining for go-live (needs the Cloudflare account + a domain): `cloudflared` named tunnel → Caddy origin; add domain to Cloudflare; `launchd` plists for app + Caddy + cloudflared (KeepAlive, disable sleep/App Nap); Cloudflare Access for the invited-email beta. Optional Phase 1 leftover: Dockerfile (VPS portability path).
+
+## Bug fixes (`claude/fixing`)
+
+- [x] Review the branch after its merge of released `main` (`e0a994c`) and the latched-move
+  first-touch follow-up (`f8a0d38`). Check the interaction between earlier touch obligations,
+  completed-move finality, restore-target validation and held-piece rendering; run the full
+  Java and Playwright suites before pushing the launcher update for manual testing. No blocking
+  findings. `mvn -q package` passed all 241 Java tests; `npx playwright test` passed all 132
+  browser tests (7.0 minutes), including both released Kf8 regressions and all three new bug
+  journeys. Full coverage was required because these fixes share move/recovery and board UI paths.
+- [x] Point `start.bat` at the latest pushed `claude/fixing` commit and align the launcher
+  regression fixtures and current workflow documentation. Keep the version at `0.1.5` until
+  the next release is prepared; identify this test branch by the launcher's branch/commit banner.
+  The Java launcher test now checks failure when only the former testing branch is available;
+  the browser test serves successive `claude/fixing` commits from an isolated Git remote.
+- [ ] Manually test `claude/fixing` on the ThinkPad before preparing and merging its release PR.
+
+- [x] **Castling accepted despite an earlier touch-move obligation.** After 1. g3 e5 2. Bg2 d5
+  3. Nf3 Nc6, White played `Nb1-b3` (illegal), put the knight back and castled short; the castling
+  was accepted. The king-then-rook castling commitment overrode the earlier knight touch. It now
+  applies only when no earlier touch binds. Added `FirstTouchInvariant`, an independent fail-closed
+  re-check of the first-touch rule before any move is accepted. Unit tests and the literal e2e
+  journey pin both.
+- [x] **Pressed piece shows as captured material on the opponent's screen.** While the player on
+  move held a piece (e.g. White pressed the a2 pawn), the opponent's view listed it among the
+  captured material beside the board until it was released. The side-area count now treats a
+  piece lifted off its square as still in play. Client-only fix; the literal e2e journey (White
+  holds a2, Black holds h7) pins both colours.
+- [x] **Beginner castling Ke1-b1, Ra1-c1 got a released-piece violation instead of an illegal
+  move.** The rook release counted as the legal Rc1 although the king already stood on b1, so the
+  illegal move escaped its penalty and the "revert" target was the illegal board itself. A release
+  now binds only when the whole board matches the legal move. Afterwards White must castle
+  queenside (FIDE 4.4.1; interpretation documented as A-008). Added `RestoreTargetInvariant`, a
+  fail-closed check of every restore target. Unit tests and the literal e2e journey pin it.
+- [x] **Illegal-move reason stated the exposure conditionally.** A move that took a shielding
+  piece off the king's line was reported as "it would expose the own king to check" — the library's
+  wording for a move that was only proposed. The player made the move, so the arbiter now states
+  "it exposes the own king to check", matching the existing "it leaves the own king in check".
+  The conditional wording stays for a draw claim's presented SAN move, which was not played.
 
 ## Backlog (not scheduled)
 

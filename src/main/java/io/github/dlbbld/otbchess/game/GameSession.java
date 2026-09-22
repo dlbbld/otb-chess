@@ -21,6 +21,7 @@ import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse.IllegalMoveDetail;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.arbiter.MidPlayValidator;
+import io.github.dlbbld.otbchess.arbiter.RestoreTargetInvariant;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
@@ -194,6 +195,7 @@ public class GameSession {
           ? Optional.of(finalMoveCommitment.position())
           : arbiter.findReleasedPieceCommitmentPosition(board, currentSequence);
       if (committedReleasePosition.isPresent()) {
+        RestoreTargetInvariant.verify(board, committedReleasePosition.get());
         midPlayResponse = Optional.of(midPlayResponse.get().withRestorePosition(committedReleasePosition.get()));
         restorationFromReleasedPiece = true;
       } else {
@@ -328,6 +330,11 @@ public class GameSession {
         && !io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
       return Optional.empty();
     }
+    // Safety net: never auto-accept a move that breaks the first-touch rule. The clock press then
+    // hits the same check in ArbiterEngine, which stops instead of recording the move.
+    if (!io.github.dlbbld.otbchess.touchmove.FirstTouchInvariant.isHonoured(currentSequence, board, matchedMove)) {
+      return Optional.empty();
+    }
 
     // Speculatively perform the matched move and check whether the resulting position ends the
     // game (checkmate, stalemate, dead position, fivefold, 75-move).
@@ -349,6 +356,8 @@ public class GameSession {
   }
 
   private ArbiterResponse handleArbiterResponse(ArbiterResponse response, Side side, boolean keepDrawOffer) {
+    // Safety net: stop before any state change if the arbiter asks for an unjustifiable restore.
+    response.restorePosition().ifPresent(target -> RestoreTargetInvariant.verify(board, target));
     switch (response.type()) {
       case MOVE_ACCEPTED -> {
         // Perform the move on the internal board
@@ -1059,6 +1068,7 @@ public class GameSession {
   }
 
   public synchronized void enterWaitingForRestoration(BitboardPosition restorationTargetPosition) {
+    RestoreTargetInvariant.verify(board, restorationTargetPosition);
     this.waitingForRestoration = true;
     this.restorationResumePending = false;
     this.waitingForReady = false;
