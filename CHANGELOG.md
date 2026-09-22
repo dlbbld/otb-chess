@@ -38,6 +38,16 @@ the game rather than let it continue on a move the arbiter cannot justify.
   illegal king placement. The clock press is one illegal move; after the restoration the touches
   bind under FIDE 4.4.1 and queenside castling must be played.
 
+### Documentation
+
+- The release procedure names where the version is pinned, the changelog anchor form, the branch
+  hardcoded in the manual-testing launcher, and the case of a branch older than the last release.
+- Deploying updates ([SETUP.md §12](SETUP.md#12-deploying-updates)) covers what it was missing:
+  moving the production checkout to the published tag, the scoped ACL and `NOPASSWD` grant an
+  operator other than `chess-server` needs (including the `delete_child` gotcha that failed the
+  0.1.4 deploy), rolling back, and verifying through the public URL and WebSocket rather than
+  localhost alone.
+
 ## 0.1.5 — Released Move Finality Guard — 2026-09-22
 
 This release closes a released-piece loophole that could replace an already final king move with

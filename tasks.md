@@ -18,6 +18,10 @@ release's tasks until it ships.
 - [x] Merge released `main` (0.1.5) into `claude/fixing` and reconcile both released-piece designs.
 - [x] Prepare version `0.1.6`, the dated changelog and README link. Use **0.1.6 — Touch-Move and
   Release Guards** unchanged for the PR title, changelog version name, and GitHub release title.
+- [x] Fill the gaps in the release and deployment documentation found while following it: version
+  pins, changelog anchor, launcher branch, a branch older than the last release, and deployment's
+  update half. Deploy-operator access (ACL + `NOPASSWD` grant, `delete_child` gotcha) and the
+  public-path verification came from the deployment session.
 - [ ] Manually verify the pushed release candidate through `start.bat`, including the three
   reported journeys and the visible `v0.1.6`.
 - [ ] Merge the PR, then tag and publish `0.1.6`.
