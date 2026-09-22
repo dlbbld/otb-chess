@@ -321,6 +321,53 @@ class TestGameSessionFlow {
     assertFalse(session.isRestoredPosition(initial));
   }
 
+  /**
+   * User-reported journey: 1. g3 e5 2. Bg2 d5 3. Nf3 Nc6, then White plays the impossible Nb1-b3 and presses the
+   * clock, puts the knight back on b1 by hand and castles short. The knight touch from the illegal move still binds
+   * (FIDE 7.5.1 with 4.3), so the castling must be a touch-move violation, not an accepted move.
+   */
+  @Test
+  void knightTouchedInIllegalMoveStillBindsWhenCastlingAfterRestoration() {
+    final Board board = new Board();
+    for (final String san : new String[] { "g3", "e5", "Bg2", "d5", "Nf3", "Nc6" }) {
+      board.moveStrict(san);
+    }
+    final GameSession session = new GameSession(TEST_TIME, 2, true, board);
+    session.startGame();
+    final BitboardPosition beforeTurn = session.getBoard().getBitboardPosition();
+
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0));
+    final BitboardPosition afterNb3 = BitboardPositions.from(beforeTurn)
+        .createChangedPosition(Square.B1, Piece.NONE).createChangedPosition(Square.B3, Piece.WHITE_KNIGHT).build();
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, session.pressClockButton(Side.WHITE, afterNb3).type());
+
+    // The player retracts Nb3-b1 by hand. The server records no events while waiting for restoration.
+    session.enterWaitingForRestoration();
+    assertTrue(session.isRestoredPosition(beforeTurn));
+    session.completeRestoration();
+
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 1));
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 2));
+    final BitboardPosition afterCastling = BitboardPositions.from(beforeTurn)
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.G1, Piece.WHITE_KING)
+        .createChangedPosition(Square.H1, Piece.NONE).createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
+
+    final ArbiterResponse violation = session.pressClockButton(Side.WHITE, afterCastling);
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, violation.type());
+    assertTrue(violation.message().contains("first touched the knight on b1"));
+    assertEquals(Side.WHITE, session.getHavingMove());
+
+    session.enterWaitingForRestoration(violation.restorePosition().orElse(beforeTurn));
+    assertTrue(session.isRestoredPosition(beforeTurn));
+    session.completeRestoration();
+
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.B1, Square.C3, Piece.WHITE_KNIGHT, 3));
+    final BitboardPosition afterNc3 = BitboardPositions.from(beforeTurn)
+        .createChangedPosition(Square.B1, Piece.NONE).createChangedPosition(Square.C3, Piece.WHITE_KNIGHT).build();
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, session.pressClockButton(Side.WHITE, afterNc3).type());
+    assertEquals(Side.BLACK, session.getHavingMove());
+  }
+
   private void makeSimpleMove(GameSession session, Square from, Square to, Piece piece) {
     final Side side = session.getHavingMove();
     session.recordEvent(side, BoardEvent.dragMove(from, to, piece, System.currentTimeMillis()));

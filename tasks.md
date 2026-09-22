@@ -84,6 +84,18 @@ privacy notice remains open.
 - Deploying updates: static (HTML/JS/CSS) is served with `Cache-Control: no-store` and read from disk per request, so client changes go live on a normal browser refresh. Java changes need `mvn -DskipTests package` + `sudo launchctl kickstart -k system/io.github.dlbbld.otbchess.app`. **One-time gotcha (resolved):** Cloudflare had edge-cached the old `game.js` (origin sent no cache headers), silently serving stale client code after deploys; fixed by the `no-store` header + a one-off Cloudflare **Purge Everything**. If a deploy ever looks stale again, verify the origin with a `?v=` cache-buster, then purge.
 - Remaining for go-live (needs the Cloudflare account + a domain): `cloudflared` named tunnel → Caddy origin; add domain to Cloudflare; `launchd` plists for app + Caddy + cloudflared (KeepAlive, disable sleep/App Nap); Cloudflare Access for the invited-email beta. Optional Phase 1 leftover: Dockerfile (VPS portability path).
 
+## Bug fixes (`claude/fixing`)
+
+- [x] **Castling accepted despite an earlier touch-move obligation.** After 1. g3 e5 2. Bg2 d5
+  3. Nf3 Nc6, White played `Nb1-b3` (illegal), put the knight back and castled short; the castling
+  was accepted. The king-then-rook castling commitment overrode the earlier knight touch. It now
+  applies only when no earlier touch binds. Added `FirstTouchInvariant`, an independent fail-closed
+  re-check of the first-touch rule before any move is accepted. Unit tests and the literal e2e
+  journey pin both.
+- [ ] **Pressed piece shows as captured material on the opponent's screen.** While the player on
+  move holds a piece (e.g. White presses the a2 pawn), the opponent's view lists it among the
+  captured material beside the board until it is released.
+
 ## Backlog (not scheduled)
 
 - [x] **Mention the arbiter in the starting-page description.** Updated the sentence to

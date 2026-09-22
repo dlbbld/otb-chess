@@ -264,6 +264,7 @@ If the player **first touches their own king on its starting square and then tou
 - **Side selection:** the touched rook's starting square determines the side -- kingside if h1/h8, queenside if a1/a8. If both sides would be legal but the player touched only one rook, the touched rook decides; the other side does **not** satisfy the obligation.
 - **Legality precondition:** the rule activates **only if castling on that side is legal in the current position**. If castling on the touched rook's side is not legal, the new rule does **not** fire and the existing rules apply (king touch establishes a normal own-piece obligation; the rook touch may add another own-piece obligation under those existing rules).
 - **Precedence:** the CASTLING obligation supersedes the OWN_PIECE obligation that the king touch would otherwise have created. They cannot both apply -- castling is the strictly more specific commitment.
+- **Earlier binding touch wins:** the rule only replaces the king touch's own obligation. If, before touching the king, the player touched an own piece that can move or an opponent piece that can be captured, that earlier touch stays binding (FIDE 4.3) and no castling commitment arises -- castling is then a touch-move violation. This includes a touch made during an earlier illegal move in the same turn (see [Persistence across interventions](#persistence-across-interventions)). Example: after 1. g3 e5 2. Bg2 d5 3. Nf3 Nc6, White plays `Nb1-b3`, presses the clock (illegal move), puts the knight back and castles short: rejected, the knight on b1 must move.
 
 #### Violation message (CASTLING)
 
@@ -413,6 +414,13 @@ Opponent-side castling-start notices are passive information only. They are show
 
 - If a touch-move obligation exists, the matched move must satisfy it.
 - If not satisfied -> touch-move violation (not counted as illegal move).
+
+### Touch-move safety net (fail closed)
+
+The touch-move obligation is chosen by ordered special rules (castling commitment, specific capture, first touch). A wrong choice would be silent: the move satisfies the wrong obligation and is accepted. So before a move is accepted, `FirstTouchInvariant` independently re-checks the FIDE 4.3 core from the raw action sequence: the first touched own piece that can move must be the moving piece (castling counts as a king move), and the first touched opponent piece that can be captured must be captured. The only exemption is the specified failed-castling case where the king has no legal move. Every special rule narrows this core but never overrides it.
+
+- **Clock press / correct-time draw offer:** if the arbiter accepted a move that breaks the core rule, the check throws. The move is not recorded; the player gets the generic internal-error message and the server logs the violation. The game never continues on a move the arbiter cannot justify.
+- **Auto-end:** a game-ending move that breaks the core rule is not auto-accepted; the clock press then hits the check above.
 
 ### Released-piece check (FIDE 4.7)
 
@@ -817,6 +825,7 @@ Slice 1 covers all arbiter messages (touch-move, released-piece, illegal-move, p
 | `PositionComparator` | Enumerates legal moves, compares resulting positions with the player's board state. |
 | `TouchMoveEvaluator` | Scans action sequence for the first touch-move obligation; recognises failed castling attempts where the king has no legal moves (via `CastlingAttemptDetector`); detects the king-then-rook combined touch (FIDE 4.4.a) and emits a `CASTLING` obligation when castling on the touched rook's side is legal. |
 | `CastlingAttemptDetector` | Shared helper that recognises a king-then-rook drag pattern; used by `TouchMoveEvaluator` and `ArbiterEngine`. |
+| `FirstTouchInvariant` | Fail-closed safety net: independently re-checks that an accepted move honours the first binding touch (FIDE 4.3) and throws if not, so an evaluator bug stops the move instead of recording it. |
 | `ArbiterEngine` | Two-layer evaluation: position comparison + touch-move + released-piece + castling-attempt explanation. Builds structured `IllegalMoveDetail` / `ReleasedPieceContext` records used by typed message rendering. |
 | `IllegalMoveTracker` | Tracks illegal-move count per side; configurable limit (1-10 or unlimited, default 2). |
 | `MidPlayValidator` | Validates opponent-piece movement and piece-restoration during play. Allows opponent-piece **removal** (capture-by-removal); blocks opponent-piece drag-on-board. |
@@ -866,6 +875,7 @@ Each row names a verification path: an automated test (where applicable) or a ma
 | Claim-accepted text duplicated under result panel | `GameResult.description` reused the long claim-accepted text | Automated -- `TestGameSession.testAcceptedClaimCarriesShortGameEndDescriptionAndPerPlayerMessages` |
 | Second draw claim on same move silently allowed | No per-turn ledger | Automated -- `TestGameSession.testSecondClaimOnSameMoveIsRejected` |
 | Rejected claim didn't become a draw offer | No conversion path from `DrawClaimResult` to `DrawOfferManager` | Automated -- `TestGameSession.testRejectedClaimRegistersDrawOfferToOpponent` |
+| Castling accepted after an earlier touch of another piece | King-then-rook castling commitment ignored own/opponent touches made before the king (only rook-first was guarded); no independent check of accepted moves | Automated -- `TestGameSessionFlow.knightTouchedInIllegalMoveStillBindsWhenCastlingAfterRestoration`, `TestTouchMoveEvaluator`, `TestFirstTouchInvariant`, touch-move e2e |
 | Internal exceptions leaked technical text into the arbiter panel | Catch-all sent raw `e.getMessage()` to the client | Manual -- `sendInternalError` separates friendly `message` from `devDetail`; verified via dev console |
 
 ---

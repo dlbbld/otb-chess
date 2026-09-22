@@ -259,3 +259,47 @@ test('clicking the rook before castling is a touch-move violation', async ({ bro
 
   await expect(white.locator('#arbiterMessage')).toContainText(/touch-move/i);
 });
+
+// User-reported journey: after 1. g3 e5 2. Bg2 d5 3. Nf3 Nc6, White plays the impossible
+// Nb1-b3 and presses the clock, puts the knight back by hand and castles short. The knight
+// touch from the illegal move still binds, so castling must be rejected, not accepted.
+test('knight touched in an illegal move still binds when castling after putting it back', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  const opening: [typeof white, string, string][] = [
+    [white, 'g2', 'g3'], [black, 'e7', 'e5'],
+    [white, 'f1', 'g2'], [black, 'd7', 'd5'],
+    [white, 'g1', 'f3'], [black, 'b8', 'c6'],
+  ];
+  for (const [page, from, to] of opening) {
+    await dragPiece(page, from, to);
+    await pressClock(page);
+    await expect(page.locator('#arbiterMessage')).toContainText('Move accepted');
+  }
+
+  await dragPiece(white, 'b1', 'b3');
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Illegal move');
+
+  await dragPiece(white, 'b3', 'b1'); // retract by hand, no Revert button
+  await expect(white.locator('#arbiterMessage')).toContainText('Clock restarted', { timeout: 15_000 });
+
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Touch-move violation');
+  await expect(white.locator('#arbiterMessage')).toContainText('You first touched the knight on b1');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('They first touched the knight on b1');
+
+  await clickRestore(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Clock restarted', { timeout: 15_000 });
+  await dragPiece(white, 'b1', 'c3');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await expectPiece(black, 'c3', 'WHITE_KNIGHT');
+  await expectPiece(black, 'e1', 'WHITE_KING');
+});

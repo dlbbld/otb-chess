@@ -317,6 +317,11 @@ public class GameSession {
         && !io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
       return Optional.empty();
     }
+    // Safety net: never auto-accept a move that breaks the first-touch rule. The clock press then
+    // hits the same check in ArbiterEngine, which stops instead of recording the move.
+    if (!io.github.dlbbld.otbchess.touchmove.FirstTouchInvariant.isHonoured(currentSequence, board, matchedMove)) {
+      return Optional.empty();
+    }
 
     // Speculatively perform the matched move and check whether the resulting position ends the
     // game (checkmate, stalemate, dead position, fivefold, 75-move).

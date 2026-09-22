@@ -28,6 +28,7 @@ import io.github.dlbbld.otbchess.core.PositionComparator;
 import io.github.dlbbld.otbchess.event.ActionSequence;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 import io.github.dlbbld.otbchess.event.BoardEventType;
+import io.github.dlbbld.otbchess.touchmove.FirstTouchInvariant;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveObligation;
 import io.github.dlbbld.otbchess.touchmove.TouchMoveType;
@@ -188,6 +189,10 @@ public class ArbiterEngine {
         return handleTouchMoveViolation(obligation.get());
       }
     }
+
+    // Safety net: an independent re-check of the first-touch rule. Throws, so the move is never
+    // recorded, if the obligation chain above accepted a move it should have rejected.
+    FirstTouchInvariant.verify(sequence, board, matchedMove);
 
     // Move accepted
     return ArbiterResponse.moveAccepted(matchedMove);
