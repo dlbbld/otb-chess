@@ -212,6 +212,22 @@ curl -s -o /dev/null -w '%{http_code}\n' https://play.otb-chess.app/        # 20
 Publishing a release does not change what this host serves: it keeps running the built jar until
 it is updated here. Run the commands as `chess-server` in `/Users/chess-server/Claude/otb-chess`.
 
+**Operator access.** The default operator is `chess-server`, who owns the checkout and the
+LaunchDaemon plists. A different macOS user can instead be granted scoped access — an ACL for
+write access to the checkout, plus a `NOPASSWD` sudoers rule limited to the one `launchctl
+kickstart` command below — rather than logging in as `chess-server`. Example, for user `NAME`:
+```bash
+sudo chmod -R +a "NAME allow read,write,execute,delete,delete_child,add_file,add_subdirectory,search,list,file_inherit,directory_inherit" \
+  /Users/chess-server/Claude/otb-chess
+echo 'NAME ALL=(root) NOPASSWD: /bin/launchctl kickstart -k system/io.github.dlbbld.otbchess.app' \
+  | sudo tee /etc/sudoers.d/NAME-otbchess
+sudo chmod 440 /etc/sudoers.d/NAME-otbchess
+```
+**ACL gotcha:** the grant must include `delete_child`. Without it, `write` and `delete` alone are
+not enough — Maven's resource-copy step fails with `Operation not permitted` when overwriting a
+file it does not own. If that happens anyway, `rm -rf target` first: a clean rebuild recreates
+every file under the grantee's own ownership and does not need `delete_child` again.
+
 - **Static** (HTML/JS/CSS): served `no-store` from disk → a normal browser refresh shows changes.
 - **Java**: move the checkout to the published tag, rebuild, restart the app daemon:
   ```bash
@@ -222,13 +238,17 @@ it is updated here. Run the commands as `chess-server` in `/Users/chess-server/C
   sudo launchctl kickstart -k system/io.github.dlbbld.otbchess.app
   ```
   The daemon is installed system-wide in `/Library/LaunchDaemons` and runs as `chess-server`, so
-  the restart asks for an administrator password. The build itself does not.
-- **Verify**: `/api/version` reports the deployed version, `/api/health` reports
-  `{"status":"ok","websocket":true}`, then play a two-player flow through the public URL:
+  the restart asks for an administrator password (unless the operator has the NOPASSWD grant
+  above). The build itself does not.
+- **Verify**: check the local process first, then the public path — a healthy `localhost:8080`
+  does not guarantee Caddy and the Cloudflare Tunnel are serving the new build too:
   ```bash
-  curl -s http://localhost:8080/api/version
-  curl -s http://localhost:8080/api/health
+  curl -s http://localhost:8080/api/version                                # matches the deployed tag
+  curl -s http://localhost:8080/api/health                                 # {"status":"ok","websocket":true}
+  curl -s -o /dev/null -w '%{http_code}\n' https://play.otb-chess.app/     # 200
+  node tools/smoke-ws.mjs wss://play.otb-chess.app                        # OK: gameCreated ...
   ```
+  Then play a two-player flow through the public URL.
 - **Roll back**: check out the previous tag and repeat the rebuild and restart. The game state is
   in memory only, so a restart ends running games — deploy when the site is idle.
 
