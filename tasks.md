@@ -28,8 +28,8 @@ release's tasks until it ships.
   procedure. Use **0.1.5 — Released Move Finality Guard** unchanged for the PR title, changelog
   version name, and GitHub release title. The release-preparation build passed all 219 Java tests;
   the two focused release/launcher Playwright tests passed; and the packaged jar reports `0.1.5`.
-- [ ] Manually verify the pushed release candidate through `start.bat`, including the reported
-  Kf8/Revert journey and the visible `v0.1.5`.
+- [x] Manually verify the pushed release candidate through `start.bat`, including the reported
+  Kf8/Revert journey and the visible `v0.1.5` (approved 2026-09-22).
 - [ ] Merge PR #16, tag and publish `0.1.5`, deploy it, then verify live health, version, and a
   two-player flow.
 
