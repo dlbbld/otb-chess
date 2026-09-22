@@ -108,6 +108,9 @@ public class ArbiterEngine {
   public ArbiterResponse evaluateFinalMove(Board board, BitboardPosition afterPosition,
       FinalMoveCommitment commitment, ActionSequence sequence) {
     if (commitment.position().equals(afterPosition)) {
+      // Same safety net as the ordinary acceptance below: a latched move is exempt from LATER
+      // touches, never from the first touch that bound the player when the move was completed.
+      FirstTouchInvariant.verify(sequence, board, commitment.move());
       return ArbiterResponse.moveAccepted(commitment.move());
     }
     final LegalMove move = commitment.move();

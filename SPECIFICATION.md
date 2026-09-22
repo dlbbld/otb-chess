@@ -429,7 +429,7 @@ Opponent-side castling-start notices are passive information only. They are show
 
 The touch-move obligation is chosen by ordered special rules (castling commitment, specific capture, first touch). A wrong choice would be silent: the move satisfies the wrong obligation and is accepted. So before a move is accepted, `FirstTouchInvariant` independently re-checks the FIDE 4.3 core from the raw action sequence: the first touched own piece that can move must be the moving piece (castling counts as a king move), and the first touched opponent piece that can be captured must be captured. The only exemption is the specified failed-castling case where the king has no legal move. Every special rule narrows this core but never overrides it.
 
-- **Clock press / correct-time draw offer:** if the arbiter accepted a move that breaks the core rule, the check throws. The move is not recorded; the player gets the generic internal-error message and the server logs the violation. The game never continues on a move the arbiter cannot justify.
+- **Clock press / correct-time draw offer / latched final move:** if the arbiter accepted a move that breaks the core rule, the check throws. A latched final move (see the released-piece rule) is exempt from *later* touches, never from the touch that bound the player when the move was completed. The move is not recorded; the player gets the generic internal-error message and the server logs the violation. The game never continues on a move the arbiter cannot justify.
 - **Auto-end:** a game-ending move that breaks the core rule is not auto-accepted; the clock press then hits the check above.
 
 ### Restore-target safety net (fail closed)

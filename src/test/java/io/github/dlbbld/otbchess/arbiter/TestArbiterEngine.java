@@ -4,12 +4,14 @@ package io.github.dlbbld.otbchess.arbiter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.board.LegalMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
@@ -1317,5 +1319,26 @@ class TestArbiterEngine {
 
     assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, response.type());
     assertEquals(afterNf3, response.restorePosition().orElseThrow());
+  }
+
+  @Test
+  void testLatchedFinalMoveThatBreaksTheFirstTouchStopsTheGame() {
+    // A latched move is exempt from later touches, never from the touch that bound the player when
+    // it was completed. findFinalMoveCommitment never latches such a move; the net is the guard if
+    // it ever did.
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    sequence.addEvent(BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 1));
+    final BitboardPosition afterE4 = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.E4, Piece.WHITE_PAWN).build();
+    final LegalMove pawnMove = board.getLegalMoves().stream()
+        .filter(m -> m.moveSpecification().fromSquare() == Square.E2)
+        .filter(m -> m.moveSpecification().toSquare() == Square.E4).findFirst().orElseThrow();
+
+    assertTrue(engine.findFinalMoveCommitment(board, sequence).isEmpty());
+    final ArbiterEngine.FinalMoveCommitment latched = new ArbiterEngine.FinalMoveCommitment(pawnMove, afterE4);
+    assertThrows(IllegalStateException.class, () -> engine.evaluateFinalMove(board, afterE4, latched, sequence));
   }
 }
