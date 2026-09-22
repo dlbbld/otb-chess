@@ -30,8 +30,8 @@ release's tasks until it ships.
   the two focused release/launcher Playwright tests passed; and the packaged jar reports `0.1.5`.
 - [x] Manually verify the pushed release candidate through `start.bat`, including the reported
   Kf8/Revert journey and the visible `v0.1.5` (approved 2026-09-22).
-- [ ] Merge PR #16, tag and publish `0.1.5`, deploy it, then verify live health, version, and a
-  two-player flow.
+- [x] Merge PR #16, tag and publish `0.1.5` (merge commit `d06d89b`, 2026-09-22).
+- [ ] Deploy `0.1.5`, then verify live health, version, and a two-player flow.
 
 ## Publish the server (beta)
 
@@ -113,6 +113,20 @@ deferred privacy notice remains open.
 - Remaining for go-live (needs the Cloudflare account + a domain): `cloudflared` named tunnel → Caddy origin; add domain to Cloudflare; `launchd` plists for app + Caddy + cloudflared (KeepAlive, disable sleep/App Nap); Cloudflare Access for the invited-email beta. Optional Phase 1 leftover: Dockerfile (VPS portability path).
 
 ## Bug fixes (`claude/fixing`)
+
+- [x] Review the branch after its merge of released `main` (`e0a994c`) and the latched-move
+  first-touch follow-up (`f8a0d38`). Check the interaction between earlier touch obligations,
+  completed-move finality, restore-target validation and held-piece rendering; run the full
+  Java and Playwright suites before pushing the launcher update for manual testing. No blocking
+  findings. `mvn -q package` passed all 241 Java tests; `npx playwright test` passed all 132
+  browser tests (7.0 minutes), including both released Kf8 regressions and all three new bug
+  journeys. Full coverage was required because these fixes share move/recovery and board UI paths.
+- [x] Point `start.bat` at the latest pushed `claude/fixing` commit and align the launcher
+  regression fixtures and current workflow documentation. Keep the version at `0.1.5` until
+  the next release is prepared; identify this test branch by the launcher's branch/commit banner.
+  The Java launcher test now checks failure when only the former testing branch is available;
+  the browser test serves successive `claude/fixing` commits from an isolated Git remote.
+- [ ] Manually test `claude/fixing` on the ThinkPad before preparing and merging its release PR.
 
 - [x] **Castling accepted despite an earlier touch-move obligation.** After 1. g3 e5 2. Bg2 d5
   3. Nf3 Nc6, White played `Nb1-b3` (illegal), put the knight back and castled short; the castling
