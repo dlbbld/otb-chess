@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import { resolve, join, dirname, basename } from 'node:path';
 import { createServer } from 'node:net';
 
-test('start.bat fetches the branch on each launch and serves its snapshot without local edits', async ({ page, request }) => {
+test('start.bat fetches the configured branch on each launch and serves its snapshot without local edits', async ({ page, request }) => {
   test.skip(process.platform !== 'win32', 'Windows batch launcher');
   test.setTimeout(90_000);
   const repo = process.cwd();
+  // Deliberately not the launcher's default branch: the served branch is configuration, not a constant.
+  const branch = 'release/launcher-e2e';
   const root = await mkdtemp(join(tmpdir(), 'otb-launcher-'));
   const remote = join(root, 'remote.git');
   const seed = join(root, 'seed');
@@ -51,7 +53,7 @@ test('start.bat fetches the branch on each launch and serves its snapshot withou
     git(seed, 'push', 'origin', 'main');
     git(root, 'clone', '--branch', 'main', remote, checkout);
     const checkoutSha = git(checkout, 'rev-parse', 'HEAD');
-    git(seed, 'switch', '-c', 'claude/fixing');
+    git(seed, 'switch', '-c', branch);
 
     const index = await readFile(join(seed, 'static', 'index.html'), 'utf8');
     const description = 'An educational chessboard that simulates physical board play with an arbiter.';
@@ -61,26 +63,31 @@ test('start.bat fetches the branch on each launch and serves its snapshot withou
     // Use the already-built real server; this test targets fetching/checkout/launch, not Maven itself.
     await writeFile(join(bin, 'mvn.cmd'), `@echo off\r\njava -jar "${join(repo, 'target', 'otb-chess.jar')}"\r\n`);
 
-    for (const marker of ['First pushed branch snapshot', 'Latest pushed branch snapshot']) {
+    for (const [run, marker] of ['First pushed branch snapshot', 'Latest pushed branch snapshot'].entries()) {
       await writeFile(join(seed, 'static', 'index.html'), index.replace(description, marker));
       git(seed, 'add', 'static/index.html');
       git(seed, 'commit', '-m', marker);
-      git(seed, 'push', 'origin', 'claude/fixing');
+      git(seed, 'push', 'origin', branch);
       const expectedSha = git(seed, 'rev-parse', 'HEAD');
       const httpPort = await freePort();
       const wsPort = await freePort();
       const url = `http://127.0.0.1:${httpPort}`;
       output = '';
-      server = spawn('cmd.exe', ['/d', '/c', 'call start.bat'], {
+      // Cover both ways of configuring the branch: the environment variable, then the argument.
+      const viaArgument = run === 1;
+      const env = {
+        ...process.env,
+        PATH: `${bin};${process.env.PATH}`,
+        OTB_BIND_HOST: '127.0.0.1',
+        OTB_HTTP_PORT: String(httpPort),
+        OTB_WS_PORT: String(wsPort),
+        OTB_STATIC_DIR: 'static',
+      };
+      delete env.OTB_TEST_BRANCH;
+      if (!viaArgument) env.OTB_TEST_BRANCH = branch;
+      server = spawn('cmd.exe', ['/d', '/c', viaArgument ? `call start.bat ${branch}` : 'call start.bat'], {
         cwd: checkout,
-        env: {
-          ...process.env,
-          PATH: `${bin};${process.env.PATH}`,
-          OTB_BIND_HOST: '127.0.0.1',
-          OTB_HTTP_PORT: String(httpPort),
-          OTB_WS_PORT: String(wsPort),
-          OTB_STATIC_DIR: 'static',
-        },
+        env,
         windowsHide: true,
       });
       server.stdout?.on('data', chunk => { output += chunk; });
@@ -93,6 +100,7 @@ test('start.bat fetches the branch on each launch and serves its snapshot withou
       await page.goto(url);
       await expect(page.getByText(marker, { exact: true })).toBeVisible();
       await expect(page.getByText('Uncommitted local edit', { exact: true })).toHaveCount(0);
+      expect(output).toContain(`Serving ${branch} commit ${expectedSha}`);
       expect(git(stable, 'rev-parse', 'HEAD')).toBe(expectedSha);
       expect(git(checkout, 'rev-parse', 'HEAD')).toBe(checkoutSha);
       expect(git(checkout, 'branch', '--show-current')).toBe('main');

@@ -36,8 +36,10 @@ The Maven project version and Git tag contain only `VERSION`, for example `0.1.5
    `tests/e2e/version.spec.ts`, whose test name carries the version too. `git grep` the previous
    version to catch any other pin. Verify `/api/version` and the visible version on both the lobby
    and board pages.
-6. Point the manual-testing launcher at the release branch: the branch name is hardcoded in
-   `start.bat` and in `tests/e2e/launcher.spec.ts`, so both change with every release branch.
+6. No launcher edit is needed: `start.bat` serves whatever branch `OTB_TEST_BRANCH` names, falling
+   back to its first argument and then to the default `claude/fixing`. When the release branch is
+   not the default, run it as `start.bat <release-branch>` (or set `OTB_TEST_BRANCH`) in step 1 of
+   the manual test below.
 7. Run the full Java suite. Run the full Playwright suite for gameplay, shared state, or common UI
    changes; focused Playwright coverage is sufficient for isolated release metadata after the
    affected behavior has already passed the full suite.
@@ -46,8 +48,9 @@ The Maven project version and Git tag contain only `VERSION`, for example `0.1.5
 
 ## Manual test and publish
 
-1. Run `start.bat` to fetch the pushed release branch into the stable worktree. Verify the version
-   and the changed user journey manually before merging.
+1. Run `start.bat <release-branch>` to fetch the pushed release branch into the stable worktree
+   (plain `start.bat` serves the default branch). Verify the version and the changed user journey
+   manually before merging.
 2. Merge the PR into `main` only after automated and manual verification pass.
 3. Create the `VERSION` tag from the merge commit and publish a GitHub release whose title is the
    canonical release title. Use the matching changelog entry as the release notes.

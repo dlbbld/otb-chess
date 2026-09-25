@@ -151,7 +151,15 @@ deferred privacy notice remains open.
   the next release is prepared; identify this test branch by the launcher's branch/commit banner.
   The Java launcher test now checks failure when only the former testing branch is available;
   the browser test serves successive `claude/fixing` commits from an isolated Git remote.
+- [x] Take the served branch out of `start.bat`: it resolves `OTB_TEST_BRANCH`, else the first
+  argument, else the default `claude/fixing`, so a release no longer edits the launcher and an old
+  testing branch can be deleted. `RELEASING.md` step 6 now sets the branch instead of editing files.
+  The Java launcher test covers the default, both override forms and the failure guarantees, plus a
+  branch-resolution contract check that runs on every platform; the browser test drives the real
+  launcher twice against an overridden branch.
 - [ ] Manually test `claude/fixing` on the ThinkPad before preparing and merging its release PR.
+- [ ] Run the Windows-only launcher coverage (`TestWindowsLauncher` and `tests/e2e/launcher.spec.ts`)
+  on the ThinkPad before merging: both are skipped on the iMac.
 
 - [x] **Castling accepted despite an earlier touch-move obligation.** After 1. g3 e5 2. Bg2 d5
   3. Nf3 Nc6, White played `Nb1-b3` (illegal), put the knight back and castled short; the castling
