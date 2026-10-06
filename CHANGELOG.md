@@ -66,8 +66,9 @@ castling after an arbiter recovery.
 
 - `start.bat` fetches the latest pushed `codex/further-hardening` commit and serves it from the
   stable worktree. A failed fetch stops startup, and local uncommitted edits remain isolated.
-- The release procedure is now documented in `RELEASING.md`, including the rule that the canonical
-  release title is used unchanged for the PR, changelog version name, and GitHub release.
+- The release procedure is now documented in `RELEASING.md`, including the naming split between
+  the PR and changelog (`VERSION — NAME`), the GitHub release title (`VERSION`), and the release-
+  notes heading (`NAME`).
 
 The gameplay fix passed all 217 Java tests and all 127 Playwright tests. The launcher follow-up
 passed two focused Windows Java cases plus a Playwright test that launched successive pushed

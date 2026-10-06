@@ -17,14 +17,15 @@ release's tasks until it ships.
   `messages/illegal-move-reasons.properties`.
 - [x] Merge released `main` (0.1.5) into `claude/fixing` and reconcile both released-piece designs.
 - [x] Prepare version `0.1.6`, the dated changelog and README link. Use **0.1.6 — Touch-Move and
-  Release Guards** unchanged for the PR title, changelog version name, and GitHub release title.
+  Release Guards** for the PR title and changelog version name; title the GitHub release `0.1.6`
+  and begin its notes with **Touch-Move and Release Guards**.
 - [x] Fill the gaps in the release and deployment documentation found while following it: version
   pins, changelog anchor, launcher branch, a branch older than the last release, and deployment's
   update half. Deploy-operator access (ACL + `NOPASSWD` grant, `delete_child` gotcha) and the
   public-path verification came from the deployment session.
 - [ ] Manually verify the pushed release candidate through `start.bat`, including the three
   reported journeys and the visible `v0.1.6`.
-- [ ] Merge the PR, then tag and publish `0.1.6`.
+- [x] Merge PR #17, then tag and publish `0.1.6` (merge commit `a92ac68`, 2026-09-22).
 - [ ] Deploy `0.1.6` (supersedes the pending `0.1.5` deployment; production is on `0.1.4`), then
   verify live health, version, and a two-player flow.
 
@@ -50,8 +51,9 @@ release's tasks until it ships.
   each newly pushed snapshot while local edits and the local checkout remain intact. No game
   logic changed, so the focused launcher coverage suffices for this follow-up.
 - [x] Prepare version `0.1.5`, the dated changelog and README link, and a repeatable release
-  procedure. Use **0.1.5 — Released Move Finality Guard** unchanged for the PR title, changelog
-  version name, and GitHub release title. The release-preparation build passed all 219 Java tests;
+  procedure. Use **0.1.5 — Released Move Finality Guard** for the PR title and changelog version
+  name; title the GitHub release `0.1.5` and begin its notes with **Released Move Finality Guard**.
+  The release-preparation build passed all 219 Java tests;
   the two focused release/launcher Playwright tests passed; and the packaged jar reports `0.1.5`.
 - [x] Manually verify the pushed release candidate through `start.bat`, including the reported
   Kf8/Revert journey and the visible `v0.1.5` (approved 2026-09-22).
@@ -59,6 +61,11 @@ release's tasks until it ships.
 - [ ] Deploy `0.1.5`, then verify live health, version, and a two-player flow.
 
 ## Publish the server (beta)
+
+- [x] Restore the original GitHub release naming convention: releases `0.1.3` through `0.1.6`
+  use the version only as their GitHub title, while each descriptive name appears as the first
+  heading in the release notes. Update `RELEASING.md` and the agent instructions so future releases
+  keep that split.
 
 Architecture (reviewed): iMac running native `launchd` services → Cloudflare Tunnel
 (`cloudflared`, no inbound ports — fits the guest network) → Caddy single public origin
