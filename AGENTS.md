@@ -50,9 +50,9 @@ Long e2e runtimes are explicitly acceptable when the change has behavioral risk,
 - Do not work in this working tree at the same time as another agent; sequential use only.
 - `tasks.md` is the live-planning source of truth: record completed work there (check items in
   place, don't delete).
-- Follow `RELEASING.md` for releases. Use `VERSION — NAME` for the PR title, include it in the
-  dated changelog heading, title the GitHub release with `VERSION` only, and begin its notes with
-  `## NAME`.
+- Follow `RELEASING.md` for releases. Target the PR at `main`, title it with `NAME` only, and begin
+  its body with `## NAME`. Use `VERSION — NAME — DATE` for the changelog heading, title the GitHub
+  release with `VERSION` only, and begin its notes with `## NAME`.
 
 ## Commit messages
 

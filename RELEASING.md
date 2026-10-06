@@ -7,13 +7,16 @@ directly to `main`.
 
 Choose the version and descriptive name once. Use them in these exact forms:
 
-- pull-request title: `VERSION — NAME`;
+- pull-request target: `main`;
+- pull-request title: `NAME` only, without the version;
+- first heading in the pull-request body: `## NAME`;
 - changelog heading: `VERSION — NAME — DATE`;
 - GitHub release title: `VERSION`;
-- first heading in the GitHub release notes: `NAME`.
+- first heading in the GitHub release notes: `## NAME`.
 
-For example, the PR title is `0.1.5 — Released Move Finality Guard`, the GitHub release title is
-`0.1.5`, and its notes begin with `## Released Move Finality Guard`.
+For example, the PR title is `Released Move Finality Guard`, its body begins with
+`## Released Move Finality Guard`, the changelog heading includes
+`0.1.5 — Released Move Finality Guard`, and the GitHub release title is `0.1.5`.
 
 The Maven project version and Git tag also contain only `VERSION`.
 
@@ -42,7 +45,8 @@ The Maven project version and Git tag also contain only `VERSION`.
    changes; focused Playwright coverage is sufficient for isolated release metadata after the
    affected behavior has already passed the full suite.
 8. Rebuild the packaged jar and verify it reports the prepared version.
-9. Commit and push the release branch, then open or update the PR using `VERSION — NAME`.
+9. Commit and push the release branch, then open or update the PR against `main`. Set its title to
+   `NAME` only, without the version, and begin its body with `## NAME`.
 
 ## Manual test and publish
 
