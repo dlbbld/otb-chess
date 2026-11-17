@@ -257,7 +257,7 @@ release's tasks until it ships.
 ### Review of the second-pass fixes — 2026-11-17
 
 - [x] Review `d877341`, `3974c2b` and `ccd48cf` on macOS. The five second-pass fixes and the
-  draw-offer replay after reconnect are correct for their targets; 282 Java tests and 162
+  draw-offer replay after reconnect are correct for their targets; the Java suite and 162
   browser tests pass unchanged (the Windows-only launcher tests are skipped here). Three gaps of
   the same classes remained and are fixed below.
 - [x] **A Revert message was accepted from anyone at any time.** `handleRestorePosition` checked
@@ -283,8 +283,9 @@ release's tasks until it ships.
   the restoring player and only once, forced abort/join interleaving) and 4 browser cases in
   `third-pass.spec.ts`. The Revert and claim browser cases fail on `ccd48cf`; the abort/join
   browser case checks that both pages agree on one outcome, the forced interleaving is in Java.
-- [x] Verification on macOS: `mvn -o -q package` runs 293 Java tests with no failures (4
-  Windows-only launcher tests skipped). `CI=1 npx playwright test --retries=0` ran 167 tests:
+- [x] Verification on macOS: `mvn -o -q package` runs 292 Java tests with no failures (4
+  Windows-only launcher tests skipped; counted from a freshly emptied report directory - an
+  earlier figure of 293 included one stale report). `CI=1 npx playwright test --retries=0` ran 167 tests:
   165 passed, 1 skipped (Windows-only launcher), and the new abort/join case failed on a wrong
   expectation in the test itself (a refused abort leaves its refusal in the creator's message
   window). After correcting that expectation the four new cases passed 10 times each; the full
