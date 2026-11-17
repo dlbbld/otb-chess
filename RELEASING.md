@@ -38,9 +38,9 @@ The Maven project version and Git tag also contain only `VERSION`.
    version to catch any other pin. Verify `/api/version` and the visible version on both the lobby
    and board pages.
 6. No launcher edit is needed: `start.bat` serves whatever branch `OTB_TEST_BRANCH` names, falling
-   back to its first argument and then to the default `claude/fixing`. When the release branch is
-   not the default, run it as `start.bat <release-branch>` (or set `OTB_TEST_BRANCH`) in step 1 of
-   the manual test below.
+   back to its first argument and then to the default `latest-ai-model-review`. When the release
+   branch is not the default, run it as `start.bat <release-branch>` (or set `OTB_TEST_BRANCH`) in
+   step 1 of the manual test below.
 7. Run the full Java suite. Run the full Playwright suite for gameplay, shared state, or common UI
    changes; focused Playwright coverage is sufficient for isolated release metadata after the
    affected behavior has already passed the full suite.

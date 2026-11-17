@@ -166,7 +166,11 @@ deferred privacy notice remains open.
   The Java launcher test covers the default, both override forms and the failure guarantees, plus a
   branch-resolution contract check that runs on every platform; the browser test drives the real
   launcher twice against an overridden branch.
-- [ ] Manually test `claude/fixing` on the ThinkPad before preparing and merging its release PR.
+- [x] Make `latest-ai-model-review` the launcher's default testing branch: `claude/fixing` was
+  fast-forwarded into it and deleted, so `start.bat`, its contract test and the documentation now
+  name the new default.
+- [ ] Manually test `latest-ai-model-review` on the ThinkPad before preparing and merging its
+  release PR.
 - [ ] Run the Windows-only launcher coverage (`TestWindowsLauncher` and `tests/e2e/launcher.spec.ts`)
   on the ThinkPad before merging: both are skipped on the iMac.
 
