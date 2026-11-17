@@ -565,6 +565,12 @@ class Game {
       // Intentionally no visible update here.
     });
 
+    // Our own offer replaced an offer of the opponent that was still shown although we could no
+    // longer accept it: the panel no longer stands for anything.
+    this.ws.on('drawOfferExpired', () => {
+      document.getElementById('drawOfferPanel').style.display = 'none';
+    });
+
     this.ws.on('drawRejected', (data) => {
       document.getElementById('drawOfferPanel').style.display = 'none';
       // Personalised by the server ("You rejected..." / "Your opponent rejected...").

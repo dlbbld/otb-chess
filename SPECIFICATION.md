@@ -269,14 +269,23 @@ If the player **first touches their own king on its starting square and then tou
 - **Earlier binding touch wins:** the rule only replaces the king touch's own obligation. If, before touching the king, the player touched an own piece that can move or an opponent piece that can be captured, that earlier touch stays binding (FIDE 4.3) and no castling commitment arises -- castling is then a touch-move violation. This includes a touch made during an earlier illegal move in the same turn (see [Persistence across interventions](#persistence-across-interventions)). Example: after 1. g3 e5 2. Bg2 d5 3. Nf3 Nc6, White plays `Nb1-b3`, presses the clock (illegal move), puts the knight back and castles short: rejected, the knight on b1 must move.
 - **Completed move:** this obligation cannot replace a legal move already completed by release. For example,
   releasing Black's king from e8 on f8 commits Kf8; touching or moving the h8 rook afterwards cannot require castling.
+- **Started castling:** the same holds for a king released on its castling square. `Ke1-g1` commits White to kingside
+  castling (FIDE 4.7); touching or moving the a1 rook afterwards cannot turn this into "castle queenside". The arbiter
+  asks for `Rh1-f1`, and that is then accepted. See [A-010](docs/fide-deviations.md#a-010--a-release-and-a-touch-are-judged-in-the-order-they-happened).
+- **Rook touched first:** by FIDE 4.4.2 castling with that rook is not available on this move. A king then put on the
+  castling square commits to nothing: at the clock press the ruling is the touch-move violation naming the rook, not
+  "castling has been started", and it is not counted as an illegal move. The same applies to any other earlier touch
+  that the castling would break.
 
 #### Violation message (CASTLING)
 
-> _"Because you touched the king and the rook, and castling is legal, please perform the castling move."_
+The message names the touched rook and the side, so that it is unambiguous when both castlings are possible. Example for the a1 rook:
+
+> _"Because you touched the king and the rook on a1, and queenside castling is legal, please perform the queenside castling move."_
 
 The opponent is told:
 
-> _"Your opponent touched the king and the rook, and castling is legal. They are requested to restore the position and perform the castling move."_
+> _"Your opponent touched the king and the rook on a1, and queenside castling is legal. They are requested to restore the position and perform the queenside castling move."_
 
 ### Persistence across interventions
 
@@ -371,7 +380,7 @@ When the king's release on its castled square commits the player to a castling t
 
 If the same incomplete physical position follows an earlier king-then-rook touch sequence, the earlier FIDE 4.4.a commitment supplies the reason instead:
 
-> _"Because you touched the king and the rook, and castling is legal, please perform the castling move."_
+> _"Because you touched the king and the rook on h1, and kingside castling is legal, please perform the kingside castling move."_
 
 The king is not moved back -- it stays on the castled square because that's where it belongs in the committed move. The player is told exactly which rook move completes the castling. If the physical board already equals that required intermediate position (king on g1, rook still on h1), no **Revert** button is shown: there is nothing to restore, the player's clock resumes, and the player must complete castling by moving the rook and pressing the clock. If the player has also moved another piece after the king release, **Revert** restores the board to the required intermediate position.
 
@@ -670,12 +679,22 @@ The offerer currently receives no separate notification of invalidation -- their
 
 If the player offers a draw together with a clock-press but their move is invalid (illegal, touch-move, released-piece), the draw offer is **silently dropped**. It does not count as a repeated offer.
 
+Only this new offer is dropped. An offer that is already pending stays: the opponent's is not the player's to cancel, and an earlier one of their own is on the opponent's screen and cannot be withdrawn (FIDE 9.1.2.1).
+
+#### Counter offer
+
+An offer made while the opponent's offer **can still be accepted** is the acceptance of that offer: the game is drawn by agreement, with the usual personalised messages (the player who pressed second "accepted"). This covers both players pressing *Offer draw* at about the same time, and a rejected draw claim (which counts as an offer, FIDE 9.5) made while the opponent's offer is on the table. Policy [A-009](docs/fide-deviations.md#a-009--counter-offer-and-who-may-answer-a-draw-offer).
+
+If the opponent's offer can **no longer** be accepted (the player touched a piece or made the move, see *Loss of right to accept*), the new offer takes its place, and the panel that still showed the old offer is closed on the new offerer's side (`drawOfferExpired`).
+
 #### Accepting or rejecting
 
 Both outcomes are **personalised per player** so it is always clear who did what:
 
 - **Accepted** -> the result panel keeps `½-½` and _"The game is drawn by agreement."_ (the canonical result). On top, the arbiter message names the actor: _"You accepted the draw offer."_ to the accepter, _"Your opponent accepted the draw offer."_ to the offerer.
 - **Rejected** (the game continues) -> _"You rejected the draw offer."_ to the rejecter, _"Your opponent rejected the draw offer."_ to the offerer.
+
+Only the player the offer was made to can answer it. A reject or accept from the offering player -- possible only through a button pressed at the same instant or a modified client -- changes nothing: _"You cannot reject your own draw offer."_ / _"You cannot accept your own draw offer."_
 
 ---
 
@@ -771,7 +790,7 @@ Tracked in **Spec-driven implementation follow-ups** below.
 
 ### Outbound (server -> client)
 
-`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown).
+`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawOfferExpired` (to a player whose own offer replaced an outdated offer of the opponent: close the panel), `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown).
 
 #### Abandonment (player leaves the game)
 

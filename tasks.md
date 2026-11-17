@@ -306,13 +306,13 @@ release's tasks until it ships.
   promotion in three orders), honest play always got a move accepted again, and a touch-move
   ruling was always satisfiable by moving the named piece. 33,793 touch-move cases match FIDE
   4.3 without a single difference.
-- [x] Six inconsistencies are confirmed and open below. Each was first found by the fuzzer,
+- [x] Six inconsistencies were confirmed (fixed, see "Fixes for the third review pass" below). Each was first found by the fuzzer,
   reduced by hand and replayed through the real pages with ordinary clicks and drags (FEN for
   the castling cases: `r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1`). None produces a
   wrong game result on its own; all of them make the arbiter contradict itself or lose a draw
   offer. This pass records findings only; application code is unchanged.
 
-- [ ] **P1 — Contradictory castling orders: the king's release and a later rook touch pull to
+- [x] **P1 — Contradictory castling orders: the king's release and a later rook touch pull to
   different sides.** White plays Ke1-g1, puts the king back on e1, moves Ra1-b1 and presses
   the clock. Arbiter: "Castling has been started ... you must complete the castling move by
   moving the rook from h1 to f1." After Revert, White castles kingside exactly as told:
@@ -324,14 +324,14 @@ release's tasks until it ships.
   kingside lock first, the touch-move layer then demands the side of the first touched rook.
   Required: one ruling for the turn - the earlier commitment decides - and a message that names
   the side and the rook.
-- [ ] **P1 — "You must complete castling" after the rook was touched first.** White clicks the
+- [x] **P1 — "You must complete castling" after the rook was touched first.** White clicks the
   rook on a1, plays Ke1-c1 and presses the clock: "Castling has been started ... complete the
   castling move by moving the rook from a1 to d1." White does: "Touch-move violation: You
   first touched the rook on a1 ... but moved another piece ... move the rook from a1." By FIDE
   4.4.2 castling on that side was never available, so the first instruction is wrong, and the
   second message says the rook was not moved although it was. The released-piece lock ignores
   an earlier touch obligation; the fuzzer shows the same with an opponent piece touched first.
-- [ ] **P1 — "Your move is final. Press the clock to continue." when the clock press is then
+- [x] **P1 — "Your move is final. Press the clock to continue." when the clock press is then
   rejected.** Two ways: (a) White clicks the g2 pawn, plays h2-h3, then drags a Black pawn.
   After Revert both the restore and the resume message say the move is final; pressing the
   clock gives "Touch-move violation: You first touched the pawn on g2". (b) White plays Ke1-g1,
@@ -342,13 +342,13 @@ release's tasks until it ships.
   castling, and the server words the message from that flag alone. The fuzzer meets this in
   about one game in eleven. Required: say "final" only when a clock press on the restored
   position would be accepted.
-- [ ] **P1 — A counter offer replaces the pending draw offer instead of agreeing the draw.**
+- [x] **P1 — A counter offer replaces the pending draw offer instead of agreeing the draw.**
   White offers a draw; Black, with the offer on screen, presses Offer draw too. No draw. The
   single offer slot now holds Black's offer, Black's panel still shows White's: Accept answers
   "You cannot accept your own draw offer." Plausible in real play when both press at about the
   same time. Required: an offer made while the opponent's acceptable offer is pending is an
   acceptance.
-- [ ] **P1 — A player can reject, and thereby withdraw, their own draw offer.**
+- [x] **P1 — A player can reject, and thereby withdraw, their own draw offer.**
   `DrawOfferManager.rejectDraw` does not look at who rejects. In the case above Black presses
   Reject on the stale panel: Black's own offer is cancelled, White is told "Your opponent
   rejected the draw offer" and White's Accept panel disappears. Same result without a counter
@@ -357,11 +357,44 @@ release's tasks until it ships.
   offer is gone and Black loses the Accept button with a false message. FIDE 9.1.2.1: an offer
   cannot be withdrawn. Required: only the recipient can reject; a panel whose offer was
   replaced must be closed or its buttons must act on nothing.
-- [ ] **P3 — A page refresh inside the 1.5 s automatic resume delay re-enables the board.**
+- [x] **P3 — A page refresh inside the 1.5 s automatic resume delay re-enables the board.**
   `resync` enables the board of the player on move and `sendRecoveryState` knows restoration
   and Ready but not the resume delay, while the server drops board events until the clock
   restarts: pieces moved in that window are neither recorded as touches nor shown to the
   opponent. Needs a refresh at exactly that moment; no wrong result seen.
+
+### Fixes for the third review pass — 2026-11-17
+
+- [x] **One ruling per turn for a release and a touch (findings 1 and 2).** `ArbiterEngine.findReleaseRuling`
+  applies FIDE 4.7 and 4.3/4.4 in the order the player acted: a release binds only if it honours the touch
+  obligation in force at that moment, and once a release binds, later touches change nothing. King released on
+  g1, then the a1 rook moved: the arbiter asks for `Rh1-f1` and accepts it. Rook a1 touched first, then
+  `Ke1-c1`: touch-move ruling naming the rook from the first clock press on, not counted as an illegal move.
+  The castling touch-move message now names the rook and the side. Policy A-010.
+- [x] **"Your move is final" only when the clock press is accepted (finding 3).** New
+  `GameSession.isRestoredMoveFinal`; the server words the restore and resume messages from it. A started
+  castling and a move that broke touch-move are restored with the ordinary wording; the latter is restored to
+  the start of the turn, because it was never a move to go back to.
+- [x] **Counter offer agrees the draw (finding 4).** An offer made while the opponent's offer can still be
+  accepted is its acceptance - also the offer implied by a rejected draw claim. Policy A-009.
+- [x] **Only the recipient can answer an offer (finding 5).** `DrawOfferManager.rejectDraw` refuses the offering
+  side. When a player's own offer replaces an opponent's offer that could no longer be accepted, the server
+  sends `drawOfferExpired` and the client closes the outdated panel.
+- [x] **Refresh inside the automatic resume delay (finding 6).** The reconnecting player is sent the pause state,
+  so the board stays locked until `gameResumed`. Resume, the delayed resume and the clock press are one room
+  transaction each, so that notice cannot arrive after the message that ends the pause.
+- [x] **Seventh inconsistency, found by the fuzzer once the others were out of the way:** a draw offer made
+  together with an invalid move cancelled the offer that was already pending - the player's own earlier one
+  (a withdrawal, FIDE 9.1.2.1) or the opponent's - while the panel stayed on the other screen and Accept
+  answered "No draw offer is active". Now only the new offer is not registered.
+- [x] Tests: `TestFourthPassRegressions` (16), `TestFourthPassServerRegressions` (7), `fourth-pass.spec.ts` (8;
+  7 fail on `e29927a`, the eighth is a positive control). `RuleFuzzer`: 20,000 games with every check enabled,
+  0 findings (before the fixes: about one game in eleven). `TouchMoveOracle`: 33,793 cases, 0 differences.
+- [x] Verification on macOS: Java 315 run, 0 failures, 4 skipped (Windows-only launcher tests); Playwright
+  174 passed, 1 skipped (Windows-only); the new and the third-pass browser tests repeated five times each.
+- [ ] Not changed, noted for a decision: after a rejected draw claim with a move, a different move released
+  and then disturbed is still restored to the released position (wording is now correct, the Revert after the
+  next clock press brings the turn start back). Not reproduced as a player-visible contradiction.
 
 ### Review baseline verification
 

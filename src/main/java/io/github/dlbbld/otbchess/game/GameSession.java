@@ -335,8 +335,8 @@ public class GameSession {
 
     // Touch-move check (also pure read). If the matched move would violate touch-move, leave
     // detection to the clock press so the existing arbiter feedback flow handles it.
-    final java.util.Optional<io.github.dlbbld.otbchess.touchmove.TouchMoveObligation> obligation = io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator
-        .findObligation(currentSequence, board);
+    final java.util.Optional<io.github.dlbbld.otbchess.touchmove.TouchMoveObligation> obligation = arbiter
+        .findBindingObligation(board, currentSequence);
     if (finalMoveCommitment == null && obligation.isPresent()
         && !io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
       return Optional.empty();
@@ -485,15 +485,19 @@ public class GameSession {
     if (pauseMessage != null) {
       return ArbiterResponse.incompleteMove(pauseMessage);
     }
+    if (agreeDrawByCounterOffer(side)) {
+      return ArbiterResponse.incompleteMove(DRAW_AGREEMENT_DESCRIPTION);
+    }
 
     // Validate the move first (no side effects on the move state — evaluateClockPress is
     // pure; the move-performing happens in handleArbiterResponse, which we skip on success).
     final ArbiterResponse moveResponse = evaluateMove(afterPosition);
 
     if (moveResponse.type() != ArbiterResponseType.MOVE_ACCEPTED) {
-      // Move is not valid — drop any pending offer state and apply the standard intervention
-      // (illegal-move counter, restoration target, etc.) via handleArbiterResponse.
-      drawOfferManager.dropOfferDueToInvalidMove(side);
+      // Move is not valid — this offer is not registered, and the standard intervention applies
+      // (illegal-move counter, restoration target, etc.) via handleArbiterResponse. An offer that
+      // is already pending stays: the opponent's is not this player's to cancel, and an earlier
+      // one of their own cannot be withdrawn (FIDE 9.1.2.1) while it is on the opponent's screen.
       return handleArbiterResponse(moveResponse, side, false);
     }
 
@@ -530,6 +534,9 @@ public class GameSession {
     if (pauseMessage != null) {
       return DrawOfferManager.DrawOfferResult.repeated(pauseMessage);
     }
+    if (agreeDrawByCounterOffer(side)) {
+      return DrawOfferManager.DrawOfferResult.drawAgreed();
+    }
 
     final boolean offererHasMove = side == board.getSideToMove();
     final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
@@ -539,6 +546,23 @@ public class GameSession {
           sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
     }
     return result;
+  }
+
+  /**
+   * Both players want a draw: an offer made while the opponent's offer can still be accepted is the acceptance of
+   * that offer. Registering it as a new offer instead would replace the pending one and leave each player waiting
+   * for the other. An offer that can no longer be accepted (the recipient touched a piece or made the move) is not
+   * agreed this way; the new offer then simply takes its place.
+   *
+   * @return whether the game ended in a draw by agreement
+   */
+  private boolean agreeDrawByCounterOffer(Side side) {
+    if (!drawOfferManager.canAccept(side)) {
+      return false;
+    }
+    terminationActor = side;
+    endGame(new GameResult(GameResultType.DRAW_AGREEMENT, Side.NONE, DRAW_AGREEMENT_DESCRIPTION));
+    return true;
   }
 
   /** @return the refusal for an offer or claim made during a restoration pause, or {@code null} when play is on. */
@@ -580,10 +604,12 @@ public class GameSession {
     this.lastAcceptDrawRejection = null;
     terminationActor = side; // the player who accepted the offer (for the personalised message)
     final GameResult drawResult = new GameResult(GameResultType.DRAW_AGREEMENT, Side.NONE,
-        "The game is drawn by agreement.");
+        DRAW_AGREEMENT_DESCRIPTION);
     endGame(drawResult);
     return Optional.of(drawResult);
   }
+
+  private static final String DRAW_AGREEMENT_DESCRIPTION = "The game is drawn by agreement.";
 
   private String lastAcceptDrawRejection;
 
@@ -660,7 +686,9 @@ public class GameSession {
     // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. We register a
     // correct-time offer (the claimer is on the move) so it follows the standard accept /
     // reject / touch-piece-invalidation flow without going through the wrong-time escalation.
-    if (claimResult.convertsToDrawOffer()) {
+    // The same holds for this implied offer as for a spoken one: if the opponent's offer can still
+    // be accepted, both players want the draw and the game is drawn by agreement.
+    if (claimResult.convertsToDrawOffer() && !agreeDrawByCounterOffer(side)) {
       drawOfferManager.offerDrawCorrectTime(side, rejectedClaimDrawOfferMessage(type));
     }
 
@@ -1289,6 +1317,23 @@ public class GameSession {
    */
   public synchronized boolean isRestorationFromReleasedPiece() {
     return restorationFromReleasedPiece;
+  }
+
+  /**
+   * @return whether the position the board is restored to is the player's completed move, so that a clock press on it
+   *         is accepted. Narrower than {@link #isRestorationFromReleasedPiece()}: a king released on its castling
+   *         square is a commitment too, but the rook still has to be moved, and a move owed after a rejected draw
+   *         claim is not replaced by another released move. Only this method may word a message as "your move is
+   *         final".
+   */
+  public synchronized boolean isRestoredMoveFinal() {
+    if (!restorationFromReleasedPiece) {
+      return false;
+    }
+    if (mustExecuteMove != null) {
+      return positionBeforeTurn.afterMove(mustExecuteMove, board.getSideToMove()).equals(restorationTargetPosition);
+    }
+    return finalMoveCommitment != null && finalMoveCommitment.position().equals(restorationTargetPosition);
   }
 
   // ===== PGN export =====

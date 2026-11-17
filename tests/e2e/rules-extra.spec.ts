@@ -305,11 +305,11 @@ test('king-then-rook touch before incomplete castling uses the touch-castling re
   await pressClock(white);
 
   await expect(white.locator('#arbiterMessage')).toHaveText(
-    'Because you touched the king and the rook, and castling is legal, please perform the castling move.');
+    'Because you touched the king and the rook on h1, and kingside castling is legal, please perform the kingside castling move.');
   await expect(white.getByRole('button', { name: 'Revert' })).toBeHidden();
   await expect(black.locator('#arbiterMessage')).not.toContainText(/touched the king and the rook/i);
   await expect(black.locator('#opponentInfoPanel')).toContainText(
-    'Your opponent touched the king and the rook, and castling is legal.');
+    'Your opponent touched the king and the rook on h1, and kingside castling is legal.');
 
   await dragPiece(white, 'h1', 'f1');
   await pressClock(white);
@@ -452,7 +452,7 @@ test('beginner castling with the king on b1 is an illegal move, then queenside c
   await dragPiece(white, 'e1', 'd1');
   await pressClock(white);
   await expect(white.locator('#arbiterMessage')).toHaveText(
-    'Because you touched the king and the rook, and castling is legal, please perform the castling move.');
+    'Because you touched the king and the rook on a1, and queenside castling is legal, please perform the queenside castling move.');
 
   await clickRestore(white);
   await expect(white.locator('#arbiterMessage')).toContainText('Clock restarted', { timeout: 15_000 });

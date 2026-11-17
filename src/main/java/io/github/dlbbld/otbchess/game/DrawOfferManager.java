@@ -74,6 +74,14 @@ public class DrawOfferManager {
   public record DrawOfferResult(boolean accepted, boolean gameLost, boolean isWrongTime, String arbiterMessage,
       String opponentInfo, boolean clearOpponentArbiterMessage) {
 
+    /**
+     * The "offer" was made while the opponent's offer could still be accepted, so it agreed the draw. Nothing is
+     * registered or forwarded; the game has ended.
+     */
+    public static DrawOfferResult drawAgreed() {
+      return new DrawOfferResult(false, false, false, null, null, false);
+    }
+
     public static DrawOfferResult ok() {
       return new DrawOfferResult(true, false, false, null, null, false);
     }
@@ -227,11 +235,23 @@ public class DrawOfferManager {
   }
 
   /**
-   * Attempts to reject the draw offer.
+   * Whether {@code side} has an offer of the opponent in front of them that they may still accept. An offer of their
+   * own made now is the acceptance of that offer, not a new offer.
+   */
+  public boolean canAccept(Side side) {
+    return drawOffered && side != offeringSide && !opponentTouchedPiece;
+  }
+
+  /**
+   * Attempts to reject the draw offer. Only the player the offer was made to can reject it: an offer cannot be
+   * withdrawn by the player who made it (FIDE 9.1.2.1).
    */
   public Optional<String> rejectDraw(Side side) {
     if (!drawOffered) {
       return Optional.of("No draw offer is active.");
+    }
+    if (side == offeringSide) {
+      return Optional.of("You cannot reject your own draw offer.");
     }
     if (opponentTouchedPiece) {
       return Optional.of("The draw offer is no longer valid because you touched a piece.");
@@ -245,7 +265,7 @@ public class DrawOfferManager {
   }
 
   /**
-   * Clears the current draw offer. Called after rejection, clock press by opponent, or invalid move.
+   * Clears the current draw offer. Called after rejection, or when the recipient's move is accepted.
    */
   public void clearOffer() {
     this.drawOffered = false;
@@ -257,13 +277,6 @@ public class DrawOfferManager {
 
   public boolean wasOfferedAtCorrectTime() {
     return wasOfferedAtCorrectTime;
-  }
-
-  /**
-   * Drops the draw offer without counting it as repeated. Called when the move was invalid.
-   */
-  public void dropOfferDueToInvalidMove(Side side) {
-    clearOffer();
   }
 
   public boolean isDrawOffered() {

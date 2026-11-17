@@ -38,8 +38,8 @@ import io.github.dlbbld.otbchess.server.model.GameRoom;
  * <p>
  * Run: {@code mvn -o -q test -Dtest=RuleFuzzer -Dfuzz.count=3000}. Options: {@code -Dfuzz.from} (first seed),
  * {@code -Dfuzz.steps} (actions per game), {@code -Dfuzz.verbose=true -Dfuzz.tail=400} (print the action log of each
- * finding), {@code -Dfuzz.skip=FINAL,COMPLETE,STALE,PENDINGREFRESH} (silence the checks behind findings that are
- * already recorded in tasks.md, so further ones are not hidden behind them).
+ * finding), {@code -Dfuzz.skip=FINAL,COMPLETE,STALE,PENDINGREFRESH} (silence single checks, so that a known
+ * finding does not hide further ones; the findings these were added for are fixed, and a run without them is clean).
  */
 class RuleFuzzer {
   private static final Gson GSON = new Gson();
@@ -90,6 +90,7 @@ class RuleFuzzer {
     String toldCastle;
     String toldTouched;
     boolean toldCastleAny;
+    String toldCastleTouchSide;
     String token;
     String gameId;
     Map<String, String> board = new LinkedHashMap<>();
@@ -198,7 +199,10 @@ class RuleFuzzer {
           final var touched = java.util.regex.Pattern
               .compile("You first touched the \\w+ on ([a-h][1-8]), which has legal moves").matcher(text);
           toldTouched = type.equals("touch_move_violation") && touched.find() ? touched.group(1) : null;
-          toldCastleAny = type.equals("touch_move_violation") && text.contains("please perform the castling move");
+          toldCastleAny = type.equals("touch_move_violation") && text.contains("castling move.");
+          toldCastleTouchSide = !toldCastleAny ? null
+              : text.contains("perform the queenside castling move") ? "QUEEN_SIDE"
+                  : text.contains("perform the kingside castling move") ? "KING_SIDE" : "UNNAMED";
         }
         case "restoreRequired" -> {
           ready = false;
@@ -230,7 +234,7 @@ class RuleFuzzer {
           offerPanel = false;
         }
         case "drawOffered" -> offerPanel = true;
-        case "drawRejected" -> offerPanel = false;
+        case "drawRejected", "drawOfferExpired" -> offerPanel = false;
         case "error" -> {
           if (m.has("devDetail")) {
             internalErrors.add(m.get("devDetail").getAsString());
@@ -739,6 +743,7 @@ class RuleFuzzer {
     } else if (m.toldTouched != null || m.toldCastleAny) {
       final String from = m.toldTouched;
       final boolean castle = m.toldCastleAny;
+      final String castleSide = m.toldCastleTouchSide;
       log.add("--- obey: touch-move ruling, " + (castle ? "castle" : "move the piece on " + from) + " ---");
       if (!settle() || s.getState() != GameState.IN_PROGRESS || ply() != before) {
         return;
@@ -746,7 +751,8 @@ class RuleFuzzer {
       final List<LegalMove> candidates = new ArrayList<>();
       for (final LegalMove move : s.getBoard().getLegalMoves()) {
         final var spec = move.moveSpecification();
-        if (castle ? spec.isCastling() : !spec.isCastling() && spec.fromSquare().getName().equals(from)) {
+        if (castle ? spec.isCastling() && spec.castlingMove().name().equals(castleSide)
+            : !spec.isCastling() && spec.fromSquare().getName().equals(from)) {
           candidates.add(move);
         }
       }
@@ -754,7 +760,8 @@ class RuleFuzzer {
         fail("TOUCH_MOVE_RULING_NAMES_A_PIECE_WITHOUT_LEGAL_MOVES castle=" + castle);
         return;
       }
-      // For "castle" either side may be meant: both are tried. A named piece is tried with one random move.
+      // The castling ruling names its side, so exactly that castling is tried. A named piece is tried with one
+      // random move.
       final List<LegalMove> tries = castle ? candidates : List.of(pick(candidates));
       for (final LegalMove move : tries) {
         if (!settle() || s.getState() != GameState.IN_PROGRESS || ply() != before) {

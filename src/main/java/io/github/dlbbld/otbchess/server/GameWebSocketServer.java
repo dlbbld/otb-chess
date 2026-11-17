@@ -622,13 +622,19 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    final Side side = room.getSide(conn);
-
     final BitboardPosition afterPosition = parseBoardState(conn, json);
     if (afterPosition == null) {
       return; // malformed boardState — parseBoardState already sent a clean error + counted it
     }
 
+    // One room transaction: a press can end the automatic restoration pause, and a reconnecting
+    // player must not be sent that pause after the messages that ended it.
+    synchronized (room) {
+      pressClock(room, room.getSide(conn), afterPosition);
+    }
+  }
+
+  private void pressClock(GameRoom room, Side side, BitboardPosition afterPosition) {
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     // The press ended the automatic restoration pause while the turn goes on: announce the resume
     // here, because the delayed resume will find nothing left to do. Sent before the arbiter's
@@ -636,7 +642,7 @@ public class GameWebSocketServer extends WebSocketServer {
     // turn over.
     if (room.getSession().consumeResumedByClockPress() && response.type() != ArbiterResponseType.MOVE_ACCEPTED
         && room.getSession().getState() == GameState.IN_PROGRESS) {
-      sendGameResumed(room, room.getSession().isRestorationFromReleasedPiece());
+      sendGameResumed(room, room.getSession().isRestoredMoveFinal());
     }
     sendArbiterResponse(room, side, response);
 
@@ -689,7 +695,16 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
+    // One room transaction: whether this offer meets a pending offer of the opponent, and what
+    // becomes of that one, must not change between the check and the answer.
+    synchronized (room) {
+      offerDraw(room, conn, json);
+    }
+  }
+
+  private void offerDraw(GameRoom room, WebSocket conn, JsonObject json) {
     final Side side = room.getSide(conn);
+    final boolean opponentOfferPending = isOpponentOfferPending(room, side);
 
     // Parse the boardState (used by the correct-time validation path; optional/tolerant here).
     final BitboardPosition afterPosition = optionalBoardState(json);
@@ -721,12 +736,39 @@ public class GameWebSocketServer extends WebSocketServer {
       handleWrongTimeDrawOffer(room, conn, side);
     }
 
+    closeOutdatedOfferPanel(room, conn, side, opponentOfferPending);
+
     checkGameEnded(room);
+  }
+
+  private static boolean isOpponentOfferPending(GameRoom room, Side side) {
+    final var drawMgr = room.getSession().getDrawOfferManager();
+    return drawMgr.isDrawOffered() && drawMgr.getOfferingSide() != side;
+  }
+
+  /**
+   * The opponent's offer was still on this player's screen although it could no longer be accepted, and an offer of
+   * their own - spoken, or implied by a rejected draw claim - has now taken its place: close the panel, so that its
+   * buttons cannot be pressed against the player's own offer.
+   */
+  private void closeOutdatedOfferPanel(GameRoom room, WebSocket conn, Side side, boolean opponentOfferWasPending) {
+    final var drawMgr = room.getSession().getDrawOfferManager();
+    if (opponentOfferWasPending && drawMgr.isDrawOffered() && drawMgr.getOfferingSide() == side) {
+      final JsonObject expired = new JsonObject();
+      expired.addProperty("type", "drawOfferExpired");
+      conn.send(GSON.toJson(expired));
+    }
   }
 
   private void handleCorrectTimeDrawOffer(GameRoom room, WebSocket conn, Side side, BitboardPosition afterPosition) {
     final ArbiterResponse response = room.getSession().offerDrawCorrectTime(side, afterPosition);
 
+    if (response.type() == ArbiterResponseType.INCOMPLETE_MOVE
+        && room.getSession().getState() == GameState.ENDED) {
+      // The offer ended the game: it accepted the opponent's pending offer, or it met a fallen
+      // flag. The game-end message says everything.
+      return;
+    }
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       // Move is valid and the offer has been registered. Acknowledge to the offering player
       // and forward the offer to the opponent. The acknowledgment is bare — no reminder to
@@ -892,8 +934,13 @@ public class GameWebSocketServer extends WebSocketServer {
     }
     final String san = optString(json, "san");
 
-    final DrawClaimResult result = room.getSession().claimDraw(side, claimType, san);
-    sendDrawClaimResult(room, conn, side, result);
+    // One room transaction, like a spoken offer: a rejected claim is an offer too (FIDE 9.5).
+    synchronized (room) {
+      final boolean opponentOfferPending = isOpponentOfferPending(room, side);
+      final DrawClaimResult result = room.getSession().claimDraw(side, claimType, san);
+      closeOutdatedOfferPanel(room, conn, side, opponentOfferPending);
+      sendDrawClaimResult(room, conn, side, result);
+    }
   }
 
   private void handleCancelDrawClaim(WebSocket conn) {
@@ -926,7 +973,9 @@ public class GameWebSocketServer extends WebSocketServer {
     // still counts as a draw offer. Do you accept?") so the opponent gets ONE accurate message
     // together with the Accept/Reject panel — not a claim notification overwritten by a bare
     // "your opponent offers a draw".
-    if (result.convertsToDrawOffer()) {
+    if (result.convertsToDrawOffer() && room.getSession().getState() == GameState.ENDED) {
+      // The implied offer met the opponent's own pending offer: drawn by agreement, nothing to forward.
+    } else if (result.convertsToDrawOffer()) {
       sendDrawOfferToOpponent(room, side,
           result.opponentMessage().orElse("Your opponent offers a draw."));
     } else if (result.opponentMessage().isPresent()) {
@@ -1157,7 +1206,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private void completeRestoration(GameRoom room, BitboardPosition restorePosition) {
     // Capture before completeRestoration() in case the latch is ever cleared there in future.
-    final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
+    final boolean releasedMoveIsFinal = room.getSession().isRestoredMoveFinal();
     if (!room.getSession().completeRestoration()) {
       return; // no restoration is pending (any more)
     }
@@ -1168,7 +1217,7 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(restorePosition)));
     msg.addProperty("autoResumePending", room.getSession().isAutoResumeAfterRestore());
     if (releasedMoveIsFinal) {
-      // The released piece committed the move (FIDE 4.7): nothing more to play, just press the clock.
+      // The released piece completed the move (FIDE 4.7): nothing more to play, just press the clock.
       // This guidance is ONLY for the player on move (the committer); the opponent just sees the restore.
       final Side mover = room.getSession().getHavingMove();
       msg.addProperty("message", "Position restored.");
@@ -1195,11 +1244,13 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void resumeAfterRestorationDelay(GameRoom room) {
-    final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
-    if (!room.getSession().resumeAfterRestorationDelay()) {
-      return;
+    synchronized (room) {
+      final boolean releasedMoveIsFinal = room.getSession().isRestoredMoveFinal();
+      if (!room.getSession().resumeAfterRestorationDelay()) {
+        return;
+      }
+      sendGameResumed(room, releasedMoveIsFinal);
     }
-    sendGameResumed(room, releasedMoveIsFinal);
   }
 
   private void sendGameResumed(GameRoom room, boolean releasedMoveIsFinal) {
@@ -1410,6 +1461,14 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
+    // One room transaction with the delayed resume and the clock press: the state sent here must
+    // not be overtaken by the message that ends it.
+    synchronized (room) {
+      resumeSeat(conn, gameId, room, side);
+    }
+  }
+
+  private void resumeSeat(WebSocket conn, String gameId, GameRoom room, Side side) {
     // Swap the dropped socket for the new one and resend current state.
     room.setSocket(side, conn);
     room.setDisconnectedAt(side, null);
@@ -1440,8 +1499,8 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     conn.send(GSON.toJson(msg));
 
-    sendRecoveryState(room, side);
-    sendRecoveryState(room, side.getOppositeSide());
+    sendRecoveryState(room, side, true);
+    sendRecoveryState(room, side.getOppositeSide(), false);
 
     // Replay the existing offer, without registering it again or resetting its touch/release
     // invalidation. Like the live UI, keep an invalidated offer visible until acted on.
@@ -1455,7 +1514,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
   // ===== Helper methods =====
 
-  private void sendRecoveryState(GameRoom room, Side side) {
+  private void sendRecoveryState(GameRoom room, Side side, boolean reconnecting) {
     final var session = room.getSession();
     final JsonObject msg = new JsonObject();
     if (session.isWaitingForRestoration() && side == session.getHavingMove()) {
@@ -1465,6 +1524,12 @@ public class GameWebSocketServer extends WebSocketServer {
       final boolean ready = session.isReady(side);
       msg.addProperty("type", ready ? "waitingForOpponentReady" : "waitingForReady");
       msg.addProperty("message", ready ? "Waiting for your opponent to be ready..." : "Are you ready to continue?");
+    } else if (reconnecting && session.isRestorationResumePending()) {
+      // Inside the short pause before the clock restarts by itself. The server takes no board
+      // events until then, so the board must stay locked; the pending gameResumed unlocks it.
+      msg.addProperty("type", "positionRestored");
+      msg.addProperty("autoResumePending", true);
+      msg.addProperty("message", "Position restored. Restarting the clock shortly. Please be ready.");
     } else {
       return;
     }

@@ -95,7 +95,7 @@ public class ArbiterEngine {
       if (matches.isEmpty() || hasReleasedPieceViolation(board, position, prefix)) {
         continue;
       }
-      final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(prefix, board);
+      final Optional<TouchMoveObligation> obligation = findBindingObligation(board, prefix);
       for (final LegalMove move : matches) {
         if (obligation.isEmpty() || TouchMoveEvaluator.satisfiesObligation(obligation.get(), move)) {
           return Optional.of(new FinalMoveCommitment(move, position));
@@ -139,7 +139,8 @@ public class ArbiterEngine {
    * played via the normal clock-press flow, where the violation is reported and the recovery flow runs.
    */
   public boolean hasReleasedPieceViolation(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
-    return findReleasedPieceViolation(board, afterPosition, sequence).isPresent();
+    return findReleasedPieceViolation(board, afterPosition, sequence, findReleaseRuling(board, sequence))
+        .isPresent();
   }
 
   /**
@@ -157,18 +158,16 @@ public class ArbiterEngine {
    * and then disturbed the board, Revert must undo only the later disturbance.
    */
   public Optional<BitboardPosition> findReleasedPieceCommitmentPosition(Board board, ActionSequence sequence) {
-    BitboardPosition currentPosition = board.getBitboardPosition();
-    for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
-      final BitboardPosition beforeEvent = currentPosition;
-      currentPosition = applyEvent(currentPosition, event);
-      if (isReleaseOnBoard(event)) {
-        final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
-        if (!commitment.allowedFinalPositions().isEmpty()) {
-          return Optional.of(currentPosition);
-        }
-      }
-    }
-    return Optional.empty();
+    return findReleaseRuling(board, sequence).lock().map(ReleasedPieceLock::releasePosition);
+  }
+
+  /**
+   * The touch-move obligation that binds the turn. A release that commits the player (FIDE 4.7) settles the turn: the
+   * obligation is the one in force at that release, and a piece touched afterwards cannot replace it. Without such a
+   * release the touches of the whole turn decide.
+   */
+  public Optional<TouchMoveObligation> findBindingObligation(Board board, ActionSequence sequence) {
+    return findReleaseRuling(board, sequence).obligation();
   }
 
   /**
@@ -187,7 +186,8 @@ public class ArbiterEngine {
       return evaluateFinalMove(board, afterPosition, finalMove.get(), sequence);
     }
 
-    final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(sequence, board);
+    final ReleaseRuling ruling = findReleaseRuling(board, sequence);
+    final Optional<TouchMoveObligation> obligation = ruling.obligation();
     final Optional<ArbiterResponse> unfinishedCastlingTouch = evaluateUnfinishedCastlingTouch(board, afterPosition,
         sequence, obligation);
     if (unfinishedCastlingTouch.isPresent()) {
@@ -201,7 +201,7 @@ public class ArbiterEngine {
     }
 
     final Optional<ReleasedPieceLock> releasedPieceViolation = findReleasedPieceViolation(board, afterPosition,
-        sequence);
+        sequence, ruling);
     if (releasedPieceViolation.isPresent()) {
       final ReleasedPieceLock lock = releasedPieceViolation.get();
       final Optional<ArbiterResponse.RookFirstCastlingContext> rookFirstCastling = findRookFirstCastlingContext(board,
@@ -249,6 +249,13 @@ public class ArbiterEngine {
     final Set<LegalMove> matchingMoves = PositionComparator.findMatchingMoves(board, afterPosition);
 
     if (matchingMoves.isEmpty()) {
+      // The board shows exactly a release that the touch-move rule overruled - in practice the king
+      // put on its castling square although an earlier touch forbids that castling (FIDE 4.4.2 for
+      // a rook touched first). Like any started castling this is not counted as an illegal move;
+      // the ruling names the obligation that actually binds, never "complete the castling".
+      if (obligation.isPresent() && ruling.overruledReleasePosition().filter(afterPosition::equals).isPresent()) {
+        return handleTouchMoveViolation(obligation.get());
+      }
       // No legal move produces this position
       return handleIllegalMove(board, afterPosition, sequence, sideToMove);
     }
@@ -401,39 +408,93 @@ public class ArbiterEngine {
   }
 
   private static Optional<ReleasedPieceLock> findReleasedPieceViolation(Board board, BitboardPosition afterPosition,
-      ActionSequence sequence) {
+      ActionSequence sequence, ReleaseRuling ruling) {
     final Optional<AttemptedMove> attemptedCastling = inferPhysicalCastlingAttempt(board, afterPosition,
         sequence.getEventsSinceReleasedPieceRuleReset());
     if (attemptedCastling.isPresent()
         && shouldBypassReleasedPieceForInvalidCastlingAttempt(board, attemptedCastling.get())) {
       return Optional.empty();
     }
+    return ruling.lock().filter(lock -> !lock.allowedFinalPositions().contains(afterPosition));
+  }
 
+  /**
+   * What the releases of the turn settle.
+   *
+   * @param lock                     the first release that commits the player (FIDE 4.7), if any
+   * @param obligation               the touch-move obligation that binds the turn, see {@link #findBindingObligation}
+   * @param overruledReleasePosition the board right after the first release that was part of a legal move but broke
+   *                                 the touch-move obligation in force - such a release commits to nothing
+   */
+  private record ReleaseRuling(Optional<ReleasedPieceLock> lock, Optional<TouchMoveObligation> obligation,
+      Optional<BitboardPosition> overruledReleasePosition) {
+  }
+
+  /**
+   * Finds the first release that commits the player and the obligation that goes with it. The two rules are applied
+   * in the order the player acted, so they can never give contradictory orders:
+   * <ul>
+   * <li>A release counts under FIDE 4.7 only if it honours the touch-move obligation already in force. A king put on
+   * c1 after the a1 rook was touched (4.4.2), or a pawn move made after another piece was touched, commits to
+   * nothing: the touched piece still has to be moved.</li>
+   * <li>Once a release commits, later touches change nothing. A king released on g1 means kingside castling even if
+   * the a1 rook is touched afterwards.</li>
+   * </ul>
+   */
+  private static ReleaseRuling findReleaseRuling(Board board, ActionSequence sequence) {
+    final List<BoardEvent> events = sequence.getEvents();
+    final int resetIndex = events.size() - sequence.getEventsSinceReleasedPieceRuleReset().size();
+    final ActionSequence prefix = new ActionSequence(sequence.getSideToMove());
     BitboardPosition currentPosition = board.getBitboardPosition();
-    ReleasedPieceLock firstReleasedLegalPosition = null;
+    ReleasedPieceLock lock = null;
+    Optional<TouchMoveObligation> obligationAtRelease = Optional.empty();
+    BitboardPosition overruledReleasePosition = null;
 
-    for (final BoardEvent event : sequence.getEventsSinceReleasedPieceRuleReset()) {
-      if (firstReleasedLegalPosition != null && displacesReleasedPiece(event, firstReleasedLegalPosition)) {
-        firstReleasedLegalPosition = firstReleasedLegalPosition.withReleasedPieceDisplacedAfterRelease();
+    for (int i = 0; i < events.size(); i++) {
+      final BoardEvent event = events.get(i);
+      prefix.addEvent(event);
+      if (i < resetIndex) {
+        continue;
+      }
+      if (lock != null && displacesReleasedPiece(event, lock)) {
+        lock = lock.withReleasedPieceDisplacedAfterRelease();
       }
 
       final BitboardPosition beforeEvent = currentPosition;
       currentPosition = applyEvent(currentPosition, event);
-
-      if (firstReleasedLegalPosition == null && isReleaseOnBoard(event)) {
-        final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
-        if (!commitment.allowedFinalPositions().isEmpty()) {
-          firstReleasedLegalPosition = new ReleasedPieceLock(currentPosition, commitment.allowedFinalPositions(),
-              commitment.committedMoves(), event.piece(), event.targetSquare(), event.square(), false);
+      if (lock != null || !isReleaseOnBoard(event)) {
+        continue;
+      }
+      final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
+      if (commitment.allowedFinalPositions().isEmpty()) {
+        continue;
+      }
+      final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(prefix, board);
+      final Set<LegalMove> honouringMoves = new HashSet<>();
+      final Set<BitboardPosition> honouringPositions = new HashSet<>();
+      for (final LegalMove move : commitment.committedMoves()) {
+        if (obligation.isEmpty() || TouchMoveEvaluator.satisfiesObligation(obligation.get(), move)) {
+          honouringMoves.add(move);
+          honouringPositions.add(board.getBitboardPosition().afterMove(move.moveSpecification(),
+              board.getSideToMove()));
         }
       }
+      if (honouringMoves.isEmpty()) {
+        if (overruledReleasePosition == null) {
+          overruledReleasePosition = currentPosition;
+        }
+        continue;
+      }
+      lock = new ReleasedPieceLock(currentPosition, honouringPositions, honouringMoves, event.piece(),
+          event.targetSquare(), event.square(), false);
+      obligationAtRelease = obligation;
     }
 
-    if (firstReleasedLegalPosition != null
-        && !firstReleasedLegalPosition.allowedFinalPositions().contains(afterPosition)) {
-      return Optional.of(firstReleasedLegalPosition);
+    if (lock != null) {
+      return new ReleaseRuling(Optional.of(lock), obligationAtRelease, Optional.empty());
     }
-    return Optional.empty();
+    return new ReleaseRuling(Optional.empty(), TouchMoveEvaluator.findObligation(sequence, board),
+        Optional.ofNullable(overruledReleasePosition));
   }
 
   private static boolean displacesReleasedPiece(BoardEvent event, ReleasedPieceLock lock) {
