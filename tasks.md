@@ -154,6 +154,75 @@ release's tasks until it ships.
 - Remaining unchecked historical items concern manual release acceptance, production deployment,
   and the public-service privacy notice. Automated Windows coverage does not mark those done.
 
+### Second review pass — 2026-11-17
+
+- [x] Review `d877341` again, concentrating on interactions between session transitions and
+  server dispatch: overlapping pauses, restoration, penalties, simultaneous Ready/join requests,
+  draw claims/offers, reconnect/rematch lifecycle, starting positions and board event handling.
+  Cross-check the documented arbiter policies and intentional FIDE deviations. Four substantial
+  defects and one lower-priority starting-position edge case are confirmed below. This pass
+  records findings only; application code is unchanged.
+
+- [ ] **P1 — Simultaneous Ready confirmations can lock the moving player's board.**
+  `GameWebSocketServer.handleReadyToContinue` calls the synchronized `playerReady`, then sends
+  its reply outside that transition's lock. Two concurrent confirmations can therefore deliver
+  `gameResumed` followed by stale `waitingForOpponentReady` to White. The latter handler disables
+  White's board while White's clock is running and neither player has a Ready button.
+  A concurrent Java handler probe reproduced this on round 2. A real WebSocket probe replayed
+  the normal opponent-piece intervention -> Revert -> manual Ready journey and reproduced it
+  on round 3. Relevant code: `GameWebSocketServer.java` 1210–1227 and `static/js/game.js` 492–494.
+  Serialize the transition and its outbound messages, or make responses reject stale state.
+  Required coverage: deterministic concurrent Java confirmations and both live boards remaining
+  playable after simultaneous Ready, with no stale waiting message after resume.
+
+- [ ] **P1 — An obsolete wrong-clock timer overrides a later pause or turn.** Black presses
+  White's clock; during the five-second admonishment pause White moves Black's e7 pawn to e6
+  and clicks Revert with manual readiness enabled. When the old timer fires, White's clock
+  restarts although both Ready buttons remain visible and neither player is ready. If both
+  players become ready and White completes e4 before that callback, it instead switches the
+  running clock back to White even though Black has the move. Both state failures were
+  reproduced in Java; the waiting-Ready failure was also reproduced through real browser clicks
+  using the production five-second pause. `GameSession.resumeAfterWrongClockPress` (894–902)
+  only checks game state and its old side marker, not intervening restoration or turn changes.
+  Required coverage: overlapping pauses and intervening turns; obsolete callbacks must neither
+  charge time while waiting for Ready nor restart the wrong side's clock.
+
+- [ ] **P1 — Offering a draw during restoration can lose the game for the same illegal move
+  twice.** From the initial position, play e2–e5 and press the clock. While Revert is displayed,
+  click Offer draw. `offerDrawCorrectTime` re-evaluates the unchanged illegal position without
+  checking the restoration/Ready flags, increments the illegal-move counter again and awards
+  Black a win for White's "2nd illegal move". Confirmed in Java and on both live browser boards
+  with the default two-illegal-move limit. Relevant code: `GameSession.java` 477–491. Clock
+  presses already have the missing recovery-state guards. Required coverage: offers throughout
+  restoration/readiness must not re-adjudicate the pending move or add another penalty.
+
+- [ ] **P1 — Concurrent joiners can both acquire the same seat.** The room-full check and
+  seat/token assignment in `handleJoinGame` are not atomic. Two join requests to the same code
+  can both receive `gameJoined` as Black with different tokens, and `gameStarted` is broadcast
+  twice. One connection is overwritten as the room's Black player, leaving an admitted player
+  without a usable seat. Confirmed by concurrent Java handlers on their first attempt and by
+  real simultaneous WebSocket joins on round 4. Relevant code: `GameWebSocketServer.java`
+  405–429. Required coverage: reserve the remaining seat and start the game atomically; exactly
+  one joiner succeeds, the other gets a full-room response, and the first seat/token survives.
+
+- [ ] **P2 — Terminal starting FENs start an active game instead of producing a result.**
+  Creating and joining `7k/6Q1/5K2/8/8/8/8/8 b - - 0 1` starts Black's clock and displays no
+  result although Black is already checkmated and has no legal move. Confirmed through both
+  browsers. `GameSession.startGame` (174–178) unconditionally starts the clock; automatic
+  endings are checked only after subsequent board/move events. Reject terminal starting
+  positions clearly, or adjudicate them before starting play. Required coverage: checkmate,
+  stalemate and dead starting positions on both boards. Lower priority than the four above.
+
+- [x] Verification: `SecondPassProbe.java` exercises overlapping pauses, wrong-side restart and
+  the repeated illegal-move penalty; `JoinRaceProbe.java` exercises concurrent admission and
+  readiness. Five targeted Playwright browser/live-WebSocket probes confirm the findings on
+  native Windows/Chromium. Scripts, config and logs are under ignored `target/review/` in the
+  review worktree (`second-pass.spec.ts`, `second-pass.config.ts`, `second-pass-browser.log`,
+  `join-race.log`, `ready-race.log`, `live-join-race.log`, `live-ready-race.log`). These are bug
+  reproductions, not passing regression coverage for fixes. The unchanged application retains
+  the preceding 270-Java/153-browser passing baseline; those full suites were not repeated for
+  this documentation-only review because the targeted probes expose paths that baseline misses.
+
 ### Review baseline verification
 
 - [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,
