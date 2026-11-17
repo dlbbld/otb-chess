@@ -164,6 +164,64 @@ class TestReviewServerRegressions {
     method.invoke(server, room);
   }
 
+  private Client reconnect(Client player, String id, String joinedMessage) {
+    final var returning = new Client();
+    final String token = player.last(joinedMessage).get("token").getAsString();
+    server.onMessage(returning.socket, "{\"type\":\"resume\",\"gameId\":\"" + id + "\",\"token\":\"" + token + "\"}");
+    return returning;
+  }
+
+  @Test
+  void resumeReplaysTheOfferOnlyToItsRecipientWithoutRegisteringAnotherOffer() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    server.onMessage(white.socket, "{\"type\":\"offerDraw\"}");
+    final var expected = black.last("drawOffered");
+    final var returningWhite = reconnect(white, id, "gameCreated");
+    assertEquals(0, returningWhite.count("drawOffered"));
+    final var returningBlack = reconnect(black, id, "gameJoined");
+    assertEquals(expected, returningBlack.last("drawOffered"));
+    assertTrue(returningBlack.indexOf("resync") < returningBlack.indexOf("drawOffered"));
+    server.onMessage(returningBlack.socket, "{\"type\":\"acceptDraw\"}");
+    for (final Client client : new Client[] {returningWhite, returningBlack}) {
+      assertEquals("DRAW_AGREEMENT", client.last("gameEnded").get("resultType").getAsString());
+    }
+  }
+
+  @Test
+  void resumePreservesClaimOfferTextAndDoesNotReplayAClearedOffer() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    server.onMessage(white.socket, "{\"type\":\"claimDraw\",\"claimType\":\"THREEFOLD_ON_BOARD\"}");
+    final var expected = black.last("drawOffered");
+    assertTrue(expected.get("message").getAsString().contains("still counts as a draw offer"));
+    final var returning = reconnect(black, id, "gameJoined");
+    assertEquals(expected, returning.last("drawOffered"));
+    server.onMessage(returning.socket, "{\"type\":\"rejectDraw\"}");
+    final var afterRejection = reconnect(black, id, "gameJoined");
+    assertEquals(0, afterRejection.count("drawOffered"));
+    server.onMessage(white.socket, "{\"type\":\"offerDraw\"}");
+    final var nextOffer = reconnect(black, id, "gameJoined");
+    assertEquals("Your opponent offers a draw.", nextOffer.last("drawOffered").get("message").getAsString());
+  }
+
+  @Test
+  void resumeDoesNotRevalidateAnOfferInvalidatedByTouch() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    server.onMessage(white.socket, "{\"type\":\"offerDraw\"}");
+    final var session = rooms().get(id).getSession();
+    session.getDrawOfferManager().recordOpponentTouchedPiece();
+    final var returning = reconnect(black, id, "gameJoined");
+    assertEquals(1, returning.count("drawOffered"));
+    server.onMessage(returning.socket, "{\"type\":\"acceptDraw\"}");
+    assertTrue(returning.last("drawAcceptRejected").get("message").getAsString().contains("touched a piece"));
+    assertEquals(0, returning.count("gameEnded"));
+  }
+
   @Test
   void clockPressDuringTheAutoResumeDelayAnnouncesTheResumeExactlyOnce() throws Exception {
     final var white = new Client();

@@ -796,6 +796,7 @@ public class GameWebSocketServer extends WebSocketServer {
    * of a bare "your opponent offers a draw".
    */
   private void sendDrawOfferToOpponent(GameRoom room, Side offeringSide, String message) {
+    room.setDrawOfferMessage(message);
     final JsonObject drawMsg = new JsonObject();
     drawMsg.addProperty("type", "drawOffered");
     drawMsg.addProperty("message", message);
@@ -1408,6 +1409,13 @@ public class GameWebSocketServer extends WebSocketServer {
 
     sendRecoveryState(room, side);
     sendRecoveryState(room, side.getOppositeSide());
+
+    // Replay the existing offer, without registering it again or resetting its touch/release
+    // invalidation. Like the live UI, keep an invalidated offer visible until acted on.
+    final var drawOffer = session.getDrawOfferManager();
+    if (drawOffer.isDrawOffered() && side == drawOffer.getOfferingSide().getOppositeSide()) {
+      sendDrawOfferToOpponent(room, drawOffer.getOfferingSide(), room.getDrawOfferMessage());
+    }
 
     System.out.println("Resumed " + side.name().toLowerCase() + " in game " + gameId);
   }

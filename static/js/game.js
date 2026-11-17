@@ -334,6 +334,9 @@ class Game {
     // Reconnect: the server resent the authoritative state after our socket dropped and re-attached.
     // Rebuild the board/clock/turn from it so the game continues instead of staying frozen.
     this.ws.on('resync', (data) => {
+      // A socket reconnect can reuse this page. Clear stale offers before the server
+      // replays the current offer (if any) after the authoritative snapshot.
+      document.getElementById('drawOfferPanel').style.display = 'none';
       this.gameId = data.gameId;
       this.side = data.side;
       if (this.side === 'black' && !this.board.flipped) {

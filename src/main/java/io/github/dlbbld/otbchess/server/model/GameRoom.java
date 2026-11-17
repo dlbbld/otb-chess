@@ -22,6 +22,9 @@ public class GameRoom {
   private final String gameId;
   private GameSession session;
   private BitboardPosition physicalPosition;
+  // Presentation text for the current offer, including an explanation from a rejected claim.
+  // DrawOfferManager remains authoritative about whether the offer exists and can be accepted.
+  private String drawOfferMessage = "Your opponent offers a draw.";
   // Both players have been sent the result of the current session.
   private boolean gameEndAnnounced;
   private final TimeControl timeControl;
@@ -94,6 +97,14 @@ public class GameRoom {
 
   public synchronized void setPhysicalPosition(BitboardPosition position) {
     physicalPosition = position;
+  }
+
+  public synchronized String getDrawOfferMessage() {
+    return drawOfferMessage;
+  }
+
+  public synchronized void setDrawOfferMessage(String message) {
+    drawOfferMessage = message;
   }
 
   /** @return true for the first call per game, i.e. when the caller is the one to announce the result. */
@@ -267,5 +278,6 @@ public class GameRoom {
         new Board(session.getBoard().getInitialFen()));
     physicalPosition = session.getBoard().getBitboardPosition();
     gameEndAnnounced = false;
+    drawOfferMessage = "Your opponent offers a draw.";
   }
 }

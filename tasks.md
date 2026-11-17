@@ -129,8 +129,30 @@ release's tasks until it ships.
   skipped). `CI=1 npx playwright test --retries=0` passes 147 browser tests in 3.4 minutes
   (1 Windows-only launcher test skipped). Full coverage was required because the changes touch
   clocks, game endings, restoration and message dispatch.
-- [ ] Not covered by this follow-up: a pending draw offer is not shown again after the
-  recipient refreshes the page, so it can no longer be accepted. Present before `262b666`.
+- [x] Pending draw offer missing after recipient refresh (present before `262b666`): fixed
+  in the Windows follow-up below. Reconnect now restores the offer and its original explanation.
+
+### Windows follow-up and remaining draw-offer fix — 2026-11-17
+
+- [x] Fast-forward the review branch to Claude's `42ba578`, retaining all three follow-up fixes.
+- [x] Restore pending draw offers after the recipient refreshes or reconnects. Store the
+  original recipient message, including rejected-claim explanations; replay only to the
+  recipient after resync. Clear stale client panels before replay. Do not register a new offer
+  or reset touch/release invalidation, so reconnect cannot restore a lost right to accept.
+- [x] Add three Java regressions and five browser regressions covering both recipient colours,
+  acceptance, rejection followed by another refresh, converted-claim wording, and invalidated
+  offers. All three Java regressions and all five browser regressions fail against `42ba578`
+  without the fix and pass with it.
+- [x] `mvn -q package`: all 270 Java tests pass on native Windows with no skips, including
+  all six `TestWindowsLauncher` cases. The focused browser run passes all five new regressions
+  and `tests/e2e/launcher.spec.ts`, which runs the real Windows launcher twice with isolated
+  remotes and dedicated ports.
+- [x] `CI=1 npx playwright test --retries=0`: all 153 browser tests pass on native
+  Windows/Chromium in 8.3 minutes, with no skips or retries, against the rebuilt jar. Full
+  coverage includes Claude's four follow-up regressions and the Windows launcher, because
+  reconnect state, offers and the earlier shared game-flow fixes need integration coverage.
+- Remaining unchecked historical items concern manual release acceptance, production deployment,
+  and the public-service privacy notice. Automated Windows coverage does not mark those done.
 
 ### Review baseline verification
 
@@ -317,8 +339,9 @@ deferred privacy notice remains open.
   name the new default.
 - [ ] Manually test `latest-ai-model-review` on the ThinkPad before preparing and merging its
   release PR.
-- [ ] Run the Windows-only launcher coverage (`TestWindowsLauncher` and `tests/e2e/launcher.spec.ts`)
-  on the ThinkPad before merging: both are skipped on the iMac.
+- [x] Run the Windows-only launcher coverage (`TestWindowsLauncher` and `tests/e2e/launcher.spec.ts`)
+  on Windows before merging: completed 2026-11-17 on the Windows workspace with all six Java
+  launcher cases and the real-launcher browser test passing, no skips. See the Windows follow-up.
 
 - [x] **Castling accepted despite an earlier touch-move obligation.** After 1. g3 e5 2. Bg2 d5
   3. Nf3 Nc6, White played `Nb1-b3` (illegal), put the knight back and castled short; the castling
