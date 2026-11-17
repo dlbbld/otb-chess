@@ -337,20 +337,34 @@ class Game {
       // A socket reconnect can reuse this page. Clear stale offers before the server
       // replays the current offer (if any) after the authoritative snapshot.
       document.getElementById('drawOfferPanel').style.display = 'none';
+      const changedSeat = this.side !== data.side;
       this.gameId = data.gameId;
       this.side = data.side;
-      if (this.side === 'black' && !this.board.flipped) {
+      if ((this.side === 'black') !== this.board.flipped) {
         this.board.flip();
       }
       this.board.setPosition(data.board);
       this.board.renderAll();
+      this.board.clearHighlights();
       this.updateClockLabels();
       this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
 
+      // gameEnded cleared storage, and the socket may have dropped before rematchStarted.
+      // Persist the recovered seat so a later refresh returns to this game too.
+      if (data.token) {
+        Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: this.isCreator });
+      }
+
       const started = data.state !== 'WAITING_FOR_PLAYERS';
       if (started) {
         this.gameActive = data.state !== 'ENDED';
+        if (this.gameActive) {
+          this.clearResultPanel();
+          this.stopDisconnectCountdown();
+          this.clearOpponentInfo();
+          if (changedSeat) this.resetClaimUiForNewTurn();
+        }
         document.getElementById('resignBtn').style.display = '';
         this.clearArbiterButtons();
         this.isMyTurn = data.havingMove === this.side;
@@ -767,15 +781,11 @@ class Game {
       this.resetClaimUiForNewTurn();
       this.clearOpponentInfo();
 
-      // Fresh reconnect session for the new seat (the old token died with the seat swap).
+      // The reconnect token stays with its player; persist the newly assigned colour.
       Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: this.isCreator });
 
       // Result panel (and its rematch state) belongs to the finished game — reset for this one.
-      document.getElementById('gameResultPanel').style.display = 'none';
-      const rematchBtn = document.getElementById('rematchBtn');
-      rematchBtn.disabled = false;
-      rematchBtn.textContent = 'Rematch';
-      rematchBtn.classList.remove('rematch-blink');
+      this.clearResultPanel();
       document.getElementById('drawOfferPanel').style.display = 'none';
       document.getElementById('resignBtn').style.display = '';
       this.updateButtons();
@@ -821,6 +831,14 @@ class Game {
         this.appendDevConsole(data.devDetail);
       }
     });
+  }
+
+  clearResultPanel() {
+    document.getElementById('gameResultPanel').style.display = 'none';
+    const rematchBtn = document.getElementById('rematchBtn');
+    rematchBtn.disabled = false;
+    rematchBtn.textContent = 'Rematch';
+    rematchBtn.classList.remove('rematch-blink');
   }
 
   // === Developer console ===

@@ -161,7 +161,6 @@ public class GameWebSocketServer extends WebSocketServer {
           checkGameEnded(room);
           return;
         }
-        room.stopClockTicker();
         sendGameEnded(room, result);
         System.out.println("Game " + gameId + " adjudicated after abandonment by " + side.name().toLowerCase());
       } catch (final RuntimeException e) {
@@ -556,14 +555,15 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Optional<ArbiterResponse> midPlayResponse = room.getSession().recordEvent(side, event);
 
+    // recordEvent may find an expired clock before processing the event. Announce that result
+    // even when this frame omitted boardState (and therefore would skip the auto-end check).
+    if (room.getSession().getState() == GameState.ENDED) {
+      checkGameEnded(room);
+      return;
+    }
+
     if (midPlayResponse.isPresent()) {
       final ArbiterResponse response = midPlayResponse.get();
-      if (room.getSession().getState() == GameState.ENDED) {
-        // The violation reached its escalation limit (e.g. third moved opponent piece, A-007):
-        // the game is over — the personalised messages travel via gameEnded, no restore.
-        checkGameEnded(room);
-        return;
-      }
       if (response.type() == ArbiterResponseType.POSITION_CHANGE) {
         sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
             response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
@@ -1059,7 +1059,6 @@ public class GameWebSocketServer extends WebSocketServer {
       sendError(conn, "There is nothing to claim - the game is not running.");
       return;
     }
-    room.stopClockTicker();
     sendGameEnded(room, result);
     System.out.println("Game " + room.getGameId() + " adjudicated after victory claim by "
         + side.name().toLowerCase());
@@ -1124,7 +1123,7 @@ public class GameWebSocketServer extends WebSocketServer {
     }
   }
 
-  /** Starts the accepted rematch: colours swapped, fresh session/tokens, both players re-seated. */
+  /** Starts the accepted rematch: colours swapped, fresh session, reconnect tokens following their players. */
   private void startRematch(GameRoom room) {
     room.stopClockTicker();
     room.startRematch(); // swaps seats, fresh session from the original starting position
@@ -1133,15 +1132,13 @@ public class GameWebSocketServer extends WebSocketServer {
     final var havingMove = session.getHavingMove();
     final var board = GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition()));
 
-    // Fresh per-seat reconnect tokens (the seats changed owners) and per-player start messages.
+    // Tokens follow the players across the seat swap, including when this message cannot be delivered.
     for (final Side seat : new Side[] { Side.WHITE, Side.BLACK }) {
-      final String token = generateSessionToken();
-      room.setToken(seat, token);
       final JsonObject msg = new JsonObject();
       msg.addProperty("type", "rematchStarted");
       msg.addProperty("gameId", room.getGameId());
       msg.addProperty("side", seat.name().toLowerCase());
-      msg.addProperty("token", token);
+      msg.addProperty("token", room.getToken(seat));
       msg.add("board", board);
       msg.addProperty("havingMove", havingMove.name().toLowerCase());
       msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
@@ -1463,29 +1460,32 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
     final GameRoom room = gameRooms.get(gameId);
-    final Side side = (room == null) ? Side.NONE : room.sideForToken(token);
-    if (room == null || side == Side.NONE) {
+    if (room == null) {
       final JsonObject msg = new JsonObject();
       msg.addProperty("type", "resumeFailed");
       msg.addProperty("message", "This game is no longer available — it may have ended or expired.");
       send(conn, msg);
       return;
     }
-    if (room.getSession().getState() == GameState.ENDED) {
-      // The game ended while this player was away — e.g. adjudicated as abandoned after they
-      // closed the tab, so their client never saw gameEnded and still holds the seat token.
-      // A reconnect into a finished game is not allowed; resumeFailed makes the client clear
-      // the stale saved session (which also removes the lobby's "Return to game" banner).
-      final JsonObject msg = new JsonObject();
-      msg.addProperty("type", "resumeFailed");
-      msg.addProperty("message", "This game has already ended.");
-      send(conn, msg);
-      return;
-    }
-
-    // One room transaction with the delayed resume and the clock press: the state sent here must
-    // not be overtaken by the message that ends it.
+    // Validate and attach under the same lock as rematches and room removal. A reconnect waiting
+    // for that lock may belong to a player whose colour changed, or to a game that has since ended.
     synchronized (room) {
+      final Side side = room.sideForToken(token);
+      if (gameRooms.get(gameId) != room || side == Side.NONE) {
+        final JsonObject msg = new JsonObject();
+        msg.addProperty("type", "resumeFailed");
+        msg.addProperty("message", "This game is no longer available — it may have ended or expired.");
+        send(conn, msg);
+        return;
+      }
+      if (room.getSession().getState() == GameState.ENDED) {
+        // A finished game cannot be resumed; clear the returning client's stale saved session.
+        final JsonObject msg = new JsonObject();
+        msg.addProperty("type", "resumeFailed");
+        msg.addProperty("message", "This game has already ended.");
+        send(conn, msg);
+        return;
+      }
       resumeSeat(conn, gameId, room, side);
     }
   }
@@ -1514,6 +1514,7 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("type", "resync");
     msg.addProperty("gameId", gameId);
     msg.addProperty("side", side.name().toLowerCase());
+    msg.addProperty("token", room.getToken(side));
     msg.addProperty("state", session.getState().name());
     msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(room.getPhysicalPosition())));
     msg.addProperty("havingMove", session.getHavingMove().name().toLowerCase());
@@ -1844,6 +1845,20 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendGameEnded(GameRoom room, GameResult result) {
+    // A cancelled ticker (or another terminal action) may still finish after a rematch starts.
+    // The immutable result belongs to exactly one session. Check its identity before touching
+    // the current ticker/announcement flag, and hold the rematch lock through both deliveries.
+    synchronized (room) {
+      final var session = room.getSession();
+      if (result == null || session.getState() != GameState.ENDED || session.getResult() != result) {
+        return;
+      }
+      announceGameEnded(room, result);
+    }
+  }
+
+  /** Called under the room lock after checking that the result belongs to its current game. */
+  private void announceGameEnded(GameRoom room, GameResult result) {
     room.stopClockTicker();
     // Announce-once: claimed before sending, so that two callers racing here cannot both announce.
     // Nothing below can fail on a socket that closes meanwhile (GameRoom.send), so the claim

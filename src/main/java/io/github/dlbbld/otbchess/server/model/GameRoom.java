@@ -39,8 +39,8 @@ public class GameRoom {
   private WebSocket blackPlayer;
   private ScheduledFuture<?> clockTickFuture;
 
-  // Per-side secret reconnect tokens. A player whose socket drops re-attaches by presenting its
-  // token (not the guessable join code), so a third party who knows the join code can't hijack a seat.
+  // Secret reconnect tokens follow the players when rematches swap their seats. A dropped socket
+  // can resume even if it never received the rematch start message with its new colour.
   private String whiteToken;
   private String blackToken;
 
@@ -176,6 +176,14 @@ public class GameRoom {
     }
   }
 
+  public String getToken(Side side) {
+    return switch (side) {
+      case WHITE -> whiteToken;
+      case BLACK -> blackToken;
+      default -> null;
+    };
+  }
+
   /** @return the side that owns this reconnect token, or {@link Side#NONE} if it matches neither. */
   public Side sideForToken(String token) {
     if (token == null) {
@@ -276,15 +284,16 @@ public class GameRoom {
 
   /**
    * Starts a rematch: the players swap colours (seats), and a fresh session begins from the SAME starting position
-   * (the original FEN for custom games) with the SAME time control and settings. The reconnect tokens are invalidated
-   * — the caller must issue fresh per-seat tokens and start the game/clock, mirroring the join flow.
+   * (the original FEN for custom games) with the SAME time control and settings. Reconnect tokens swap with their
+   * owners, so a lost rematch-start message cannot strand a player without a valid token. The caller starts the clock.
    */
   public void startRematch() {
     final WebSocket previousWhite = whitePlayer;
     whitePlayer = blackPlayer;
     blackPlayer = previousWhite;
-    whiteToken = null;
-    blackToken = null;
+    final String previousWhiteToken = whiteToken;
+    whiteToken = blackToken;
+    blackToken = previousWhiteToken;
     whiteDisconnectedAtMs = null;
     blackDisconnectedAtMs = null;
     rematchOfferedBy = Side.NONE;

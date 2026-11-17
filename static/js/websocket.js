@@ -59,9 +59,10 @@ class GameWebSocket {
 
     this.ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      // Capture the reconnect token + game id whenever the server issues one (a rematch swaps
-      // the seats and mints fresh tokens, so the old one would no longer resume).
-      if ((data.type === 'gameCreated' || data.type === 'gameJoined' || data.type === 'rematchStarted')
+      // Capture the reconnect identity on every authoritative seat snapshot, including recovery
+      // after a lost rematchStarted message. The token follows its player when colours swap.
+      if ((data.type === 'gameCreated' || data.type === 'gameJoined' || data.type === 'rematchStarted'
+          || data.type === 'resync')
           && data.token) {
         this.sessionToken = data.token;
         this.sessionGameId = data.gameId;

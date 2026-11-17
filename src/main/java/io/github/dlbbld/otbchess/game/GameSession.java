@@ -190,6 +190,11 @@ public class GameSession {
     if (side != board.getSideToMove()) {
       return Optional.empty();
     }
+    // A board event can itself decide the game through the misconduct ladder. Expiry must
+    // win that race just as it does for a clock press, claim, offer or resignation.
+    if (checkFlagFall().isPresent()) {
+      return Optional.empty();
+    }
 
     // Check mid-play validation
     Optional<ArbiterResponse> midPlayResponse = MidPlayValidator.validate(event, side, positionBeforeTurn,

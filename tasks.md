@@ -438,6 +438,44 @@ release's tasks until it ships.
   tests). `CI=1 npx playwright test --retries=0`: 183 passed, 1 skipped (Windows-only), in 4.6 minutes.
   `TouchMoveOracle`: 33,793 cases, 0 differences.
 
+### Concurrent endings and rematch recovery — 2026-11-18
+
+- [x] Independently review `6b661ed` and reproduce four remaining P1 defects before changing code:
+  a previous game's flag-fall callback disables a rematch; a resume validated before a rematch
+  overwrites the opponent's swapped seat; losing `rematchStarted` loses the only usable reconnect
+  token; and a third opponent-piece violation after expiry awards a win instead of a timeout draw
+  against a lone king. The unchanged baseline passed 343 Java and 184 browser tests on Windows.
+- [x] Bind result announcements to the exact game that produced them, checking under the room's
+  rematch lock before stopping its ticker or claiming its announcement flag. Cover delayed old
+  callbacks and identical result values from different games.
+- [x] Validate resume tokens and game state inside the room lock, so a rematch cannot change the
+  token's owner/colour between validation and attachment.
+- [x] Preserve each player's reconnect identity across rematches, including a lost start message;
+  restore the current colour, saved session and live UI from resync. Cover both colours, refresh
+  after recovery and continued play on both boards.
+- [x] Adjudicate flag fall before mid-play misconduct and announce it even when no board state
+  accompanies the event. Cover the third-opponent-piece journey with a lone-king draw, the result
+  on both boards and absence of restoration after expiry.
+- [x] Add ten Java regressions in `TestRematchEndingRegressions`,
+  `TestRematchReconnectRegressions`, `TestMidplayExpiryRegressions` and
+  `TestMidplayExpiryServerRegressions`. All ten fail on `6b661ed` and pass with the fixes.
+  `mvn -q package` passes all 353 Java tests on native Windows, with no failures or skips.
+- [x] Add five browser cases in `rematch-concurrency.spec.ts` and `midplay-expiry.spec.ts`:
+  lost rematch starts for both colours, a pre-rematch resume delivered after the swap, three
+  rounds of competing endings/rematches followed by reconnect and real moves, and the literal
+  two-warnings/Revert/Ready/expiry journey. The two lost-start cases, delayed resume and expiry
+  case fail on `6b661ed` and pass with the fixes; the concurrent lifecycle case is a passing
+  control, with the exact server interleaving forced in Java. The expiry case prepares the drag
+  first and releases after expiry, checking that the third event precedes the result so the
+  periodic ticker cannot mask the defect.
+- [x] Run the full suites against the rebuilt jar on native Windows: `mvn -q package` passes
+  all 353 Java tests; `CI=1 npx playwright test --retries=0` passes all 189 browser tests in
+  16.3 minutes. No failures, skips or retries. Shared clocks, session transitions and reconnect
+  state require the full suites. Independent review of the integrated changes found no further
+  regressions in these fixes.
+- [x] Commit and push all four fixes with their Java/browser regression coverage on
+  `latest-ai-model-review`. The fixes are on the review branch, not on `main`.
+
 ### Review baseline verification
 
 - [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,
