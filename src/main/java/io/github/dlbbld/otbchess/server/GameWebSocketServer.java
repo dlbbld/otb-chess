@@ -334,7 +334,7 @@ public class GameWebSocketServer extends WebSocketServer {
     } else {
       final Board parsed;
       try {
-        parsed = Board.fromFenStrict(fenInput);
+        parsed = OtbChessServer.parseStartingBoard(fenInput);
       } catch (final RuntimeException e) {
         // Any parse failure is treated as a user FEN error (the FEN string is user input),
         // surfacing the chess library's specific validation reason rather than an internal error.
@@ -402,6 +402,13 @@ public class GameWebSocketServer extends WebSocketServer {
       recordViolation(conn);
       return;
     }
+    // Reserve the seat, issue its token and announce the start as one room transaction.
+    synchronized (room) {
+      joinRoom(conn, gameId, room);
+    }
+  }
+
+  private void joinRoom(WebSocket conn, String gameId, GameRoom room) {
     if (room.isFull()) {
       // The room is still in memory but has no free seat. Distinguish an already-finished game from
       // one with two live players so the message is accurate.
@@ -1207,7 +1214,17 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    final Side side = room.getSide(conn);
+    // The waiting reply must be sent before another confirmation can announce the resume.
+    synchronized (room) {
+      final Side side = room.getSide(conn);
+      if (side == Side.NONE || !room.getSession().isWaitingForReady()) {
+        return; // Ignore duplicate/late confirmations rather than disabling an already-live board.
+      }
+      sendReadyResponse(room, conn, side);
+    }
+  }
+
+  private void sendReadyResponse(GameRoom room, WebSocket conn, Side side) {
     final boolean bothReady = room.getSession().playerReady(side);
 
     if (bothReady) {
@@ -1243,7 +1260,8 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    final var outcome = room.getSession().pressOpponentClock(side);
+    final var pausedSession = room.getSession();
+    final var outcome = pausedSession.pressOpponentClock(side);
     if (!outcome.offense()) {
       // Lever was already down — nothing happened, nothing to say. Unless the press met an expired clock.
       checkGameEnded(room);
@@ -1274,8 +1292,11 @@ public class GameWebSocketServer extends WebSocketServer {
     // another intervention took over meanwhile).
     maintenance.schedule(() -> {
       try {
-        if (room.getSession().resumeAfterWrongClockPress() != null) {
-          sendClockUpdate(room);
+        synchronized (room) {
+          if (room.getSession() == pausedSession
+              && pausedSession.resumeAfterWrongClockPress(outcome.pauseId()) != null) {
+            sendClockUpdate(room);
+          }
         }
       } catch (final RuntimeException e) {
         System.err.println("[wrong-clock-resume] " + room.getGameId() + ": " + e);

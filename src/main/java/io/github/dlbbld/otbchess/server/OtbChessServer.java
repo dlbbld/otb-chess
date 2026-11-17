@@ -163,7 +163,7 @@ public class OtbChessServer {
       obj.addProperty("valid", true);
     } else {
       try {
-        Board.fromFenStrict(fen.trim());
+        parseStartingBoard(fen.trim());
         obj.addProperty("valid", true);
       } catch (final Exception e) {
         obj.addProperty("valid", false);
@@ -177,6 +177,27 @@ public class OtbChessServer {
     final JsonObject obj = new JsonObject();
     obj.addProperty("version", appVersion());
     return GSON.toJson(obj).getBytes(StandardCharsets.UTF_8);
+  }
+
+  /** Shared by lobby validation and WebSocket creation so direct URLs cannot bypass it. */
+  static Board parseStartingBoard(String fen) {
+    final Board board = Board.fromFenStrict(fen);
+    // Match the session's fast automatic endings; FEN carries no repetition history.
+    // As during play, full dead-position searches are deliberately excluded here.
+    final String ending;
+    if (board.isCheckmate()) {
+      ending = "checkmate";
+    } else if (board.isStalemate()) {
+      ending = "stalemate";
+    } else if (board.isInsufficientMaterial()) {
+      ending = "a draw by insufficient material";
+    } else if (board.isSeventyFiveMove()) {
+      ending = "a draw by the 75-move rule";
+    } else {
+      return board;
+    }
+    throw new IllegalArgumentException("The starting position is already " + ending
+        + ". Choose a position before the game ended.");
   }
 
   // Package-private for TestOtbChessServer, which pins that the Maven filtering actually ran.

@@ -160,10 +160,10 @@ release's tasks until it ships.
   server dispatch: overlapping pauses, restoration, penalties, simultaneous Ready/join requests,
   draw claims/offers, reconnect/rematch lifecycle, starting positions and board event handling.
   Cross-check the documented arbiter policies and intentional FIDE deviations. Four substantial
-  defects and one lower-priority starting-position edge case are confirmed below. This pass
-  records findings only; application code is unchanged.
+  defects and one lower-priority starting-position edge case are confirmed below. All five
+  are now fixed on the review branch; the findings describe the reviewed snapshot.
 
-- [ ] **P1 — Simultaneous Ready confirmations can lock the moving player's board.**
+- [x] **P1 — Simultaneous Ready confirmations can lock the moving player's board.**
   `GameWebSocketServer.handleReadyToContinue` calls the synchronized `playerReady`, then sends
   its reply outside that transition's lock. Two concurrent confirmations can therefore deliver
   `gameResumed` followed by stale `waitingForOpponentReady` to White. The latter handler disables
@@ -175,7 +175,7 @@ release's tasks until it ships.
   Required coverage: deterministic concurrent Java confirmations and both live boards remaining
   playable after simultaneous Ready, with no stale waiting message after resume.
 
-- [ ] **P1 — An obsolete wrong-clock timer overrides a later pause or turn.** Black presses
+- [x] **P1 — An obsolete wrong-clock timer overrides a later pause or turn.** Black presses
   White's clock; during the five-second admonishment pause White moves Black's e7 pawn to e6
   and clicks Revert with manual readiness enabled. When the old timer fires, White's clock
   restarts although both Ready buttons remain visible and neither player is ready. If both
@@ -187,7 +187,7 @@ release's tasks until it ships.
   Required coverage: overlapping pauses and intervening turns; obsolete callbacks must neither
   charge time while waiting for Ready nor restart the wrong side's clock.
 
-- [ ] **P1 — Offering a draw during restoration can lose the game for the same illegal move
+- [x] **P1 — Offering a draw during restoration can lose the game for the same illegal move
   twice.** From the initial position, play e2–e5 and press the clock. While Revert is displayed,
   click Offer draw. `offerDrawCorrectTime` re-evaluates the unchanged illegal position without
   checking the restoration/Ready flags, increments the illegal-move counter again and awards
@@ -196,7 +196,7 @@ release's tasks until it ships.
   presses already have the missing recovery-state guards. Required coverage: offers throughout
   restoration/readiness must not re-adjudicate the pending move or add another penalty.
 
-- [ ] **P1 — Concurrent joiners can both acquire the same seat.** The room-full check and
+- [x] **P1 — Concurrent joiners can both acquire the same seat.** The room-full check and
   seat/token assignment in `handleJoinGame` are not atomic. Two join requests to the same code
   can both receive `gameJoined` as Black with different tokens, and `gameStarted` is broadcast
   twice. One connection is overwritten as the room's Black player, leaving an admitted player
@@ -205,7 +205,7 @@ release's tasks until it ships.
   405–429. Required coverage: reserve the remaining seat and start the game atomically; exactly
   one joiner succeeds, the other gets a full-room response, and the first seat/token survives.
 
-- [ ] **P2 — Terminal starting FENs start an active game instead of producing a result.**
+- [x] **P2 — Terminal starting FENs start an active game instead of producing a result.**
   Creating and joining `7k/6Q1/5K2/8/8/8/8/8 b - - 0 1` starts Black's clock and displays no
   result although Black is already checkmated and has no legal move. Confirmed through both
   browsers. `GameSession.startGame` (174–178) unconditionally starts the clock; automatic
@@ -222,6 +222,37 @@ release's tasks until it ships.
   reproductions, not passing regression coverage for fixes. The unchanged application retains
   the preceding 270-Java/153-browser passing baseline; those full suites were not repeated for
   this documentation-only review because the targeted probes expose paths that baseline misses.
+
+### Second-pass fixes and regression coverage — 2026-11-17
+
+- [x] Serialize Ready transitions and their replies under the room lock. Ignore duplicate or
+  late confirmations once readiness is complete, so no waiting reply can disable a live board.
+- [x] Cancel wrong-clock pauses when an intervention or turn supersedes them. Associate each
+  delayed callback with its session and pause ID, and refuse to resume during restoration,
+  readiness or another running turn. An obsolete callback cannot consume a newer pause.
+- [x] Reject draw offers throughout restoration, manual readiness and the automatic resume
+  delay with a specific explanation. Do not evaluate the pending move again, register an offer,
+  consume escalation counts or add another penalty.
+- [x] Reserve the remaining seat, issue its token and announce game start under one room lock.
+  Exactly one concurrent joiner is admitted; the other receives the full-room response.
+- [x] Reject already-terminal starting FENs before creating a room or starting any clock.
+  Share validation between the lobby endpoint and WebSocket creation, covering checkmate,
+  stalemate, insufficient material and the automatic 75-move draw. Valid playable FENs remain
+  supported, including positions one move before mate.
+- [x] Add 12 Java regression cases in `TestSecondPassRegressions` and
+  `TestSecondPassServerRegressions`. Latches force the vulnerable Ready/join interleavings;
+  session tests pin recovery guards, penalty counts, timer identity and the running side.
+- [x] Add 10 browser regressions in `second-pass.spec.ts` and `second-pass-pauses.spec.ts`:
+  simultaneous Ready and join requests from real pages, winning-seat reconnect, both boards
+  remaining playable, repeated offers throughout recovery, and terminal FEN rejection through
+  both entry points. Two isolated packaged servers use the production five-second wrong-clock
+  pause to replay overlapping restoration and next-turn journeys without touching port 8080.
+- [x] `mvn -q package`: all 282 Java tests pass on native Windows with no failures or skips,
+  including the Windows launcher tests. All 10 new browser cases pass in the focused run.
+- [x] `CI=1 npx playwright test --retries=0`: all 163 browser tests pass on native
+  Windows/Chromium in 9.2 minutes, with no failures, skips or retries, against the rebuilt jar.
+  Full coverage includes the Windows launcher and earlier review regressions; shared game
+  flow, admission, clock callbacks and recovery require coverage beyond the focused cases.
 
 ### Review baseline verification
 

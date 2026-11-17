@@ -195,6 +195,7 @@ public class GameSession {
     Optional<ArbiterResponse> midPlayResponse = MidPlayValidator.validate(event, side, positionBeforeTurn,
         removedSquaresThisTurn);
     if (midPlayResponse.isPresent()) {
+      wrongClockPressPausedFor = null; // This intervention supersedes the old admonishment pause.
       final Optional<BitboardPosition> committedReleasePosition = finalMoveCommitment != null
           ? Optional.of(finalMoveCommitment.position())
           : arbiter.findReleasedPieceCommitmentPosition(board, currentSequence);
@@ -480,6 +481,11 @@ public class GameSession {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
 
+    final String pauseMessage = drawOfferPauseMessage();
+    if (pauseMessage != null) {
+      return ArbiterResponse.incompleteMove(pauseMessage);
+    }
+
     // Validate the move first (no side effects on the move state — evaluateClockPress is
     // pure; the move-performing happens in handleArbiterResponse, which we skip on success).
     final ArbiterResponse moveResponse = evaluateMove(afterPosition);
@@ -520,6 +526,11 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
     }
 
+    final String pauseMessage = drawOfferPauseMessage();
+    if (pauseMessage != null) {
+      return DrawOfferManager.DrawOfferResult.repeated(pauseMessage);
+    }
+
     final boolean offererHasMove = side == board.getSideToMove();
     final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
     if (result.gameLost()) {
@@ -528,6 +539,16 @@ public class GameSession {
           sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
     }
     return result;
+  }
+
+  private String drawOfferPauseMessage() {
+    if (waitingForRestoration) {
+      return "The game is paused. Please restore the position before offering a draw.";
+    }
+    if (waitingForReady) {
+      return "The game is paused. Please wait until both players are ready.";
+    }
+    return restorationResumePending ? "The game is paused. Please wait until the clock restarts." : null;
   }
 
   /**
@@ -840,6 +861,7 @@ public class GameSession {
   private final Map<Side, Integer> wrongClockPressCounts = new EnumMap<>(Side.class);
   // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
   private Side wrongClockPressPausedFor;
+  private long wrongClockPauseId;
 
   /**
    * Outcome of a press of the opponent's clock lever.
@@ -850,8 +872,10 @@ public class GameSession {
    * @param message      arbiter message for the offender ({@code null} for a no-op)
    * @param opponentInfo passive info for the opponent ({@code null} for a no-op and for the game-ending press, which
    *                     speaks through {@code gameEnded} instead)
+   * @param pauseId identifies this pause for its delayed callback; zero when no resume is scheduled
    */
-  public record WrongClockPressOutcome(boolean offense, boolean gameLost, String message, String opponentInfo) {
+  public record WrongClockPressOutcome(boolean offense, boolean gameLost, String message, String opponentInfo,
+      long pauseId) {
   }
 
   /**
@@ -862,27 +886,28 @@ public class GameSession {
     checkFlagFall();
     final Side opponent = side.getOppositeSide();
     if (state != GameState.IN_PROGRESS || clock.getRunningFor() != opponent) {
-      return new WrongClockPressOutcome(false, false, null, null);
+      return new WrongClockPressOutcome(false, false, null, null, 0);
     }
     final int count = wrongClockPressCounts.merge(side, 1, Integer::sum);
     if (count >= WRONG_CLOCK_PRESS_LIMIT) {
       terminationActor = side;
       endGame(new GameResult(GameResultType.WRONG_CLOCK_PRESS_GAME_LOST, opponent,
           sideName(side) + " loses the game by repeatedly pressing the opponent's clock."));
-      return new WrongClockPressOutcome(true, true, null, null);
+      return new WrongClockPressOutcome(true, true, null, null, 0);
     }
     clock.stopClock();
     wrongClockPressPausedFor = opponent;
+    wrongClockPauseId++;
     if (count == WRONG_CLOCK_PRESS_LIMIT - 1) {
       return new WrongClockPressOutcome(true, false,
           "Please do not press your opponent's clock. The game is paused and will continue shortly."
               + " Warning: the next press of your opponent's clock loses the game.",
           "Your opponent pressed your clock and has been warned: the next press loses them the game."
-              + " The game is paused; your clock will restart shortly.");
+              + " The game is paused; your clock will restart shortly.", wrongClockPauseId);
     }
     return new WrongClockPressOutcome(true, false,
         "Please do not press your opponent's clock. The game is paused and will continue shortly.",
-        "Your opponent pressed your clock. The game is paused; your clock will restart shortly.");
+        "Your opponent pressed your clock. The game is paused; your clock will restart shortly.", wrongClockPauseId);
   }
 
   /**
@@ -892,7 +917,17 @@ public class GameSession {
    * @return the side whose clock was restarted, or {@code null} when nothing happened
    */
   public synchronized Side resumeAfterWrongClockPress() {
-    if (state != GameState.IN_PROGRESS || wrongClockPressPausedFor == null) {
+    return resumeAfterWrongClockPress(wrongClockPauseId);
+  }
+
+  /** Resume only the pause this callback was scheduled for; never consume a newer pause. */
+  public synchronized Side resumeAfterWrongClockPress(long pauseId) {
+    if (pauseId != wrongClockPauseId) {
+      return null;
+    }
+    if (state != GameState.IN_PROGRESS || wrongClockPressPausedFor == null
+        || waitingForRestoration || waitingForReady || restorationResumePending
+        || wrongClockPressPausedFor != board.getSideToMove() || clock.getRunningFor() != Side.NONE) {
       wrongClockPressPausedFor = null;
       return null;
     }
@@ -1034,6 +1069,7 @@ public class GameSession {
   }
 
   private void startNewTurn() {
+    this.wrongClockPressPausedFor = null;
     this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
@@ -1092,6 +1128,7 @@ public class GameSession {
    * A completed legal move is retained separately in finalMoveCommitment, so unrelated interventions cannot erase it.
    */
   public synchronized void enterWaitingForReady() {
+    this.wrongClockPressPausedFor = null;
     this.waitingForReady = true;
     this.whiteReady = false;
     this.blackReady = false;
@@ -1108,6 +1145,7 @@ public class GameSession {
 
   public synchronized void enterWaitingForRestoration(BitboardPosition restorationTargetPosition) {
     RestoreTargetInvariant.verify(board, restorationTargetPosition);
+    this.wrongClockPressPausedFor = null;
     this.waitingForRestoration = true;
     this.restorationResumePending = false;
     this.waitingForReady = false;
