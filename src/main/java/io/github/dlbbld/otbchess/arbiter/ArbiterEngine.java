@@ -75,27 +75,27 @@ public class ArbiterEngine {
    * Incomplete castling, promotion and en passant remain subject to the ordinary arbiter flow.
    */
   public Optional<FinalMoveCommitment> findFinalMoveCommitment(Board board, ActionSequence sequence) {
-    final ActionSequence prefix = new ActionSequence(sequence.getSideToMove());
-    final int resetIndex = sequence.getEvents().size() - sequence.getEventsSinceReleasedPieceRuleReset().size();
-    BitboardPosition position = board.getBitboardPosition();
-    for (int i = 0; i < sequence.getEvents().size(); i++) {
-      final BoardEvent event = sequence.getEvents().get(i);
-      if (i == resetIndex) {
-        prefix.resetReleasedPieceRule();
-      }
-      prefix.addEvent(event);
-      if (i < resetIndex) {
+    // One forward pass: the replay carries the release ruling from event to event, so the ruling for
+    // each prefix of the turn is at hand without replaying that prefix. This runs on every board
+    // event of an uncommitted turn; a replay per prefix made a long turn cost its length cubed.
+    final ReleaseReplay replay = new ReleaseReplay(board, sequence);
+    for (final BoardEvent event : sequence.getEvents()) {
+      if (!replay.advance(event)) {
         continue;
       }
-      position = applyEvent(position, event);
       if (!isReleaseOnBoard(event) && event.type() != BoardEventType.REMOVE) {
         continue;
       }
+      final BitboardPosition position = replay.position();
       final Set<LegalMove> matches = PositionComparator.findMatchingMoves(board, position);
-      if (matches.isEmpty() || hasReleasedPieceViolation(board, position, prefix)) {
+      if (matches.isEmpty()) {
         continue;
       }
-      final Optional<TouchMoveObligation> obligation = findBindingObligation(board, prefix);
+      final ReleaseRuling ruling = replay.ruling();
+      if (findReleasedPieceViolation(board, position, replay.prefix(), ruling).isPresent()) {
+        continue;
+      }
+      final Optional<TouchMoveObligation> obligation = ruling.obligation();
       for (final LegalMove move : matches) {
         if (obligation.isEmpty() || TouchMoveEvaluator.satisfiesObligation(obligation.get(), move)) {
           return Optional.of(new FinalMoveCommitment(move, position));
@@ -442,32 +442,63 @@ public class ArbiterEngine {
    * </ul>
    */
   private static ReleaseRuling findReleaseRuling(Board board, ActionSequence sequence) {
-    final List<BoardEvent> events = sequence.getEvents();
-    final int resetIndex = events.size() - sequence.getEventsSinceReleasedPieceRuleReset().size();
-    final ActionSequence prefix = new ActionSequence(sequence.getSideToMove());
-    BitboardPosition currentPosition = board.getBitboardPosition();
-    ReleasedPieceLock lock = null;
-    Optional<TouchMoveObligation> obligationAtRelease = Optional.empty();
-    BitboardPosition overruledReleasePosition = null;
+    final ReleaseReplay replay = new ReleaseReplay(board, sequence);
+    for (final BoardEvent event : sequence.getEvents()) {
+      replay.advance(event);
+    }
+    return replay.ruling();
+  }
 
-    for (int i = 0; i < events.size(); i++) {
-      final BoardEvent event = events.get(i);
+  /**
+   * Replays the events of a turn one at a time and keeps what the releases so far settle. After each
+   * {@link #advance}, {@link #ruling()} is the {@link ReleaseRuling} for the events replayed up to there - the same
+   * ruling a fresh replay of that prefix would give.
+   */
+  private static final class ReleaseReplay {
+    private final Board board;
+    /** Index of the first event inside the released-piece rule window (see {@link ActionSequence}). */
+    private final int resetIndex;
+    /** The events replayed so far, with the rule window starting where the turn's own window starts. */
+    private final ActionSequence prefix;
+    private BitboardPosition position;
+    private ReleasedPieceLock lock;
+    private Optional<TouchMoveObligation> obligationAtRelease = Optional.empty();
+    private BitboardPosition overruledReleasePosition;
+
+    ReleaseReplay(Board board, ActionSequence sequence) {
+      this.board = board;
+      this.resetIndex = sequence.getEvents().size() - sequence.getEventsSinceReleasedPieceRuleReset().size();
+      this.prefix = new ActionSequence(sequence.getSideToMove());
+      this.position = board.getBitboardPosition();
+    }
+
+    /**
+     * Replays the next event of the turn.
+     *
+     * @return whether the event lies inside the released-piece rule window; events before it are only recorded as
+     *         touches
+     */
+    boolean advance(BoardEvent event) {
+      final int index = prefix.getEvents().size();
+      if (index == resetIndex) {
+        prefix.resetReleasedPieceRule();
+      }
       prefix.addEvent(event);
-      if (i < resetIndex) {
-        continue;
+      if (index < resetIndex) {
+        return false;
       }
       if (lock != null && displacesReleasedPiece(event, lock)) {
         lock = lock.withReleasedPieceDisplacedAfterRelease();
       }
 
-      final BitboardPosition beforeEvent = currentPosition;
-      currentPosition = applyEvent(currentPosition, event);
+      final BitboardPosition beforeEvent = position;
+      position = applyEvent(position, event);
       if (lock != null || !isReleaseOnBoard(event)) {
-        continue;
+        return true;
       }
       final ReleaseCommitment commitment = findCommitmentForRelease(board, event, beforeEvent);
       if (commitment.allowedFinalPositions().isEmpty()) {
-        continue;
+        return true;
       }
       final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(prefix, board);
       final Set<LegalMove> honouringMoves = new HashSet<>();
@@ -481,20 +512,32 @@ public class ArbiterEngine {
       }
       if (honouringMoves.isEmpty()) {
         if (overruledReleasePosition == null) {
-          overruledReleasePosition = currentPosition;
+          overruledReleasePosition = position;
         }
-        continue;
+        return true;
       }
-      lock = new ReleasedPieceLock(currentPosition, honouringPositions, honouringMoves, event.piece(),
+      lock = new ReleasedPieceLock(position, honouringPositions, honouringMoves, event.piece(),
           event.targetSquare(), event.square(), false);
       obligationAtRelease = obligation;
+      return true;
     }
 
-    if (lock != null) {
-      return new ReleaseRuling(Optional.of(lock), obligationAtRelease, Optional.empty());
+    /** The board after the events replayed so far (events before the rule window do not count). */
+    BitboardPosition position() {
+      return position;
     }
-    return new ReleaseRuling(Optional.empty(), TouchMoveEvaluator.findObligation(sequence, board),
-        Optional.ofNullable(overruledReleasePosition));
+
+    ActionSequence prefix() {
+      return prefix;
+    }
+
+    ReleaseRuling ruling() {
+      if (lock != null) {
+        return new ReleaseRuling(Optional.of(lock), obligationAtRelease, Optional.empty());
+      }
+      return new ReleaseRuling(Optional.empty(), TouchMoveEvaluator.findObligation(prefix, board),
+          Optional.ofNullable(overruledReleasePosition));
+    }
   }
 
   private static boolean displacesReleasedPiece(BoardEvent event, ReleasedPieceLock lock) {

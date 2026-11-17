@@ -7,6 +7,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.java_websocket.WebSocket;
+import org.java_websocket.exceptions.WebsocketNotConnectedException;
 
 import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
@@ -199,18 +200,31 @@ public class GameRoom {
   }
 
   public void sendToBoth(String message) {
-    if (whitePlayer != null && whitePlayer.isOpen()) {
-      whitePlayer.send(message);
-    }
-    if (blackPlayer != null && blackPlayer.isOpen()) {
-      blackPlayer.send(message);
-    }
+    sendToSide(Side.WHITE, message);
+    sendToSide(Side.BLACK, message);
   }
 
   public void sendToSide(Side side, String message) {
-    final WebSocket socket = getSocket(side);
-    if (socket != null && socket.isOpen()) {
+    send(getSocket(side), message);
+  }
+
+  /**
+   * Sends to a socket if it is open. A socket can close between the open check and the send; the send then throws.
+   * That must not fail the caller: the message was for a player who is gone, and whatever the caller does next - above
+   * all the other player's copy of a result - still has to happen. The close itself is handled by the server's close
+   * callback like any other disconnect.
+   *
+   * @return whether the message was handed to the socket
+   */
+  public static boolean send(WebSocket socket, String message) {
+    if (socket == null || !socket.isOpen()) {
+      return false;
+    }
+    try {
       socket.send(message);
+      return true;
+    } catch (final WebsocketNotConnectedException e) {
+      return false;
     }
   }
 

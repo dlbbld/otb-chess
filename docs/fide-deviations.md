@@ -172,6 +172,8 @@ As with A-003, **the count accumulates across different moves** and never resets
 2. Second press: same pause plus the warning — the next press loses the game.
 3. Third press: **loss of the game** (`WRONG_CLOCK_PRESS_GAME_LOST`). Offender: told they were warned and lose; opponent: *"Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game."*
 
+While the admonishment pause lasts nothing is adjudicated, as in a restoration pause: a draw claim or a draw offer by either player is answered with *"The game is paused. Please wait until the clock restarts."* — no penalty time, no offer for the opponent, no step on a claim or offer ladder, and the one claim of the move is not used up.
+
 **Where in code**: [`GameSession.pressOpponentClock`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_CLOCK_PRESS_LIMIT"); the server schedules the clock restart after the pause.
 
 **Rationale**: Same as the other ladders — model the fault, teach through the arbiter's escalating response, encode the arbiter judgment as an explicit transparent threshold.
@@ -215,13 +217,13 @@ As with A-003, **the count accumulates across different moves** and never resets
 
 **Our policy**:
 
-1. An offer made while the opponent's offer can still be accepted **is the acceptance** of that offer. The game is drawn by agreement. This includes the offer implied by a rejected draw claim (FIDE 9.5).
+1. An offer made while the opponent's offer can still be accepted **is the acceptance** of that offer. The game is drawn by agreement. This includes the offer implied by a rejected draw claim (FIDE 9.5), and the answer to an offer the opponent made together with a move whose clock press is still outstanding.
 2. Only the player the offer was made to can accept or reject it. The offering player can do neither, whatever button reaches the server.
 3. A new offer that comes with an invalid move is not registered and leaves any pending offer alone.
 
 **Rationale**: at a board, "I offer a draw" answered by "I offer a draw" is an agreement; no arbiter would let the second sentence cancel the first. The earlier behaviour kept one offer slot and overwrote it, so that each player waited for the other, the second player's panel accepted nothing ("You cannot accept your own draw offer"), and its Reject button withdrew the player's own offer while the opponent was told it had been rejected. An offer that can no longer be accepted (A-002) is different: there the second player has declined by moving, and their offer is a new one.
 
-**Where in code**: `GameSession.agreeDrawByCounterOffer`, `DrawOfferManager.canAccept` / `rejectDraw`. Pinned by `TestFourthPassRegressions`, `TestFourthPassServerRegressions` and `fourth-pass.spec.ts`.
+**Where in code**: `GameSession.agreeDrawByCounterOffer`, `DrawOfferManager.canAccept` / `rejectDraw`. Pinned by `TestFourthPassRegressions`, `TestFourthPassServerRegressions` and `fourth-pass.spec.ts`; the offer-with-a-move case by `TestCloudReviewServerRegressions` and `cloud-review.spec.ts`.
 
 ---
 

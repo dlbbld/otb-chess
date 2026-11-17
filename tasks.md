@@ -396,6 +396,48 @@ release's tasks until it ships.
   and then disturbed is still restored to the released position (wording is now correct, the Revert after the
   next clock press brings the turn start back). Not reproduced as a player-visible contradiction.
 
+### Cloud review of the review branch — 2026-11-17
+
+- [x] A multi-agent cloud review of `latest-ai-model-review` against `main` at `dcd23e0` returned nine findings:
+  six introduced by the branch, three already on `main`. Each was confirmed in the code before it was changed.
+- [x] **No restore request on a finished game (finding 1).** A move owed after a rejected draw claim survived a
+  flag fall found by the clock press itself; the server then sent `restoreRequired` on the ended game and
+  paused its session again. `endGame` now clears the owed move, `enterWaitingForRestoration` ignores an ended
+  game, and the server sends no restore instructions once the game is over.
+- [x] **A socket that closes during a send no longer costs the other player the result (finding 2).** A socket
+  can close between the open check and the send, and Java-WebSocket then throws. `GameRoom.send` skips such a
+  socket; every server send goes through it. Before, the announce-once flag was set, the exception skipped
+  `gameEnded` for both players, and every later action of the remaining player was dropped as late.
+- [x] **A room left full without a game expires (finding 3).** The reaper no longer exempts full rooms: the room
+  lock already keeps it from seeing a join in progress, so a full unstarted room is a failed join or rematch.
+  Both players are told and unmapped. A joiner whose socket closes while being seated gives the seat back.
+- [x] **Overlapping expiry sweeps (finding 4).** The sweep also runs on every `createGame`. Only the sweep that
+  removes the room cleans up after it, and it removes only that room's mapping - a second sweep used to send
+  "Game expired" again and could unmap the creator from a game created meanwhile.
+- [x] **One replay per ruling (finding 5).** `ArbiterEngine.findFinalMoveCommitment` replayed the turn twice for
+  every release prefix, so the cost of one board event grew with the cube of the turn's length (800 events
+  without a committing release: over a minute of held session lock). `ReleaseReplay` carries the ruling
+  forward in one pass. Same rulings as before on 21,188 randomised checks against the previous code.
+- [x] **One final clock update (finding 6).** `sendGameEnded` owns the final clock update; the ticker no longer
+  sends a second, identical one before a flag-fall result.
+- [x] **Abandonment does not outrank a fallen flag (finding 7, on `main`).** `GameSession.abandon` checks the
+  clocks first, like every other action that can decide the game. "Claim victory" pressed after the claimer's
+  own time ran out, and the abandonment deadline, now end the game on time and announce that.
+- [x] **Nothing is adjudicated during the pause after a wrong clock press (finding 8, on `main`).** Draw claims
+  and offers are refused with "The game is paused. Please wait until the clock restarts." - no penalty time,
+  no converted offer, no restarted clock, no step on a ladder. Policy A-006.
+- [x] **An offer answering an offer made with a move agrees the draw (finding 9, on `main`).** While the
+  opponent's offer can still be accepted, the "opponent has already made a move" refusal no longer applies.
+  Policy A-009.
+- [x] Tests: `TestCloudReviewRegressions` (11), `TestCloudReviewServerRegressions` (16), `cloud-review.spec.ts`
+  (9). On `dcd23e0` 19 of the 27 Java tests and 6 of the 9 browser tests fail. The others are positive
+  controls and, in the browser, the nearest player journey for the races it cannot force (findings 2, 3
+  and 4); those races are pinned by the Java tests.
+  `RuleFuzzer`: 3,000 games, 0 findings.
+- [x] Verification on macOS: `mvn -q package` runs 342 Java tests, 0 failures, 4 skipped (Windows-only launcher
+  tests). `CI=1 npx playwright test --retries=0`: 183 passed, 1 skipped (Windows-only), in 4.6 minutes.
+  `TouchMoveOracle`: 33,793 cases, 0 differences.
+
 ### Review baseline verification
 
 - [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,

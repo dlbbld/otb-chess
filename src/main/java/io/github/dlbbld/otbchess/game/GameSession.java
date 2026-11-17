@@ -565,7 +565,10 @@ public class GameSession {
     return true;
   }
 
-  /** @return the refusal for an offer or claim made during a restoration pause, or {@code null} when play is on. */
+  /**
+   * @return the refusal for an offer or claim made while the arbiter has stopped the clocks - a restoration pause or
+   *         the admonishment pause after a wrong clock press - or {@code null} when play is on
+   */
   private String pauseMessage(String action) {
     if (waitingForRestoration) {
       return "The game is paused. Please restore the position before " + action + ".";
@@ -573,7 +576,14 @@ public class GameSession {
     if (waitingForReady) {
       return "The game is paused. Please wait until both players are ready.";
     }
-    return restorationResumePending ? "The game is paused. Please wait until the clock restarts." : null;
+    return restorationResumePending || isWrongClockPressPause()
+        ? "The game is paused. Please wait until the clock restarts."
+        : null;
+  }
+
+  /** The admonishment pause after a wrong clock press: the arbiter restarts the interrupted clock by itself. */
+  private boolean isWrongClockPressPause() {
+    return wrongClockPressPausedFor != null && clock.getRunningFor() == Side.NONE;
   }
 
   /**
@@ -979,9 +989,15 @@ public class GameSession {
    * servers do: the leaver loses — unless the remaining player could not checkmate by any series of legal moves
    * (helpmate test via {@link Adjudicator}, QUICK variant like {@link #resign(Side)}), in which case it is a draw.
    *
-   * @return the game result, or {@code null} when there is nothing to adjudicate (game not running)
+   * <p>
+   * A clock that has run out but has not been adjudicated yet comes first, like for every other action that can decide
+   * the game: the game then ends on time inside this call and nothing is left to adjudicate here.
+   *
+   * @return the game result, or {@code null} when there is nothing to adjudicate (game not running, or decided by
+   *         the flag fall this call found - see {@link #getResult()})
    */
   public synchronized GameResult abandon(Side side) {
+    checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       // Never started (reaper territory) or already decided (e.g. flag fell while they were gone).
       return null;
@@ -1130,6 +1146,10 @@ public class GameSession {
     this.waitingForReady = false;
     this.waitingForRestoration = false;
     this.restorationResumePending = false;
+    // A move owed after a rejected draw claim is no longer owed: nothing may ask for it, or for a
+    // restoration towards it, once the game is over.
+    this.mustExecuteMove = null;
+    this.mustExecuteMoveSan = null;
     drawOfferManager.clearOffer();
     this.clock.stopClock();
   }
@@ -1179,6 +1199,9 @@ public class GameSession {
   }
 
   public synchronized void enterWaitingForRestoration(BitboardPosition restorationTargetPosition) {
+    if (state == GameState.ENDED) {
+      return; // endGame cleared every pause; a finished game must not be paused again
+    }
     RestoreTargetInvariant.verify(board, restorationTargetPosition);
     this.wrongClockPressPausedFor = null;
     this.waitingForRestoration = true;
