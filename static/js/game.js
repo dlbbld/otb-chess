@@ -476,6 +476,7 @@ class Game {
     });
 
     this.ws.on('waitingForReady', (data) => {
+      this.board.setEnabled(false);
       this.showArbiterMessage(data.message, 'info');
       this.clearArbiterButtons();
       this.showArbiterButton('Ready to continue', () => {
@@ -486,6 +487,7 @@ class Game {
     });
 
     this.ws.on('waitingForOpponentReady', (data) => {
+      this.board.setEnabled(false);
       this.showArbiterMessage(data.message, 'info');
     });
 

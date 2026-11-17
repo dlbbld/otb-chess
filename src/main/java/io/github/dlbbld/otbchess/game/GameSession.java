@@ -53,6 +53,7 @@ public class GameSession {
 
   private GameState state;
   private GameResult result;
+  private long endedAtMs;
 
   // For the personalised end-of-game messages: the side that performed the terminating action
   // (resigned, flagged, or accepted a draw); the client phrases the message in the second person
@@ -267,6 +268,9 @@ public class GameSession {
     if (clock.getRunningFor() == Side.NONE) {
       return ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts.");
     }
+    if (checkFlagFall().isPresent()) {
+      return ArbiterResponse.incompleteMove("Your time has expired.");
+    }
 
     // Special case: must execute specified move (after rejected draw claim)
     if (mustExecuteMove != null) {
@@ -296,6 +300,9 @@ public class GameSession {
       return Optional.empty();
     }
     if (side != board.getSideToMove()) {
+      return Optional.empty();
+    }
+    if (waitingForRestoration || waitingForReady || restorationResumePending || checkFlagFall().isPresent()) {
       return Optional.empty();
     }
     // Skip during the patient-loop recovery from a rejected draw claim — that path requires the
@@ -348,7 +355,6 @@ public class GameSession {
     }
 
     // Game-ending move: keep the move performed and finalize state.
-    clock.switchClock();
     drawOfferManager.clearOffer();
     endGame(ending.get());
     startNewTurn();
@@ -360,11 +366,14 @@ public class GameSession {
     response.restorePosition().ifPresent(target -> RestoreTargetInvariant.verify(board, target));
     switch (response.type()) {
       case MOVE_ACCEPTED -> {
-        // Perform the move on the internal board
+        // Validate the committed move before changing the clock. If time expired during
+        // evaluation, undo it so flag fall is adjudicated against the original board.
         applyCommittedMove(response.acceptedMove().get().moveSpecification());
-
-        // Switch the clock
-        clock.switchClock();
+        if (!clock.switchClock()) {
+          board.unmove();
+          checkFlagFall();
+          return ArbiterResponse.incompleteMove("Your time has expired.");
+        }
 
         // Clear draw offer unless we're keeping it (draw was just offered with this move)
         if (!keepDrawOffer) {
@@ -426,9 +435,13 @@ public class GameSession {
           .filter(lm -> lm.moveSpecification().equals(executedMove)).findFirst()
           .orElseThrow(() -> new IllegalStateException("Specified move is not in the legal move set"));
       applyCommittedMove(executedMove);
+      if (!clock.switchClock()) {
+        board.unmove();
+        checkFlagFall();
+        return ArbiterResponse.incompleteMove("Your time has expired.");
+      }
       mustExecuteMove = null;
       mustExecuteMoveSan = null;
-      clock.switchClock();
 
       final Optional<GameResult> ending = checkAutomaticEndings();
       if (ending.isPresent()) {
@@ -527,6 +540,10 @@ public class GameSession {
    * @return the game result if accepted, empty if rejected. Check {@code getAcceptDrawRejectionMessage}.
    */
   public synchronized Optional<GameResult> acceptDraw(Side side) {
+    if (state != GameState.IN_PROGRESS || checkFlagFall().isPresent()) {
+      lastAcceptDrawRejection = "The game is not in progress.";
+      return Optional.empty();
+    }
     final Optional<String> rejection = drawOfferManager.acceptDraw(side);
     if (rejection.isPresent()) {
       this.lastAcceptDrawRejection = rejection.get();
@@ -744,6 +761,9 @@ public class GameSession {
    * a position unwinnable despite sufficient material (see {@link #drawReason(Side)}).
    */
   public synchronized GameResult resign(Side side) {
+    if (state == GameState.ENDED) {
+      return result;
+    }
     final Side opponent = side.getOppositeSide();
 
     if (Adjudicator.adjudicateResignationQuick(board, side) == AdjudicationResult.DRAW) {
@@ -1019,8 +1039,17 @@ public class GameSession {
   }
 
   private void endGame(GameResult gameResult) {
+    if (state == GameState.ENDED) {
+      return;
+    }
     this.state = GameState.ENDED;
     this.result = gameResult;
+    this.endedAtMs = System.currentTimeMillis();
+    this.wrongClockPressPausedFor = null;
+    this.waitingForReady = false;
+    this.waitingForRestoration = false;
+    this.restorationResumePending = false;
+    drawOfferManager.clearOffer();
     this.clock.stopClock();
   }
 
@@ -1202,6 +1231,14 @@ public class GameSession {
 
   public synchronized GameResult getResult() {
     return result;
+  }
+
+  public synchronized long getEndedAtMs() {
+    return endedAtMs;
+  }
+
+  public synchronized boolean isReady(Side side) {
+    return side == Side.WHITE ? whiteReady : blackReady;
   }
 
   /** The side that resigned, flagged, or accepted a draw (for the personalised end-of-game message). */

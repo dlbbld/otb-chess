@@ -31,7 +31,7 @@ public class ClockManager {
   /**
    * Starts the clock for the given side.
    */
-  public void startClock(Side side) {
+  public synchronized void startClock(Side side) {
     if (side == Side.NONE) {
       throw new IllegalArgumentException("Cannot start clock for NONE");
     }
@@ -43,20 +43,24 @@ public class ClockManager {
   /**
    * Stops both clocks (pause).
    */
-  public void stopClock() {
+  public synchronized void stopClock() {
     tick();
     this.runningFor = Side.NONE;
   }
 
   /**
    * Switches the clock: stops the current side's clock (adding increment), starts the opponent's. Called after a valid
-   * move is accepted.
+   * move is accepted. Returns false on expiry, preserving the expired clock for adjudication.
    */
-  public void switchClock() {
+  public synchronized boolean switchClock() {
     tick();
 
     if (runningFor == Side.NONE) {
       throw new IllegalStateException("Cannot switch clock when no clock is running");
+    }
+    final long remaining = runningFor == Side.WHITE ? whiteTimeRemainingMs : blackTimeRemainingMs;
+    if (remaining <= 0) {
+      return false;
     }
 
     // Add increment to the side that just moved
@@ -66,12 +70,13 @@ public class ClockManager {
     final Side opponent = runningFor.getOppositeSide();
     this.runningFor = opponent;
     this.lastTickNanos = System.nanoTime();
+    return true;
   }
 
   /**
    * Adds penalty time to the given side's clock.
    */
-  public void addPenaltyTime(Side side, long ms) {
+  public synchronized void addPenaltyTime(Side side, long ms) {
     addTime(side, ms);
   }
 
@@ -79,7 +84,7 @@ public class ClockManager {
    * Returns the remaining time for the given side in milliseconds. Accounts for currently elapsed time if the clock is
    * running.
    */
-  public long getRemainingTimeMs(Side side) {
+  public synchronized long getRemainingTimeMs(Side side) {
     tick();
     return switch (side) {
       case WHITE -> whiteTimeRemainingMs;
@@ -91,21 +96,21 @@ public class ClockManager {
   /**
    * Checks if the given side's time has expired (flag fall).
    */
-  public boolean isFlagFall(Side side) {
+  public synchronized boolean isFlagFall(Side side) {
     return getRemainingTimeMs(side) <= 0;
   }
 
   /**
    * Returns which side's clock is currently running.
    */
-  public Side getRunningFor() {
+  public synchronized Side getRunningFor() {
     return runningFor;
   }
 
   /**
    * Updates elapsed time for the running clock. Must be called before reading time values.
    */
-  public void tick() {
+  public synchronized void tick() {
     if (runningFor == Side.NONE) {
       return;
     }

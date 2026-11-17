@@ -9,12 +9,12 @@ release's tasks until it ships.
   bugs and missing regression coverage. Inspect game/session/arbiter logic, board and
   lobby UI, WebSocket handling, reconnection, clocks, room lifecycle, tests, and
   deployment configuration. Use a separate worktree at `../otb-chess-model-review`.
-  The review identifies five release-worthy defects below. Application fixes remain
-  open. Prioritize correctness and recovery before performance tuning.
+  The review identified the five release-worthy defects below; all five are now fixed
+  on the review branch. Findings and line references describe the reviewed snapshot.
 
 ### Confirmed findings
 
-- [ ] **P1 — Expired time can be revived by increment.** `GameSession.pressClockButton`
+- [x] **P1 — Expired time can be revived by increment.** `GameSession.pressClockButton`
   accepts a move without first deciding flag fall. `ClockManager.switchClock`
   ticks the remaining time down to zero and then adds increment unconditionally.
   Flag fall is otherwise polled once per second, creating a window in any increment
@@ -27,7 +27,7 @@ release's tasks until it ships.
   Required coverage should exercise presses immediately before and after expiry,
   with increment, through the session and both live boards.
 
-- [ ] **P1 — Refresh during manual restoration can strand both players.** With
+- [x] **P1 — Refresh during manual restoration can strand both players.** With
   auto-resume disabled, play e2–e5, press the clock, click Revert, and refresh White
   while both players have Ready to continue buttons. Both Ready buttons disappear,
   the clock remains stopped, and White's clock press says to wait until both players
@@ -39,7 +39,7 @@ release's tasks until it ships.
   Required coverage should reload each seat during restoration, each readiness
   phase, and an unpressed move, and verify a playable, consistent state on both boards.
 
-- [ ] **P1 — Checkmate during a wrong-clock pause corrupts game state.** Start from
+- [x] **P1 — Checkmate during a wrong-clock pause corrupts game state.** Start from
   `7k/8/5KQ1/8/8/8/8/8 w - - 0 1`. Black presses White's clock, triggering the
   admonishment pause, and White plays Qg7# during that pause. The board remains
   enabled. `evaluateForAutoEnd` applies the mating move and then calls switchClock
@@ -50,7 +50,7 @@ release's tasks until it ships.
   Required coverage should exercise automatic endings during every supported pause
   and ensure move, clock, result and both clients transition consistently.
 
-- [ ] **P1 — Finished results can be overwritten by later actions.** With White's
+- [x] **P1 — Finished results can be overwritten by later actions.** With White's
   draw offer pending, White resigns and Black then accepts the offer. The server
   replaces Black's win with a draw. A subsequent Black resignation replaces that
   with White's win. Java reproduced all three results. The live WebSocket path
@@ -61,7 +61,7 @@ release's tasks until it ships.
   and 1021–1025. Required coverage should verify result immutability under delayed,
   repeated and competing terminal messages, including both clients' score and reason.
 
-- [ ] **P2 — Finished rooms permanently consume server capacity.** The room cap
+- [x] **P2 — Finished rooms permanently consume server capacity.** The room cap
   counts every entry in gameRooms, while cleanup removes only WAITING_FOR_PLAYERS
   rooms. Completed and abandoned games persist after both sockets close. At the
   default cap, 1000 retained completed rooms prevent all new games until restart.
@@ -72,7 +72,34 @@ release's tasks until it ships.
   verify capacity recovery after an ended-room retention period while preserving
   the supported rematch window and active rooms.
 
-### Verification
+### Fixes and regression coverage
+
+- [x] Adjudicate expiry before accepting a clock press; the clock itself refuses to add
+  increment after expiry. Undo a speculative acceptance if expiry occurs during evaluation,
+  preserving the original position and the released-piece safety checks.
+- [x] Replay restoration/readiness controls to both seats on reconnect, preserving already
+  acknowledged readiness. Retain the physical board separately from the committed chess
+  position so refreshing an unpressed or invalid move cannot silently reset one board.
+- [x] Finalize automatic endings without switching a paused clock. Ending a game clears
+  recovery state and pending offers; delayed actions preserve the first result and metadata.
+- [x] Reap finished, disconnected rooms after `OTB_ENDED_ROOM_TTL_MS` (default 30 minutes),
+  periodically and before capacity checks. Keep active rooms and connected rematch players.
+  Document the retention setting in `SETUP.md`.
+- [x] Add Java regressions in `TestReviewRegressions` and `TestReviewServerRegressions`:
+  expired/live increments, paused mate, immutable endings, reconnect readiness and physical
+  position, retention duration, active/connected protection and capacity reclamation.
+- [x] Add browser regressions in `review-regressions.spec.ts` and `room-retention.spec.ts`:
+  both seats refreshing before Revert, before Ready and after one Ready acknowledgement;
+  unpressed move refresh; paused mate; late terminal messages; expiry between ticker checks;
+  and a capped isolated server that retains rematches and then admits a new game after cleanup.
+- [x] `mvn -q package` passes all 257 Java tests on native Windows, including existing
+  invariant and launcher coverage plus the new regression tests.
+- [x] `CI=1 npx playwright test --retries=0` passes all 144 browser tests in 7.3 minutes
+  on native Windows/Chromium against the rebuilt jar. Full coverage is required because
+  these fixes touch shared clocks, game endings, recovery and room lifecycle. All 11 new
+  browser regressions pass; no retries or skipped tests were needed.
+
+### Review baseline verification
 
 - [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,
   errors or skips. Existing coverage includes many gameplay regressions, but the

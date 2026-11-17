@@ -64,6 +64,7 @@ public class GameWebSocketServer extends WebSocketServer {
   // --- Phase 2 hardening config (12-factor; overridable via environment) ---
   private final int maxConcurrentGames = OtbChessServer.envInt("OTB_MAX_GAMES", 1000);
   private final long roomTtlMs = OtbChessServer.envLong("OTB_ROOM_TTL_MS", TimeUnit.MINUTES.toMillis(30));
+  private final long endedRoomTtlMs = OtbChessServer.envLong("OTB_ENDED_ROOM_TTL_MS", TimeUnit.MINUTES.toMillis(30));
   private final int maxMessageChars = OtbChessServer.envInt("OTB_MAX_MSG_CHARS", 65536);
   private final int maxViolationsPerConn = OtbChessServer.envInt("OTB_MAX_VIOLATIONS", 30);
   // How long to wait after a socket drops before telling the opponent "disconnected" — gives the
@@ -263,6 +264,7 @@ public class GameWebSocketServer extends WebSocketServer {
   // ===== Message handlers =====
 
   private void handleCreateGame(WebSocket conn, JsonObject json) {
+    reapAbandonedRooms();
     // Resource bound: cap the number of live rooms so a home box can't be exhausted.
     if (gameRooms.size() >= maxConcurrentGames) {
       sendError(conn, "The server is at capacity. Please try again shortly.");
@@ -445,6 +447,9 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final Side side = room.getSide(conn);
+    if (side != room.getSession().getHavingMove() || room.getSession().getState() != GameState.IN_PROGRESS) {
+      return;
+    }
     final JsonObject eventData = optObject(json, "event");
     final String eventType = (eventData == null) ? null : optString(eventData, "eventType");
     if (eventType == null) {
@@ -485,6 +490,11 @@ public class GameWebSocketServer extends WebSocketServer {
 
     if (room.getSession().isRestorationResumePending()) {
       return;
+    }
+
+    final BitboardPosition physicalPosition = optionalBoardState(json);
+    if (physicalPosition != null) {
+      room.setPhysicalPosition(physicalPosition);
     }
 
     if (room.getSession().isWaitingForRestoration()) {
@@ -565,8 +575,8 @@ public class GameWebSocketServer extends WebSocketServer {
       if (autoEndResponse.isPresent()) {
         sendArbiterResponse(room, side, autoEndResponse.get());
         sendClockUpdate(room);
-        checkGameEnded(room);
       }
+      checkGameEnded(room);
     }
   }
 
@@ -782,6 +792,7 @@ public class GameWebSocketServer extends WebSocketServer {
         conn.send(GSON.toJson(msg));
       }
     }
+    checkGameEnded(room);
   }
 
   private void handleRejectDraw(WebSocket conn) {
@@ -1093,9 +1104,13 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void completeRestoration(GameRoom room, BitboardPosition restorePosition) {
+    if (room.getSession().getState() != GameState.IN_PROGRESS) {
+      return;
+    }
     // Capture before completeRestoration() in case the latch is ever cleared there in future.
     final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
     room.getSession().completeRestoration();
+    room.setPhysicalPosition(restorePosition);
 
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "positionRestored");
@@ -1129,6 +1144,9 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void resumeAfterRestorationDelay(GameRoom room) {
+    if (!room.getSession().isRestorationResumePending()) {
+      return;
+    }
     final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
     room.getSession().resumeAfterRestorationDelay();
     final JsonObject msg = new JsonObject();
@@ -1346,16 +1364,35 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("gameId", gameId);
     msg.addProperty("side", side.name().toLowerCase());
     msg.addProperty("state", session.getState().name());
-    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition())));
+    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(room.getPhysicalPosition())));
     msg.addProperty("havingMove", session.getHavingMove().name().toLowerCase());
     msg.add("clock", clockData);
     msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     conn.send(GSON.toJson(msg));
 
+    sendRecoveryState(room, side);
+    sendRecoveryState(room, side.getOppositeSide());
+
     System.out.println("Resumed " + side.name().toLowerCase() + " in game " + gameId);
   }
 
   // ===== Helper methods =====
+
+  private void sendRecoveryState(GameRoom room, Side side) {
+    final var session = room.getSession();
+    final JsonObject msg = new JsonObject();
+    if (session.isWaitingForRestoration() && side == session.getHavingMove()) {
+      msg.addProperty("type", "restoreRequired");
+      msg.addProperty("message", "Please restore the position before continuing.");
+    } else if (session.isWaitingForReady()) {
+      final boolean ready = session.isReady(side);
+      msg.addProperty("type", ready ? "waitingForOpponentReady" : "waitingForReady");
+      msg.addProperty("message", ready ? "Waiting for your opponent to be ready..." : "Are you ready to continue?");
+    } else {
+      return;
+    }
+    room.sendToSide(side, GSON.toJson(msg));
+  }
 
   /** Per-connection state for app-level abuse throttling (carried via {@link WebSocket#getAttachment()}). */
   private static final class ConnectionState {
@@ -1503,6 +1540,21 @@ public class GameWebSocketServer extends WebSocketServer {
       final long now = System.currentTimeMillis();
       for (final var entry : gameRooms.entrySet()) {
         final GameRoom room = entry.getValue();
+        synchronized (room) {
+          final var session = room.getSession();
+          if (session.getState() == GameState.ENDED && now - session.getEndedAtMs() >= endedRoomTtlMs
+              && !room.isConnected(Side.WHITE) && !room.isConnected(Side.BLACK)) {
+            gameRooms.remove(entry.getKey(), room);
+            room.stopClockTicker();
+            for (final Side side : new Side[] {Side.WHITE, Side.BLACK}) {
+              final WebSocket socket = room.getSocket(side);
+              if (socket != null) {
+                playerGameMap.remove(socket, entry.getKey());
+              }
+            }
+            continue;
+          }
+        }
         final boolean waiting = room.getSession().getState() == GameState.WAITING_FOR_PLAYERS;
         if (!waiting || now - room.getCreatedAtMs() <= roomTtlMs) {
           continue;
@@ -1569,6 +1621,7 @@ public class GameWebSocketServer extends WebSocketServer {
     // Also notify opponent of accepted moves — include full board state
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       final var position = room.getSession().getBoard().getBitboardPosition();
+      room.setPhysicalPosition(position);
       final var havingMove = room.getSession().getHavingMove();
 
       final JsonObject opponentMsg = new JsonObject();
@@ -1614,6 +1667,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private void sendGameEnded(GameRoom room, GameResult result) {
     room.stopClockTicker();
+    sendClockUpdate(room);
 
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameEnded");

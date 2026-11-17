@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit;
 import org.java_websocket.WebSocket;
 
 import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
@@ -20,6 +21,7 @@ public class GameRoom {
 
   private final String gameId;
   private GameSession session;
+  private BitboardPosition physicalPosition;
   private final TimeControl timeControl;
   // Kept for rematches: a rematch rebuilds the session with the SAME settings.
   private final int maxIllegalMoves;
@@ -65,6 +67,7 @@ public class GameRoom {
       Board startingBoard) {
     this.gameId = gameId;
     this.session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
+    this.physicalPosition = startingBoard.getBitboardPosition();
     this.timeControl = timeControl;
     this.maxIllegalMoves = maxIllegalMoves;
     this.autoResumeAfterRestore = autoResumeAfterRestore;
@@ -81,6 +84,14 @@ public class GameRoom {
 
   public GameSession getSession() {
     return session;
+  }
+
+  public synchronized BitboardPosition getPhysicalPosition() {
+    return physicalPosition;
+  }
+
+  public synchronized void setPhysicalPosition(BitboardPosition position) {
+    physicalPosition = position;
   }
 
   public TimeControl getTimeControl() {
@@ -239,5 +250,6 @@ public class GameRoom {
     rematchOfferedBy = Side.NONE;
     session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore,
         new Board(session.getBoard().getInitialFen()));
+    physicalPosition = session.getBoard().getBitboardPosition();
   }
 }
