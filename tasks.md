@@ -290,6 +290,78 @@ release's tasks until it ships.
   window). After correcting that expectation the four new cases passed 10 times each; the full
   browser suite was not repeated for that test-only edit.
 
+### Third review pass — 2026-11-17
+
+- [x] Own pass over `44bcc34`, aimed at interactions between the rules rather than single
+  handlers. Method: `RuleFuzzer` (two simulated clients driving the real server with random
+  moves, half-made moves, touches, clock presses, offers, claims, Revert/Ready, refreshes and
+  timer firings, with state/board/instruction checks after every action) and `TouchMoveOracle`
+  (touch-move rulings compared with the text of FIDE 4.3). Both are opt-in tools under
+  `src/test`, outside the regular suite; see their class comments for how to run them.
+- [x] What holds: over 20,000 random games no handler failed, no clock ran during a pause or
+  stayed stopped, the player on move was never locked out, both boards and the server always
+  showed the same position outside the case below, an untouched legal move was always accepted
+  in every FIDE-conform order of execution (capture by removal first, en passant, castling,
+  promotion in three orders), honest play always got a move accepted again, and a touch-move
+  ruling was always satisfiable by moving the named piece. 33,793 touch-move cases match FIDE
+  4.3 without a single difference.
+- [x] Six inconsistencies are confirmed and open below. Each was first found by the fuzzer,
+  reduced by hand and replayed through the real pages with ordinary clicks and drags (FEN for
+  the castling cases: `r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1`). None produces a
+  wrong game result on its own; all of them make the arbiter contradict itself or lose a draw
+  offer. This pass records findings only; application code is unchanged.
+
+- [ ] **P1 — Contradictory castling orders: the king's release and a later rook touch pull to
+  different sides.** White plays Ke1-g1, puts the king back on e1, moves Ra1-b1 and presses
+  the clock. Arbiter: "Castling has been started ... you must complete the castling move by
+  moving the rook from h1 to f1." After Revert, White castles kingside exactly as told:
+  "Because you touched the king and the rook, and castling is legal, please perform the
+  castling move." The same answer comes again for a fresh kingside castling from the start
+  position; only queenside castling is accepted, which the arbiter never names. The released
+  king (FIDE 4.7.1: only castling on that side remains) and the king-then-rook touch record
+  (4.4.1, A-008) are evaluated independently: `findReleasedPieceViolation` reports the
+  kingside lock first, the touch-move layer then demands the side of the first touched rook.
+  Required: one ruling for the turn - the earlier commitment decides - and a message that names
+  the side and the rook.
+- [ ] **P1 — "You must complete castling" after the rook was touched first.** White clicks the
+  rook on a1, plays Ke1-c1 and presses the clock: "Castling has been started ... complete the
+  castling move by moving the rook from a1 to d1." White does: "Touch-move violation: You
+  first touched the rook on a1 ... but moved another piece ... move the rook from a1." By FIDE
+  4.4.2 castling on that side was never available, so the first instruction is wrong, and the
+  second message says the rook was not moved although it was. The released-piece lock ignores
+  an earlier touch obligation; the fuzzer shows the same with an opponent piece touched first.
+- [ ] **P1 — "Your move is final. Press the clock to continue." when the clock press is then
+  rejected.** Two ways: (a) White clicks the g2 pawn, plays h2-h3, then drags a Black pawn.
+  After Revert both the restore and the resume message say the move is final; pressing the
+  clock gives "Touch-move violation: You first touched the pawn on g2". (b) White plays Ke1-g1,
+  moves the king on to f1 and presses the clock; after Revert the same "final" message appears
+  although the rook still has to move, and the clock press repeats "Castling has been
+  started". `restorationFromReleasedPiece` is set for every release that is legal in isolation
+  (`findReleasedPieceCommitmentPosition` knows no touch obligation) and for an incomplete
+  castling, and the server words the message from that flag alone. The fuzzer meets this in
+  about one game in eleven. Required: say "final" only when a clock press on the restored
+  position would be accepted.
+- [ ] **P1 — A counter offer replaces the pending draw offer instead of agreeing the draw.**
+  White offers a draw; Black, with the offer on screen, presses Offer draw too. No draw. The
+  single offer slot now holds Black's offer, Black's panel still shows White's: Accept answers
+  "You cannot accept your own draw offer." Plausible in real play when both press at about the
+  same time. Required: an offer made while the opponent's acceptable offer is pending is an
+  acceptance.
+- [ ] **P1 — A player can reject, and thereby withdraw, their own draw offer.**
+  `DrawOfferManager.rejectDraw` does not look at who rejects. In the case above Black presses
+  Reject on the stale panel: Black's own offer is cancelled, White is told "Your opponent
+  rejected the draw offer" and White's Accept panel disappears. Same result without a counter
+  offer: Black offers during White's move, White plays e2-e4 (the old panel stays, by design),
+  offers a draw with the move and then dismisses the old panel with Reject - White's fresh
+  offer is gone and Black loses the Accept button with a false message. FIDE 9.1.2.1: an offer
+  cannot be withdrawn. Required: only the recipient can reject; a panel whose offer was
+  replaced must be closed or its buttons must act on nothing.
+- [ ] **P3 — A page refresh inside the 1.5 s automatic resume delay re-enables the board.**
+  `resync` enables the board of the player on move and `sendRecoveryState` knows restoration
+  and Ready but not the resume delay, while the server drops board events until the clock
+  restarts: pieces moved in that window are neither recorded as touches nor shown to the
+  opponent. Needs a refresh at exactly that moment; no wrong result seen.
+
 ### Review baseline verification
 
 - [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,
