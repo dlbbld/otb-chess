@@ -254,6 +254,42 @@ release's tasks until it ships.
   Full coverage includes the Windows launcher and earlier review regressions; shared game
   flow, admission, clock callbacks and recovery require coverage beyond the focused cases.
 
+### Review of the second-pass fixes — 2026-11-17
+
+- [x] Review `d877341`, `3974c2b` and `ccd48cf` on macOS. The five second-pass fixes and the
+  draw-offer replay after reconnect are correct for their targets; 282 Java tests and 162
+  browser tests pass unchanged (the Windows-only launcher tests are skipped here). Three gaps of
+  the same classes remained and are fixed below.
+- [x] **A Revert message was accepted from anyone at any time.** `handleRestorePosition` checked
+  neither the sender nor whether a restoration was pending. Not reachable through the UI, but a
+  modified client could send it during the opponent's normal turn: the half-made move was reset
+  and, with manual Ready, the game waited for both Ready confirmations while the mover's clock
+  kept running. `GameSession.completeRestoration` now reports whether a restoration was pending
+  and changes nothing otherwise; the server accepts Revert only from the player who has to
+  restore. A repeated Revert can no longer withdraw the opponent's Ready confirmation either.
+- [x] **Draw claims were still processed during a pause.** Offers were blocked during
+  restoration, manual Ready and the automatic resume delay, claims were not. Through the UI:
+  move an opponent piece, then claim on the board while Revert is showing - the claim was
+  rejected, the opponent got two minutes and a draw offer during the pause. A claim with a move
+  also restarted the claimer's clock while the game was paused. Claims in these pauses are now
+  not considered: no penalty, no converted offer, no step on any claim ladder, and the one
+  claim of the move stays available.
+- [x] **Abort racing a join.** The abort's check and the room removal were not one step with
+  the join's seat reservation: the creator could be told "Game aborted" while the joiner was
+  put into a started game whose room was gone. Abort, join and the expiry of never-joined rooms
+  now share the room lock, and a join re-checks that the room is still registered.
+- [x] Add 11 Java cases in `TestThirdPassRegressions` and `TestThirdPassServerRegressions`
+  (claims in all three pause phases, Revert from either player in normal play, Revert only by
+  the restoring player and only once, forced abort/join interleaving) and 4 browser cases in
+  `third-pass.spec.ts`. The Revert and claim browser cases fail on `ccd48cf`; the abort/join
+  browser case checks that both pages agree on one outcome, the forced interleaving is in Java.
+- [x] Verification on macOS: `mvn -o -q package` runs 293 Java tests with no failures (4
+  Windows-only launcher tests skipped). `CI=1 npx playwright test --retries=0` ran 167 tests:
+  165 passed, 1 skipped (Windows-only launcher), and the new abort/join case failed on a wrong
+  expectation in the test itself (a refused abort leaves its refusal in the creator's message
+  window). After correcting that expectation the four new cases passed 10 times each; the full
+  browser suite was not repeated for that test-only edit.
+
 ### Review baseline verification
 
 - [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,

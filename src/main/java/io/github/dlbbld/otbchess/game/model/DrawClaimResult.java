@@ -94,6 +94,15 @@ public record DrawClaimResult(boolean accepted, String message, Optional<String>
         false, true, Optional.of(opponentInfo));
   }
 
+  /**
+   * The claim arrived while the arbiter had stopped the clocks: it is not considered. Flagged like a wrong-time claim so
+   * the claimer keeps the one claim of this move, but nothing is told to the opponent.
+   */
+  public static DrawClaimResult paused(String message) {
+    return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), false, false,
+        true, false, Optional.empty());
+  }
+
   /** Internal pre-claim error (no opponent notification). */
   public static DrawClaimResult error(String message) {
     return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), Optional.empty(), false, false,

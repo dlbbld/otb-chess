@@ -481,7 +481,7 @@ public class GameSession {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
 
-    final String pauseMessage = drawOfferPauseMessage();
+    final String pauseMessage = pauseMessage("offering a draw");
     if (pauseMessage != null) {
       return ArbiterResponse.incompleteMove(pauseMessage);
     }
@@ -526,7 +526,7 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
     }
 
-    final String pauseMessage = drawOfferPauseMessage();
+    final String pauseMessage = pauseMessage("offering a draw");
     if (pauseMessage != null) {
       return DrawOfferManager.DrawOfferResult.repeated(pauseMessage);
     }
@@ -541,9 +541,10 @@ public class GameSession {
     return result;
   }
 
-  private String drawOfferPauseMessage() {
+  /** @return the refusal for an offer or claim made during a restoration pause, or {@code null} when play is on. */
+  private String pauseMessage(String action) {
     if (waitingForRestoration) {
-      return "The game is paused. Please restore the position before offering a draw.";
+      return "The game is paused. Please restore the position before " + action + ".";
     }
     if (waitingForReady) {
       return "The game is paused. Please wait until both players are ready.";
@@ -694,6 +695,12 @@ public class GameSession {
     checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       return DrawClaimResult.error("You cannot claim a draw now.");
+    }
+    // While the arbiter has stopped the clocks nothing is adjudicated: like a draw offer, a claim made
+    // now is not considered at all - no penalty time, no converted offer, no step on a claim ladder.
+    final String pauseMessage = pauseMessage("claiming a draw");
+    if (pauseMessage != null) {
+      return DrawClaimResult.paused(pauseMessage);
     }
     if (side != board.getSideToMove()) {
       // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is. (Offering a
@@ -1160,8 +1167,14 @@ public class GameSession {
 
   /**
    * Marks the restore flow complete and either waits for ready confirmation or resumes later.
+   *
+   * @return whether a restoration was pending; false leaves the game untouched, so a request that arrives when no
+   *         restoration is asked for (a repeated click, a message from a modified client) cannot pause a running game
    */
-  public synchronized void completeRestoration() {
+  public synchronized boolean completeRestoration() {
+    if (state != GameState.IN_PROGRESS || !waitingForRestoration) {
+      return false;
+    }
     this.waitingForRestoration = false;
     // Preserve the FIDE 4.7 released-piece commitment when THIS restoration was caused by a
     // released-piece violation: the committed move must stay final across revert cycles until the
@@ -1179,6 +1192,7 @@ public class GameSession {
       this.restorationResumePending = false;
       this.waitingForReady = true;
     }
+    return true;
   }
 
   /**

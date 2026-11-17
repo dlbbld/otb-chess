@@ -409,6 +409,12 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void joinRoom(WebSocket conn, String gameId, GameRoom room) {
+    if (gameRooms.get(gameId) != room) {
+      // Aborted or expired between the lookup and the seat reservation.
+      sendJoinFailed(conn, "not_found",
+          "This game code wasn't found. It may have expired, ended, or been entered incorrectly.");
+      return;
+    }
     if (room.isFull()) {
       // The room is still in memory but has no free seat. Distinguish an already-finished game from
       // one with two live players so the message is accurate.
@@ -1098,14 +1104,18 @@ public class GameWebSocketServer extends WebSocketServer {
     if (room == null) {
       return;
     }
-    if (room.isFull() || room.getSession().getState() != GameState.WAITING_FOR_PLAYERS) {
-      sendError(conn, "The game cannot be aborted after it has started.");
-      return;
-    }
+    // One room transaction with joinRoom: either the abort removes the room before a joiner can
+    // take the seat, or the join starts the game and the abort is refused - never both.
+    synchronized (room) {
+      if (room.isFull() || room.getSession().getState() != GameState.WAITING_FOR_PLAYERS) {
+        sendError(conn, "The game cannot be aborted after it has started.");
+        return;
+      }
 
-    room.stopClockTicker();
-    gameRooms.remove(room.getGameId());
-    playerGameMap.remove(conn);
+      room.stopClockTicker();
+      gameRooms.remove(room.getGameId(), room);
+      playerGameMap.remove(conn);
+    }
 
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameAborted");
@@ -1133,9 +1143,12 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    // Send the position before the turn to the player so the client can restore
-    final var restorePosition = room.getSession().getRestorePosition();
-    completeRestoration(room, restorePosition);
+    // Revert belongs to the player who has to restore, and only while the arbiter asks for it.
+    // Anything else - the opponent, a repeated click, a modified client - is dropped silently.
+    if (room.getSide(conn) != room.getSession().getHavingMove()) {
+      return;
+    }
+    completeRestoration(room, room.getSession().getRestorePosition());
   }
 
   private void completeRestoration(GameRoom room) {
@@ -1143,12 +1156,11 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void completeRestoration(GameRoom room, BitboardPosition restorePosition) {
-    if (room.getSession().getState() != GameState.IN_PROGRESS) {
-      return;
-    }
     // Capture before completeRestoration() in case the latch is ever cleared there in future.
     final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
-    room.getSession().completeRestoration();
+    if (!room.getSession().completeRestoration()) {
+      return; // no restoration is pending (any more)
+    }
     room.setPhysicalPosition(restorePosition);
 
     final JsonObject msg = new JsonObject();
@@ -1619,13 +1631,14 @@ public class GameWebSocketServer extends WebSocketServer {
             }
             continue;
           }
+          // Same lock as joinRoom, so a room cannot expire under a joiner who is taking the seat.
+          final boolean waiting = session.getState() == GameState.WAITING_FOR_PLAYERS && !room.isFull();
+          if (!waiting || now - room.getCreatedAtMs() <= roomTtlMs) {
+            continue;
+          }
+          gameRooms.remove(entry.getKey(), room);
+          room.stopClockTicker();
         }
-        final boolean waiting = room.getSession().getState() == GameState.WAITING_FOR_PLAYERS;
-        if (!waiting || now - room.getCreatedAtMs() <= roomTtlMs) {
-          continue;
-        }
-        gameRooms.remove(entry.getKey());
-        room.stopClockTicker();
         final WebSocket creator = room.getWhitePlayer() != null ? room.getWhitePlayer() : room.getBlackPlayer();
         if (creator != null) {
           playerGameMap.remove(creator);
