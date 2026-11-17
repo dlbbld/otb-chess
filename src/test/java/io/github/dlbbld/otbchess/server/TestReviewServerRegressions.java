@@ -38,6 +38,17 @@ class TestReviewServerRegressions {
           case "equals" -> proxy == args[0];
           default -> null;
         });
+    long count(String type) {
+      return messages.stream().filter(m -> m.get("type").getAsString().equals(type)).count();
+    }
+    int indexOf(String type) {
+      for (int i = 0; i < messages.size(); i++) {
+        if (messages.get(i).get("type").getAsString().equals(type)) {
+          return i;
+        }
+      }
+      return -1;
+    }
     JsonObject last(String type) {
       return messages.stream().filter(m -> m.get("type").getAsString().equals(type)).reduce((a,b) -> b).orElseThrow();
     }
@@ -145,5 +156,120 @@ class TestReviewServerRegressions {
     final var next = new Client();
     server.onMessage(next.socket, "{\"type\":\"createGame\",\"side\":\"white\",\"initialTimeMs\":60000,\"incrementMs\":0}");
     assertNotNull(next.last("gameCreated"));
+  }
+
+  private void delayedResume(GameRoom room) throws Exception {
+    final var method = GameWebSocketServer.class.getDeclaredMethod("resumeAfterRestorationDelay", GameRoom.class);
+    method.setAccessible(true);
+    method.invoke(server, room);
+  }
+
+  @Test
+  void clockPressDuringTheAutoResumeDelayAnnouncesTheResumeExactlyOnce() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    server.onMessage(white.socket, "{\"type\":\"createGame\",\"side\":\"white\",\"initialTimeMs\":60000,\"incrementMs\":0}");
+    final String id = white.last("gameCreated").get("gameId").getAsString();
+    server.onMessage(black.socket, "{\"type\":\"joinGame\",\"gameId\":\"" + id + "\"}");
+    final var room = rooms().get(id);
+    final var original = room.getSession().getPositionBeforeTurn();
+    final var gson = new Gson();
+
+    // First offence, so the restoration costs nothing: White moves Black's e-pawn, then reverts.
+    final var moved = BitboardPositions.from(original).createChangedPosition(Square.E7, Piece.NONE)
+        .createChangedPosition(Square.E6, Piece.BLACK_PAWN).build();
+    final var event = JsonParser.parseString("""
+        {"type":"boardEvent","event":{"eventType":"DRAG_MOVE","square":"e7",
+        "targetSquare":"e6","piece":"BLACK_PAWN","displacedPiece":"NONE"}}
+        """).getAsJsonObject();
+    event.add("boardState", gson.toJsonTree(MessageConverter.fromStaticPosition(moved)));
+    server.onMessage(white.socket, event.toString());
+    server.onMessage(white.socket, "{\"type\":\"restorePosition\"}");
+    assertTrue(room.getSession().isRestorationResumePending());
+
+    // White presses the clock inside the delay without having moved: the clock runs again and the
+    // turn goes on, so both boards must hear about the resume - before the arbiter's answer.
+    final var press = new JsonObject();
+    press.addProperty("type", "clockPress");
+    press.add("boardState", gson.toJsonTree(MessageConverter.fromStaticPosition(original)));
+    server.onMessage(white.socket, press.toString());
+    assertEquals(Side.WHITE, room.getSession().getClock().getRunningFor());
+    assertEquals(1, white.count("gameResumed"));
+    assertEquals(1, black.count("gameResumed"));
+    assertEquals("white", white.last("gameResumed").get("havingMove").getAsString());
+    assertTrue(white.indexOf("gameResumed") < white.indexOf("illegal_move"));
+
+    // The delayed resume finds the game resumed and stays silent.
+    delayedResume(room);
+    assertEquals(1, white.count("gameResumed"));
+    assertEquals(1, black.count("gameResumed"));
+  }
+
+  @Test
+  void delayedResumeStaysSilentAfterTheGameEnded() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    final var room = rooms().get(id);
+    final var session = room.getSession();
+    server.onMessage(white.socket, "{\"type\":\"resign\"}");
+    delayedResume(room);
+    assertEquals(0, white.count("gameResumed"));
+    assertEquals(0, black.count("gameResumed"));
+    assertEquals(Side.NONE, session.getClock().getRunningFor());
+  }
+
+  @Test
+  void theResultIsAnnouncedOnceAndLateActionsAreDropped() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    server.onMessage(white.socket, "{\"type\":\"offerDraw\"}");
+    server.onMessage(black.socket, "{\"type\":\"acceptDraw\"}");
+    assertEquals(1, white.count("gameEnded"));
+    assertEquals(1, black.count("gameEnded"));
+
+    server.onMessage(black.socket, "{\"type\":\"rematchOffer\"}");
+    assertEquals("rematchOffered", white.messages.get(white.messages.size() - 1).get("type").getAsString());
+    final int whiteMessages = white.messages.size();
+    final int blackMessages = black.messages.size();
+
+    // Actions that were in flight when the game ended: no reply to anyone, and the result stands.
+    final var result = rooms().get(id).getSession().getResult();
+    for (final String late : new String[] {"resign", "acceptDraw", "rejectDraw", "offerDraw", "cancelDrawClaim",
+        "restorePosition", "readyToContinue", "opponentClockPressed", "claimVictory"}) {
+      server.onMessage(white.socket, "{\"type\":\"" + late + "\"}");
+      server.onMessage(black.socket, "{\"type\":\"" + late + "\"}");
+    }
+    server.onMessage(white.socket, "{\"type\":\"clockPress\",\"boardState\":{}}");
+    assertEquals(whiteMessages, white.messages.size());
+    assertEquals(blackMessages, black.messages.size());
+    assertEquals(result, rooms().get(id).getSession().getResult());
+
+    // What stays meaningful after the result still works, and a rematch is announced afresh.
+    server.onMessage(white.socket, "{\"type\":\"requestPgn\"}");
+    assertNotNull(white.last("pgn"));
+    server.onMessage(white.socket, "{\"type\":\"rematchOffer\"}");
+    assertNotNull(white.last("rematchStarted"));
+    server.onMessage(white.socket, "{\"type\":\"resign\"}");
+    assertEquals(2, white.count("gameEnded"));
+    assertEquals(2, black.count("gameEnded"));
+  }
+
+  @Test
+  void wrongClockPressOnAnExpiredClockAnnouncesTheFlagFall() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    server.onMessage(white.socket, "{\"type\":\"createGame\",\"side\":\"white\",\"initialTimeMs\":40,\"incrementMs\":0}");
+    final String id = white.last("gameCreated").get("gameId").getAsString();
+    server.onMessage(black.socket, "{\"type\":\"joinGame\",\"gameId\":\"" + id + "\"}");
+    Thread.sleep(70);
+    // Black presses White's lever after White's time ran out but before the periodic check noticed.
+    server.onMessage(black.socket, "{\"type\":\"opponentClockPressed\"}");
+    for (final Client client : new Client[] {white, black}) {
+      assertEquals(1, client.count("gameEnded"));
+      assertEquals("FLAG_FALL", client.last("gameEnded").get("resultType").getAsString());
+      assertEquals("black", client.last("gameEnded").get("winner").getAsString());
+    }
   }
 }

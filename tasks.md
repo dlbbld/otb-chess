@@ -99,6 +99,39 @@ release's tasks until it ships.
   these fixes touch shared clocks, game endings, recovery and room lifecycle. All 11 new
   browser regressions pass; no retries or skipped tests were needed.
 
+### Follow-up review of the fixes — 2026-11-17
+
+- [x] Review the fix commit (`262b666`) on macOS. The five fixes hold; `mvn -q package` and the
+  full browser suite passed unchanged. The review found one regression and two remaining gaps,
+  all fixed below.
+- [x] **Regression — a clock press during the auto-resume delay locked the board.** The guard
+  that keeps the delayed resume silent after the game ended also silenced it when a clock press
+  had restarted the clock first. A press that did not end the turn (e.g. pressing without a
+  move) then left the player with a running clock and a disabled board until a page refresh.
+  The session now reports a resume caused by a clock press, and the server announces it at
+  once, before the arbiter's answer; the delayed resume stays silent only when nothing is left
+  to resume.
+- [x] **Gap — expired time could still be escaped or reversed.** Only the clock press and draw
+  acceptance adjudicated expiry first. In the up-to-one-second gap before the periodic check, a
+  valid draw claim still drew for a player whose time had run out, and a resignation or a
+  penalty action (wrong-time offer, wrong clock press) lost the game for the player whose
+  opponent had already flagged. Every player action that can decide the game now adjudicates
+  flag fall first.
+- [x] **Gap — the result was announced more than once.** Draw by agreement sent `gameEnded`
+  twice, and every late action re-sent it, overwriting a rematch offer on both boards. The
+  result is now announced once per game, and gameplay actions arriving after it are dropped
+  without a reply. Rematch, PGN export and reconnect messages are unaffected.
+- [x] Java regressions added to `TestReviewRegressions` and `TestReviewServerRegressions`;
+  browser regressions added to `review-regressions.spec.ts` (early clock press, claim after
+  expiry, resignation after the opponent's expiry, single result announcement with late
+  actions during a rematch offer). The four browser regressions fail against `262b666`.
+- [x] `mvn -q package` passes all 267 Java tests on macOS (4 Windows-only launcher tests
+  skipped). `CI=1 npx playwright test --retries=0` passes 147 browser tests in 3.4 minutes
+  (1 Windows-only launcher test skipped). Full coverage was required because the changes touch
+  clocks, game endings, restoration and message dispatch.
+- [ ] Not covered by this follow-up: a pending draw offer is not shown again after the
+  recipient refreshes the page, so it can no longer be accepted. Present before `262b666`.
+
 ### Review baseline verification
 
 - [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,

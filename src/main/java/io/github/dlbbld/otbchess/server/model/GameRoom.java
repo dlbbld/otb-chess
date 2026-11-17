@@ -22,6 +22,8 @@ public class GameRoom {
   private final String gameId;
   private GameSession session;
   private BitboardPosition physicalPosition;
+  // Both players have been sent the result of the current session.
+  private boolean gameEndAnnounced;
   private final TimeControl timeControl;
   // Kept for rematches: a rematch rebuilds the session with the SAME settings.
   private final int maxIllegalMoves;
@@ -92,6 +94,19 @@ public class GameRoom {
 
   public synchronized void setPhysicalPosition(BitboardPosition position) {
     physicalPosition = position;
+  }
+
+  /** @return true for the first call per game, i.e. when the caller is the one to announce the result. */
+  public synchronized boolean markGameEndAnnounced() {
+    if (gameEndAnnounced) {
+      return false;
+    }
+    gameEndAnnounced = true;
+    return true;
+  }
+
+  public synchronized boolean isGameEndAnnounced() {
+    return gameEndAnnounced;
   }
 
   public TimeControl getTimeControl() {
@@ -251,5 +266,6 @@ public class GameRoom {
     session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore,
         new Board(session.getBoard().getInitialFen()));
     physicalPosition = session.getBoard().getBitboardPosition();
+    gameEndAnnounced = false;
   }
 }

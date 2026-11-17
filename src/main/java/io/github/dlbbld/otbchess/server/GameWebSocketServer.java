@@ -192,6 +192,9 @@ public class GameWebSocketServer extends WebSocketServer {
     final String type = json.get("type").getAsString();
 
     try {
+      if (isLateGameplayMessage(conn, type)) {
+        return;
+      }
       switch (type) {
         case "createGame" -> handleCreateGame(conn, json);
         case "joinGame" -> handleJoinGame(conn, json);
@@ -220,6 +223,26 @@ public class GameWebSocketServer extends WebSocketServer {
     } catch (final Exception e) {
       sendInternalError(conn, e, "onMessage");
     }
+  }
+
+  // Everything a player does to the running game. Rematch, PGN export, reconnect and lobby messages are not listed:
+  // they stay meaningful after the result.
+  private static final Set<String> GAMEPLAY_MESSAGE_TYPES = Set.of("boardEvent", "clockPress", "offerDraw",
+      "acceptDraw", "rejectDraw", "claimDraw", "cancelDrawClaim", "resign", "claimVictory", "restorePosition",
+      "readyToContinue", "opponentClockPressed");
+
+  /**
+   * A gameplay action that was still in flight when the game ended. Both players have the result by then, so the
+   * action is dropped without an answer: any reply would overwrite the result message, or a rematch offer made since,
+   * on the sender's board.
+   */
+  private boolean isLateGameplayMessage(WebSocket conn, String type) {
+    if (!GAMEPLAY_MESSAGE_TYPES.contains(type)) {
+      return false;
+    }
+    final String gameId = playerGameMap.get(conn);
+    final GameRoom room = gameId == null ? null : gameRooms.get(gameId);
+    return room != null && room.isGameEndAnnounced();
   }
 
   @Override
@@ -594,6 +617,14 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
+    // The press ended the automatic restoration pause while the turn goes on: announce the resume
+    // here, because the delayed resume will find nothing left to do. Sent before the arbiter's
+    // answer so that answer stays on top. An accepted move needs no announcement - it hands the
+    // turn over.
+    if (room.getSession().consumeResumedByClockPress() && response.type() != ArbiterResponseType.MOVE_ACCEPTED
+        && room.getSession().getState() == GameState.IN_PROGRESS) {
+      sendGameResumed(room, room.getSession().isRestorationFromReleasedPiece());
+    }
     sendArbiterResponse(room, side, response);
 
     sendOpponentArbiterNotification(room, side, response);
@@ -1144,11 +1175,14 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void resumeAfterRestorationDelay(GameRoom room) {
-    if (!room.getSession().isRestorationResumePending()) {
+    final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
+    if (!room.getSession().resumeAfterRestorationDelay()) {
       return;
     }
-    final boolean releasedMoveIsFinal = room.getSession().isRestorationFromReleasedPiece();
-    room.getSession().resumeAfterRestorationDelay();
+    sendGameResumed(room, releasedMoveIsFinal);
+  }
+
+  private void sendGameResumed(GameRoom room, boolean releasedMoveIsFinal) {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameResumed");
     msg.addProperty("havingMove", room.getSession().getHavingMove().name().toLowerCase());
@@ -1210,7 +1244,9 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final var outcome = room.getSession().pressOpponentClock(side);
     if (!outcome.offense()) {
-      return; // lever was already down — nothing happened, nothing to say
+      // Lever was already down — nothing happened, nothing to say. Unless the press met an expired clock.
+      checkGameEnded(room);
+      return;
     }
 
     if (outcome.gameLost()) {
@@ -1667,6 +1703,9 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private void sendGameEnded(GameRoom room, GameResult result) {
     room.stopClockTicker();
+    if (!room.markGameEndAnnounced()) {
+      return;
+    }
     sendClockUpdate(room);
 
     final JsonObject msg = new JsonObject();

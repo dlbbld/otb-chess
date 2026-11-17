@@ -111,6 +111,9 @@ public class GameSession {
   private boolean blackReady;
   private boolean waitingForRestoration;
   private boolean restorationResumePending;
+  // A clock press of the side to move ended the automatic restoration pause itself. The server
+  // announces that resume, because the delayed resume then finds nothing left to do.
+  private boolean resumedByClockPress;
   private BitboardPosition restorationTargetPosition;
   // True when the current restoration was caused by a released-piece (FIDE 4.7) violation. While set,
   // completeRestoration() preserves the released-piece rule window so the committed move stays final
@@ -262,8 +265,8 @@ public class GameSession {
     if (waitingForReady) {
       return ArbiterResponse.incompleteMove("The game is paused. Please wait until both players are ready.");
     }
-    if (restorationResumePending) {
-      resumeAfterRestorationDelay();
+    if (restorationResumePending && resumeAfterRestorationDelay()) {
+      resumedByClockPress = true;
     }
     if (clock.getRunningFor() == Side.NONE) {
       return ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts.");
@@ -472,6 +475,7 @@ public class GameSession {
    * appropriate intervention type if the move is invalid (in which case the offer is dropped without penalty).
    */
   public synchronized ArbiterResponse offerDrawCorrectTime(Side side, BitboardPosition afterPosition) {
+    checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
@@ -511,6 +515,7 @@ public class GameSession {
    * @return the arbiter message (may be null if no penalty), and whether game is lost
    */
   public synchronized DrawOfferManager.DrawOfferResult offerDrawWrongTime(Side side) {
+    checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
     }
@@ -665,6 +670,7 @@ public class GameSession {
   }
 
   private DrawClaimResult rejectClaimBeforeRuleMachinery(Side side) {
+    checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       return DrawClaimResult.error("You cannot claim a draw now.");
     }
@@ -761,6 +767,7 @@ public class GameSession {
    * a position unwinnable despite sufficient material (see {@link #drawReason(Side)}).
    */
   public synchronized GameResult resign(Side side) {
+    checkFlagFall();
     if (state == GameState.ENDED) {
       return result;
     }
@@ -852,6 +859,7 @@ public class GameSession {
    * running (their lever up) — otherwise the lever is already down and nothing happens, exactly like a real clock.
    */
   public synchronized WrongClockPressOutcome pressOpponentClock(Side side) {
+    checkFlagFall();
     final Side opponent = side.getOppositeSide();
     if (state != GameState.IN_PROGRESS || clock.getRunningFor() != opponent) {
       return new WrongClockPressOutcome(false, false, null, null);
@@ -928,7 +936,9 @@ public class GameSession {
   // ===== Flag fall =====
 
   /**
-   * Checks for flag fall. Should be called periodically.
+   * Checks for flag fall. Called periodically, and first thing by every player action that can decide the game:
+   * the periodic check leaves up to a second in which an expired clock has not been adjudicated yet, and an action
+   * arriving in that gap must not outrank the flag fall.
    *
    * <p>
    * FIDE 6.9: a player who runs out of time loses unless the opponent could not checkmate by any series of legal moves,
@@ -1135,12 +1145,24 @@ public class GameSession {
 
   /**
    * Restarts the clock after an automatic restoration pause.
+   *
+   * @return whether this call restarted the clock; false when the pause is over already (the game ended, another
+   *         intervention took over, or a clock press resumed the game first)
    */
-  public synchronized void resumeAfterRestorationDelay() {
+  public synchronized boolean resumeAfterRestorationDelay() {
     if (state == GameState.IN_PROGRESS && restorationResumePending && !waitingForReady && !waitingForRestoration) {
       restorationResumePending = false;
       clock.startClock(board.getSideToMove());
+      return true;
     }
+    return false;
+  }
+
+  /** @return and clears whether a clock press ended the automatic restoration pause since the last call. */
+  public synchronized boolean consumeResumedByClockPress() {
+    final boolean resumed = resumedByClockPress;
+    resumedByClockPress = false;
+    return resumed;
   }
 
   /**

@@ -15,6 +15,7 @@ import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.otbchess.core.BitboardPositions;
 import io.github.dlbbld.otbchess.event.BoardEvent;
+import io.github.dlbbld.otbchess.game.model.DrawClaimType;
 import io.github.dlbbld.otbchess.game.model.GameResultType;
 import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
@@ -91,5 +92,89 @@ class TestReviewRegressions {
     assertEquals(Side.WHITE, session.getResult().winner());
     assertEquals(Side.NONE, session.getClock().getRunningFor());
     assertNull(session.resumeAfterWrongClockPress());
+  }
+
+  // Rook each, so the side that flags loses (the opponent can mate); the halfmove clock makes a 50-move claim valid.
+  private static final String FIFTY_MOVE_CLAIMABLE = "4k3/4r3/8/8/8/4K3/4R3/8 w - - 100 80";
+
+  @Test
+  void validDrawClaimAfterExpiryStillLosesOnTime() throws Exception {
+    final var session = new GameSession(new TimeControl(50, 0), 2, true, Board.fromFenStrict(FIFTY_MOVE_CLAIMABLE));
+    session.startGame();
+    Thread.sleep(75);
+    final var claim = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null);
+    assertFalse(claim.accepted());
+    assertEquals(GameResultType.FLAG_FALL, session.getResult().type());
+    assertEquals(Side.BLACK, session.getResult().winner());
+  }
+
+  @Test
+  void validDrawClaimBeforeExpiryIsStillAccepted() {
+    final var session = new GameSession(new TimeControl(60000, 0), 2, true,
+        Board.fromFenStrict(FIFTY_MOVE_CLAIMABLE));
+    session.startGame();
+    assertTrue(session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_ON_BOARD, null).accepted());
+    assertEquals(GameResultType.FIFTY_MOVE_CLAIM, session.getResult().type());
+  }
+
+  @Test
+  void resignationAfterTheOpponentsExpiryKeepsTheWinOnTime() throws Exception {
+    final var session = new GameSession(new TimeControl(50, 0));
+    session.startGame();
+    Thread.sleep(75);
+    final var result = session.resign(Side.BLACK);
+    assertEquals(GameResultType.FLAG_FALL, result.type());
+    assertEquals(Side.BLACK, result.winner());
+    assertSame(result, session.getResult());
+  }
+
+  @Test
+  void penaltyActionsAfterTheOpponentsExpiryCannotReplaceTheFlagFall() throws Exception {
+    // Each of these would otherwise run its own escalation ladder against Black, whose opponent has already flagged.
+    for (int action = 0; action < 3; action++) {
+      final var session = new GameSession(new TimeControl(50, 0));
+      session.startGame();
+      Thread.sleep(75);
+      switch (action) {
+        case 0 -> assertFalse(session.pressOpponentClock(Side.BLACK).offense());
+        case 1 -> assertFalse(session.offerDrawWrongTime(Side.BLACK).accepted());
+        default -> assertFalse(session.claimDraw(Side.BLACK, DrawClaimType.FIFTY_MOVE_ON_BOARD, null).accepted());
+      }
+      assertEquals(GameResultType.FLAG_FALL, session.getResult().type());
+      assertEquals(Side.BLACK, session.getResult().winner());
+    }
+  }
+
+  @Test
+  void clockPressDuringTheAutomaticRestorationPauseReportsItsResumeOnce() {
+    final var session = new GameSession(new TimeControl(60000, 0));
+    session.startGame();
+    final var original = session.getPositionBeforeTurn();
+    session.getClock().stopClock();
+    session.enterWaitingForRestoration();
+    session.completeRestoration();
+    assertTrue(session.isRestorationResumePending());
+    assertFalse(session.consumeResumedByClockPress());
+
+    // A press without a move: the turn goes on, and the press itself restarted the clock.
+    assertNotEquals(ArbiterResponseType.MOVE_ACCEPTED, session.pressClockButton(Side.WHITE, original).type());
+    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+    assertTrue(session.consumeResumedByClockPress());
+    assertFalse(session.consumeResumedByClockPress());
+    // The delayed resume has nothing left to do.
+    assertFalse(session.resumeAfterRestorationDelay());
+  }
+
+  @Test
+  void delayedResumeRestartsTheClockWhenNoPressCameFirst() {
+    final var session = new GameSession(new TimeControl(60000, 0));
+    session.startGame();
+    session.getClock().stopClock();
+    session.enterWaitingForRestoration();
+    session.completeRestoration();
+    assertTrue(session.resumeAfterRestorationDelay());
+    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+    assertFalse(session.consumeResumedByClockPress());
+    assertFalse(session.resumeAfterRestorationDelay());
   }
 }

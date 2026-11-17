@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { startTwoPlayerGame, createGame, joinGame, expectGameStarted, expectGameResult, clickRestore, TwoPlayerGame } from './helpers/app';
+import { test, expect, Browser } from '@playwright/test';
+import { startTwoPlayerGame, createGame, joinGame, expectGameStarted, expectGameResult, clickRestore, claimFiftyMoveOnBoard, CreateOptions, SCORE_DRAW, TwoPlayerGame } from './helpers/app';
 import { dragPiece, pressClock, expectPiece } from './helpers/board';
 
 let game: TwoPlayerGame;
@@ -144,4 +144,115 @@ test('clock press after expiry cannot earn increment before the next ticker', as
     await expect(page.locator('#gameResultReason')).toContainText('loses on time');
     await expect(page.locator('#resignBtn')).toBeDisabled();
   }
+});
+
+// Follow-up review of the fixes above.
+
+interface FrameLog {
+  /** When this page received gameStarted - the server starts the clock and its 1 s ticker right after. */
+  startedAt: number;
+  gameEnded: number;
+}
+
+/** Like startTwoPlayerGame (creator is White), but records the server frames each page receives from the start. */
+async function startLoggedGame(browser: Browser, opts: CreateOptions = {}): Promise<{ logs: { white: FrameLog; black: FrameLog } }> {
+  const contexts = [await browser.newContext(), await browser.newContext()];
+  const white = await contexts[0].newPage();
+  const black = await contexts[1].newPage();
+  game = { contexts, white, black, creator: white, joiner: black, gameId: '' };
+  const logs = { white: { startedAt: 0, gameEnded: 0 }, black: { startedAt: 0, gameEnded: 0 } };
+  for (const side of ['white', 'black'] as const) {
+    game[side].on('websocket', socket => socket.on('framereceived', frame => {
+      const type = JSON.parse(frame.payload.toString()).type;
+      if (type === 'gameStarted') logs[side].startedAt = Date.now();
+      if (type === 'gameEnded') logs[side].gameEnded++;
+    }));
+  }
+  game.gameId = await createGame(white, opts);
+  await joinGame(black, game.gameId);
+  await expectGameStarted(white);
+  await expectGameStarted(black);
+  return { logs };
+}
+
+test('a clock press during the auto-resume delay leaves the player able to move', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  // A first offence that costs nothing but needs a restore: White moves one of Black's pieces.
+  await dragPiece(white, 'e7', 'e5');
+  await expect(white.locator('#arbiterMessage')).toContainText('You moved an opponent');
+  await clickRestore(white);
+  // White presses the own clock at once, inside the pause before the clock restarts, without a move.
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('pressed without a move being made');
+  await expect(white.locator('#chessClock')).not.toHaveClass(/paused/);
+  // Stay past the end of the pause: nothing arriving late may lock the board or replace the message.
+  await white.waitForTimeout(2000);
+  await expect(white.locator('#arbiterMessage')).toContainText('pressed without a move being made');
+  // White's clock is running, so White must be able to move.
+  await dragPiece(white, 'e2', 'e4');
+  for (const page of [white, black]) await expectPiece(page, 'e4', 'WHITE_PAWN');
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText('Move accepted');
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+});
+
+// The expired side has 2.2 s; the server's ticker looks at the clocks 2 s and 3 s after the start.
+// Acting at 2.45 s therefore meets a clock that has run out but has not been adjudicated yet.
+const EXPIRED_BUT_UNNOTICED = { timeMs: 2200, actAtMs: 2450 };
+
+test('a valid draw claim after expiry still loses on time', async ({ browser }) => {
+  // Rook each: Black can mate, so White's flag fall is a loss. The halfmove clock makes the claim valid.
+  const { logs } = await startLoggedGame(browser, {
+    timeMs: EXPIRED_BUT_UNNOTICED.timeMs, fen: '4k3/4r3/8/8/8/4K3/4R3/8 w - - 100 80',
+  });
+  const { white, black } = game;
+  await white.waitForTimeout(Math.max(0, logs.white.startedAt + EXPIRED_BUT_UNNOTICED.actAtMs - Date.now()));
+  expect(logs.white.gameEnded, 'the claim must arrive before the periodic flag-fall check').toBe(0);
+  await claimFiftyMoveOnBoard(white);
+  for (const page of [white, black]) {
+    await expectGameResult(page, '0-1');
+    await expect(page.locator('#gameResultReason')).toContainText('loses on time');
+  }
+});
+
+test('resigning after the opponent\'s expiry keeps the win on time', async ({ browser }) => {
+  const { logs } = await startLoggedGame(browser, { timeMs: EXPIRED_BUT_UNNOTICED.timeMs });
+  const { white, black } = game;
+  await black.waitForTimeout(Math.max(0, logs.black.startedAt + EXPIRED_BUT_UNNOTICED.actAtMs - Date.now()));
+  expect(logs.black.gameEnded, 'the resignation must arrive before the periodic flag-fall check').toBe(0);
+  await black.locator('#resignBtn').click();
+  for (const page of [white, black]) {
+    await expectGameResult(page, '0-1');
+    await expect(page.locator('#gameResultReason')).toHaveText('White loses on time. Black wins the game.');
+  }
+});
+
+test('the result is announced once and late actions do not disturb a rematch offer', async ({ browser }) => {
+  const { logs } = await startLoggedGame(browser);
+  const { white, black } = game;
+  await white.locator('#offerDrawBtn').click();
+  await black.locator('#acceptDrawBtn').click();
+  for (const page of [white, black]) await expectGameResult(page, SCORE_DRAW);
+  await black.locator('#rematchBtn').click();
+  await expect(white.locator('#arbiterMessage')).toHaveText('Your opponent offers a rematch.');
+  await expect(black.locator('#arbiterMessage')).toHaveText('Rematch offer sent.');
+  // Actions that can still be in flight when the ending reaches a client. The PGN request is
+  // answered after them, so its dialog marks the point where the server has handled them all.
+  for (const page of [white, black]) {
+    await page.evaluate(() => {
+      const ws = (window as any).game.ws;
+      ws.send({ type: 'resign' });
+      ws.send({ type: 'acceptDraw' });
+      ws.send({ type: 'offerDraw' });
+      ws.send({ type: 'opponentClockPressed' });
+      ws.send({ type: 'requestPgn' });
+    });
+    await expect(page.locator('#pgnDialog')).toBeVisible();
+  }
+  await expect(white.locator('#arbiterMessage')).toHaveText('Your opponent offers a rematch.');
+  await expect(black.locator('#arbiterMessage')).toHaveText('Rematch offer sent.');
+  for (const page of [white, black]) await expectGameResult(page, SCORE_DRAW);
+  expect(logs.white.gameEnded).toBe(1);
+  expect(logs.black.gameEnded).toBe(1);
 });
