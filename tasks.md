@@ -3,6 +3,92 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## Latest AI model review — 2026-11-17
+
+- [x] Review release `0.1.6` at `a92ac68` on `latest-ai-model-review` for substantial
+  bugs and missing regression coverage. Inspect game/session/arbiter logic, board and
+  lobby UI, WebSocket handling, reconnection, clocks, room lifecycle, tests, and
+  deployment configuration. Use a separate worktree at `../otb-chess-model-review`.
+  The review identifies five release-worthy defects below. Application fixes remain
+  open. Prioritize correctness and recovery before performance tuning.
+
+### Confirmed findings
+
+- [ ] **P1 — Expired time can be revived by increment.** `GameSession.pressClockButton`
+  accepts a move without first deciding flag fall. `ClockManager.switchClock`
+  ticks the remaining time down to zero and then adds increment unconditionally.
+  Flag fall is otherwise polled once per second, creating a window in any increment
+  game where a late move saves a player who has run out of time. A direct Java probe
+  observed zero remaining time, `MOVE_ACCEPTED`, then 2000 ms and no flag fall.
+  A live WebSocket reproduction used a 100 ms initial clock, waited 180 ms, and
+  received the same accepted move and 2000 ms. The short initial clock compresses
+  the reproduction of the same expiry boundary in normal games.
+  Relevant code is `GameSession.java` lines 250–289 and `ClockManager.java` lines 55–69.
+  Required coverage should exercise presses immediately before and after expiry,
+  with increment, through the session and both live boards.
+
+- [ ] **P1 — Refresh during manual restoration can strand both players.** With
+  auto-resume disabled, play e2–e5, press the clock, click Revert, and refresh White
+  while both players have Ready to continue buttons. Both Ready buttons disappear,
+  the clock remains stopped, and White's clock press says to wait until both players
+  are ready. Reproduced through real browser clicks and page reload. The server's
+  resync includes the broad IN_PROGRESS state but omits restoration/readiness state.
+  The resync handler clears the returning player's controls, and opponentReconnected
+  clears the other player's controls. Relevant code is `GameWebSocketServer.java`
+  lines 1325–1355 and `static/js/game.js` lines 336–370 and 797–801.
+  Required coverage should reload each seat during restoration, each readiness
+  phase, and an unpressed move, and verify a playable, consistent state on both boards.
+
+- [ ] **P1 — Checkmate during a wrong-clock pause corrupts game state.** Start from
+  `7k/8/5KQ1/8/8/8/8/8 w - - 0 1`. Black presses White's clock, triggering the
+  admonishment pause, and White plays Qg7# during that pause. The board remains
+  enabled. `evaluateForAutoEnd` applies the mating move and then calls switchClock
+  on a stopped clock, throwing before endGame runs. Reproduced in Java and in the
+  browser. Java showed a checkmated board with Black to move, IN_PROGRESS, and a
+  null result. Both browsers had no result panel, and White saw the generic internal
+  error. Relevant code is `GameSession.java` lines 294–355, especially 342–353.
+  Required coverage should exercise automatic endings during every supported pause
+  and ensure move, clock, result and both clients transition consistently.
+
+- [ ] **P1 — Finished results can be overwritten by later actions.** With White's
+  draw offer pending, White resigns and Black then accepts the offer. The server
+  replaces Black's win with a draw. A subsequent Black resignation replaces that
+  with White's win. Java reproduced all three results. The live WebSocket path
+  broadcast RESIGNATION with Black winning followed by DRAW_AGREEMENT. In ordinary
+  clients, actions already sent before receipt of the ending can arrive in this order.
+  `acceptDraw` and `resign` lack a finished-state guard, and `endGame` overwrites its
+  result unconditionally. Relevant code is `GameSession.java` lines 529–541, 746–764,
+  and 1021–1025. Required coverage should verify result immutability under delayed,
+  repeated and competing terminal messages, including both clients' score and reason.
+
+- [ ] **P2 — Finished rooms permanently consume server capacity.** The room cap
+  counts every entry in gameRooms, while cleanup removes only WAITING_FOR_PLAYERS
+  rooms. Completed and abandoned games persist after both sockets close. At the
+  default cap, 1000 retained completed rooms prevent all new games until restart.
+  A server-handler probe with OTB_MAX_GAMES=2 and OTB_ROOM_TTL_MS=1 created, joined,
+  ended and disconnected two games, explicitly ran cleanup, and observed two ENDED
+  rooms and a capacity error on the third creation. Relevant code is
+  `GameWebSocketServer.java` lines 267–270 and 1501–1510. Required coverage should
+  verify capacity recovery after an ended-room retention period while preserving
+  the supported rematch window and active rooms.
+
+### Verification
+
+- [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,
+  errors or skips. Existing coverage includes many gameplay regressions, but the
+  five combined journeys above need dedicated regression tests when fixed.
+- [x] Run focused review probes against unmodified application code. Local scripts
+  and browser screenshots are retained under the ignored `target/review/` directory
+  in the review worktree. `ReviewProbe.java` covers clock expiry, result overwrites
+  and paused checkmate. `ReviewServerProbe.java` covers finished-room cleanup.
+  `browser.cjs` covers the manual-ready refresh and paused-checkmate journeys.
+  `wire.cjs` exercises expired time and result overwrite through the live server.
+- [x] `CI=1 npx playwright test` passed all 133 existing browser tests in 7.2 minutes.
+  Full coverage establishes the baseline across all reviewed game flows. The
+  focused probes reproduced gaps that this passing baseline does not cover. Runtime
+  validation is local Windows/Chromium. macOS launchd, Docker and the public proxy
+  deployment received source/configuration review only.
+
 ## 0.1.6 — Touch-Move and Release Guards
 
 - [x] Keep an earlier binding touch over the king-and-rook castling commitment, including a touch
