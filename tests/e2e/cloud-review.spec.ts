@@ -160,13 +160,14 @@ test('a very long turn of moving a pawn back and forth still gets a prompt rulin
   const { white, black } = game;
   // Touching the knight binds White to a knight move, so no pawn release completes the move and the
   // arbiter keeps weighing every release of the turn. 800 of them used to keep the server busy for
-  // more than a minute, with the clocks of this game standing still on both boards.
+  // more than a minute, with the clocks of this game standing still on both boards. A turn now records
+  // at most 500 events (see final-pass.spec.ts); this one stays below that.
   await clickSquare(white, 'g1');
   await white.evaluate(() => {
     const game = (window as any).game;
     const start = game.board.getBoardState();
     const pawnOnE4 = { ...start, e2: start.e4, e4: start.e2 };
-    for (let i = 0; i < 800; i++) {
+    for (let i = 0; i < 400; i++) {
       const out = i % 2 === 0;
       game.ws.sendBoardEvent({
         eventType: 'DRAG_MOVE', square: out ? 'e2' : 'e4', targetSquare: out ? 'e4' : 'e2',

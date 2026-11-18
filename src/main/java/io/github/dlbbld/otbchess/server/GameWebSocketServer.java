@@ -352,6 +352,10 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private void handleCreateGame(WebSocket conn, JsonObject json) {
     reapAbandonedRooms();
+    if (!releaseWaitingRoomOf(conn)) {
+      sendError(conn, "You are already playing a game.");
+      return;
+    }
     // Resource bound: cap the number of live rooms so a home box can't be exhausted.
     if (gameRooms.size() >= maxConcurrentGames) {
       sendError(conn, "The server is at capacity. Please try again shortly.");
@@ -448,6 +452,36 @@ public class GameWebSocketServer extends WebSocketServer {
     System.out.println("Game created: " + gameId + " by " + creatorSide + (fenInput.isEmpty() ? "" : " (custom FEN)"));
   }
 
+  /**
+   * A connection has one game. Before it creates another, the room in which it still waits alone is given up -
+   * otherwise one connection could take every room the server has, each parked until it expires.
+   *
+   * @return false when the connection sits in a running game, which a new game must not replace
+   */
+  private boolean releaseWaitingRoomOf(WebSocket conn) {
+    final String gameId = playerGameMap.get(conn);
+    final GameRoom room = gameId == null ? null : gameRooms.get(gameId);
+    if (room == null) {
+      return true;
+    }
+    synchronized (room) {
+      if (gameRooms.get(gameId) != room || room.getSide(conn) == Side.NONE) {
+        return true;
+      }
+      final GameState state = room.getSession().getState();
+      if (state == GameState.IN_PROGRESS) {
+        return false;
+      }
+      if (state == GameState.WAITING_FOR_PLAYERS && !room.isFull()) {
+        room.stopClockTicker();
+        gameRooms.remove(gameId, room);
+        playerGameMap.remove(conn, gameId);
+        System.out.println("Waiting game replaced by its creator: " + gameId);
+      }
+      return true;
+    }
+  }
+
   private void handleJoinGame(WebSocket conn, JsonObject json) {
     final String gameId = optString(json, "gameId");
     if (gameId == null || gameId.isBlank()) {
@@ -488,6 +522,12 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
+    if (room.getSession().getState() != GameState.WAITING_FOR_PLAYERS) {
+      // A free seat alone is not enough: only a room that still waits for its game can be joined.
+      sendJoinFailed(conn, "ended", "This game has already ended.");
+      return;
+    }
+
     final String side;
     if (room.getWhitePlayer() == null) {
       room.setWhitePlayer(conn);
@@ -522,6 +562,9 @@ public class GameWebSocketServer extends WebSocketServer {
       // waiting again - for another joiner or for the reaper - instead of full without a game.
       room.setSocket(seat, null);
       room.setToken(seat, null);
+      // The close callback may have marked the seat as disconnected meanwhile; the mark goes with
+      // the seat, or the next joiner would count as absent.
+      room.setDisconnectedAt(seat, null);
       playerGameMap.remove(conn, gameId);
       return;
     }
@@ -620,6 +663,14 @@ public class GameWebSocketServer extends WebSocketServer {
       if (afterPosition != null && room.getSession().isRestoredPosition(afterPosition)) {
         completeRestoration(room);
       }
+      return;
+    }
+
+    if (room.getSession().isTurnEventLimitReached()) {
+      // Far beyond anything a hand does in one turn (see GameSession.MAX_BOARD_EVENTS_PER_TURN):
+      // not recorded, not forwarded, and counted against the connection.
+      sendError(conn, "Too many piece movements in one move. Further movements are not recorded.");
+      recordViolation(conn);
       return;
     }
 
@@ -1092,6 +1143,10 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final Side side = room.getSide(conn);
     final GameResult result = room.getSession().resign(side);
+    if (result == null) {
+      sendError(conn, "The game has not started.");
+      return;
+    }
     sendGameEnded(room, result);
   }
 

@@ -217,7 +217,7 @@ While the admonishment pause lasts nothing is adjudicated, as in a restoration p
 
 **Our policy**:
 
-1. An offer made while the opponent's offer can still be accepted **is the acceptance** of that offer. The game is drawn by agreement. This includes the offer implied by a rejected draw claim (FIDE 9.5), and the answer to an offer the opponent made together with a move whose clock press is still outstanding.
+1. An offer made while the opponent's offer can still be accepted **is the acceptance** of that offer. The game is drawn by agreement. This holds at any moment at which Accept would work - also while the arbiter has stopped the clocks (a restoration, the pause after a wrong clock press), when a new offer of one's own is otherwise not considered. This includes the offer implied by a rejected draw claim (FIDE 9.5), and the answer to an offer the opponent made together with a move whose clock press is still outstanding.
 2. Only the player the offer was made to can accept or reject it. The offering player can do neither, whatever button reaches the server.
 3. A new offer that comes with an invalid move is not registered and leaves any pending offer alone.
 

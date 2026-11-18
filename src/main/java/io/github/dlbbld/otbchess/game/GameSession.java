@@ -172,6 +172,9 @@ public class GameSession {
    * Starts the game. Both players are connected.
    */
   public synchronized void startGame() {
+    if (state != GameState.WAITING_FOR_PLAYERS) {
+      throw new IllegalStateException("A game can be started once only, state is " + state);
+    }
     this.state = GameState.IN_PROGRESS;
     // The clock starts on whichever side is to move in the starting position,
     // not blindly on White, so a FEN with Black to move correctly clocks Black.
@@ -194,6 +197,9 @@ public class GameSession {
     // win that race just as it does for a clock press, claim, offer or resignation.
     if (checkFlagFall().isPresent()) {
       return Optional.empty();
+    }
+    if (isTurnEventLimitReached()) {
+      return Optional.empty(); // not recorded; the server tells the sender
     }
 
     // Check mid-play validation
@@ -246,6 +252,18 @@ public class GameSession {
           .ifPresent(commitment -> finalMoveCommitment = commitment);
     }
     return Optional.empty();
+  }
+
+  /**
+   * The arbiter weighs every event of a turn again when ruling on it, so the cost of a ruling grows with the square
+   * of the turn's length. No player comes near this number of piece movements in one turn (a long fumble has a few
+   * dozen); the limit keeps a scripted client from keeping the server busy with a single endless turn.
+   */
+  public static final int MAX_BOARD_EVENTS_PER_TURN = 500;
+
+  /** @return whether this turn holds as many board events as are recorded; further ones are refused. */
+  public synchronized boolean isTurnEventLimitReached() {
+    return currentSequence.getEvents().size() >= MAX_BOARD_EVENTS_PER_TURN;
   }
 
   // ===== Clock press =====
@@ -486,12 +504,14 @@ public class GameSession {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
 
+    // An offer that answers the opponent's acceptable offer is its acceptance, and a draw can be
+    // agreed at any time - also while the arbiter has stopped the clocks, exactly like Accept.
+    if (agreeDrawByCounterOffer(side)) {
+      return ArbiterResponse.incompleteMove(DRAW_AGREEMENT_DESCRIPTION);
+    }
     final String pauseMessage = pauseMessage("offering a draw");
     if (pauseMessage != null) {
       return ArbiterResponse.incompleteMove(pauseMessage);
-    }
-    if (agreeDrawByCounterOffer(side)) {
-      return ArbiterResponse.incompleteMove(DRAW_AGREEMENT_DESCRIPTION);
     }
 
     // Validate the move first (no side effects on the move state — evaluateClockPress is
@@ -535,12 +555,12 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
     }
 
+    if (agreeDrawByCounterOffer(side)) {
+      return DrawOfferManager.DrawOfferResult.drawAgreed();
+    }
     final String pauseMessage = pauseMessage("offering a draw");
     if (pauseMessage != null) {
       return DrawOfferManager.DrawOfferResult.repeated(pauseMessage);
-    }
-    if (agreeDrawByCounterOffer(side)) {
-      return DrawOfferManager.DrawOfferResult.drawAgreed();
     }
 
     final boolean offererHasMove = side == board.getSideToMove();
@@ -836,11 +856,16 @@ public class GameSession {
    * <p>
    * On a draw the player-facing message splits the two cases the adjudicator folds together: a material shortage versus
    * a position unwinnable despite sufficient material (see {@link #drawReason(Side)}).
+   *
+   * @return the result of the game, or {@code null} when the game has not started
    */
   public synchronized GameResult resign(Side side) {
     checkFlagFall();
     if (state == GameState.ENDED) {
       return result;
+    }
+    if (state != GameState.IN_PROGRESS) {
+      return null; // no opponent has joined yet: there is no game to resign
     }
     final Side opponent = side.getOppositeSide();
 

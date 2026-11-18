@@ -2,7 +2,8 @@ import { test, expect, Browser, Page } from '@playwright/test';
 import {
   createGame, joinGame, expectGameStarted, startTwoPlayerGame, expectGameResult, SCORE_DRAW, TwoPlayerGame,
 } from './helpers/app';
-import { dragPiece, expectPiece, pressClock } from './helpers/board';
+import { clickSquare, dragPiece, expectPiece, pressClock } from './helpers/board';
+import { startIsolatedServer } from './helpers/isolated-server';
 
 // Regressions for the findings of the final review pass before the release. Each test replays the journey
 // its finding was reproduced with, on both boards.
@@ -204,4 +205,133 @@ test('a player who reconnects while the opponent is away sees the countdown and 
 
   await expectGameResult(white, '1-0');
   await expect(arbiter(white)).toHaveText('Your opponent left the game. You win.');
+});
+
+// ----- the board events of one turn are limited -----
+
+test('a turn records no more than 500 piece movements; the move is still ruled on', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  // Touching the knight binds White to a knight move; then the pawn goes back and forth 509 times.
+  await clickSquare(white, 'g1');
+  await white.evaluate(() => {
+    const game = (window as any).game;
+    const start = game.board.getBoardState();
+    const pawnOnE4 = { ...start, e2: start.e4, e4: start.e2 };
+    for (let i = 0; i < 510; i++) {
+      const out = i % 2 === 0;
+      game.ws.sendBoardEvent({
+        eventType: 'DRAG_MOVE', square: out ? 'e2' : 'e4', targetSquare: out ? 'e4' : 'e2',
+        piece: 'WHITE_PAWN', displacedPiece: 'NONE',
+      }, out ? pawnOnE4 : start);
+    }
+  });
+  await expect(arbiter(white)).toHaveText('Too many piece movements in one move. Further movements are not recorded.');
+
+  // The pawn is back on e2. The touched knight is moved and the clock pressed.
+  await dragPiece(white, 'g1', 'f3');
+  await pressClock(white);
+  await expect(arbiter(white)).toContainText('Move accepted', { timeout: 10_000 });
+  await expect(arbiter(black)).toContainText('Your turn');
+  for (const page of [white, black]) {
+    await expectPiece(page, 'f3', 'WHITE_KNIGHT');
+    await expectPiece(page, 'e2', 'WHITE_PAWN');
+  }
+  // The next turn starts at zero.
+  await dragPiece(black, 'e7', 'e5');
+  await pressClock(black);
+  await expect(arbiter(white)).toContainText('Your turn');
+  await expectPiece(white, 'e5', 'BLACK_PAWN');
+});
+
+// ----- a resignation needs a running game -----
+
+test('a resignation sent before an opponent joined is refused, and the game then starts normally', async ({ browser }) => {
+  const { creator, joiner, gameId } = await waitingCreatorAndJoiner(browser);
+  // The button is hidden while waiting; the message is sent by hand.
+  await creator.evaluate(() => (window as any).game.ws.send({ type: 'resign' }));
+  await expect(arbiter(creator)).toHaveText('The game has not started.');
+  await expect(resultPanel(creator)).toBeHidden();
+
+  // The joiner used to get a game whose clock ran while every move was dropped.
+  await joinGame(joiner, gameId);
+  await expectGameStarted(creator);
+  await expectGameStarted(joiner);
+  await dragPiece(creator, 'e2', 'e4');
+  await pressClock(creator);
+  await expect(arbiter(joiner)).toContainText('Your turn');
+  await expectPiece(joiner, 'e4', 'WHITE_PAWN');
+  await joiner.locator('#resignBtn').click();
+  for (const page of [creator, joiner]) {
+    await expectGameResult(page, '1-0');
+    await expect(page.locator('#gameResultReason')).toHaveText('Black resigns. White wins the game.');
+  }
+});
+
+// ----- a connection has one game -----
+
+test('a creator who creates another game gives up the first one', async ({ browser }) => {
+  const { creator, joiner, gameId } = await waitingCreatorAndJoiner(browser);
+  // A second createGame on the same connection (the page itself never sends one).
+  await creator.evaluate(() => (window as any).game.ws.createGame('white', 180000, 0, 2, true, ''));
+  await expect.poll(() => creator.evaluate(() => (window as any).game.gameId)).not.toBe(gameId);
+  const secondId = await creator.evaluate(() => (window as any).game.gameId);
+
+  // The first room used to stay on the server until it expired, taking one of its rooms.
+  await joinGame(joiner, gameId);
+  await expect(arbiter(joiner)).toContainText("This game code wasn't found");
+  await joinGame(joiner, secondId);
+  await expectGameStarted(creator);
+  await expectGameStarted(joiner);
+
+  // In a running game a further createGame is refused and the game goes on.
+  await creator.evaluate(() => (window as any).game.ws.createGame('white', 180000, 0, 2, true, ''));
+  await expect(arbiter(creator)).toHaveText('You are already playing a game.');
+  await dragPiece(creator, 'e2', 'e4');
+  await pressClock(creator);
+  await expect(arbiter(joiner)).toContainText('Your turn');
+});
+
+// ----- an offer that answers an offer, during a pause -----
+
+test.describe('on a server of its own', () => {
+  let isolated: Awaited<ReturnType<typeof startIsolatedServer>> | undefined;
+  test.afterEach(async () => {
+    for (const context of game?.contexts ?? []) await context.close();
+    game = undefined;
+    await isolated?.stop();
+    isolated = undefined;
+  });
+
+  test('Offer draw answering an offer during the pause after a wrong clock press agrees the draw', async ({ browser, request }) => {
+    isolated = await startIsolatedServer(request, { OTB_WRONG_CLOCK_PAUSE_MS: '8000' });
+    const contexts = [await isolated.context(browser), await isolated.context(browser)];
+    const white = await contexts[0].newPage();
+    const black = await contexts[1].newPage();
+    game = { contexts, white, black, creator: white, joiner: black, gameId: '' };
+    game.gameId = await createGame(white);
+    await joinGame(black, game.gameId);
+    await expectGameStarted(white);
+    await expectGameStarted(black);
+    await playOneMoveEach(white, black);
+
+    // Black offers a draw and then presses White's clock: the arbiter stops the clocks.
+    await black.locator('#offerDrawBtn').click();
+    await expect(offerPanel(white)).toBeVisible();
+    await black.locator('#topClockBtn').click();
+    await expect(white.locator('#opponentInfoPanel')).toContainText('paused');
+    expect(await white.evaluate(() => (window as any).game.clockRunning)).toBe('none');
+
+    // White answers with the own Offer-draw button. It used to be "The game is paused...", while
+    // Accept on the same panel agreed the draw.
+    await white.locator('#offerDrawBtn').click();
+
+    for (const page of [white, black]) {
+      await expectGameResult(page, SCORE_DRAW);
+      await expect(page.locator('#gameResultReason')).toHaveText('The game is drawn by agreement.');
+      await expect(offerPanel(page)).toBeHidden();
+    }
+    await expect(arbiter(white)).toHaveText('You accepted the draw offer.');
+    await expect(arbiter(black)).toHaveText('Your opponent accepted the draw offer.');
+  });
 });

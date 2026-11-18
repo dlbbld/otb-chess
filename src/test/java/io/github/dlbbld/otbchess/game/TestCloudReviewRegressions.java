@@ -228,13 +228,15 @@ class TestCloudReviewRegressions {
   @Test
   void aLongUncommittedTurnIsRecordedPromptlyAndStillRuledOnCorrectly() {
     // Touching the knight binds White to a knight move, so no pawn release ever commits: the
-    // arbiter looks at every release of the turn again on each new event. The cost of that look
-    // must not grow with the square of the turn's length - 800 events took over a minute then.
+    // arbiter looks at every release of the turn again on each new event. One replay per ruling
+    // instead of one per release: 800 events took over a minute before. The cost of an event still
+    // grows with the square of the turn's length, which is why a turn records a limited number of
+    // events (GameSession.MAX_BOARD_EVENTS_PER_TURN); this turn stays below it.
     final var session = session(600000);
     assertTrue(session.recordEvent(Side.WHITE, BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0)).isEmpty());
 
     assertTimeoutPreemptively(Duration.ofSeconds(15), () -> {
-      for (int i = 0; i < 800; i++) {
+      for (int i = 0; i < 400; i++) {
         final BoardEvent event = i % 2 == 0 ? BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, i + 1)
             : BoardEvent.dragMove(Square.E4, Square.E2, Piece.WHITE_PAWN, i + 1);
         assertTrue(session.recordEvent(Side.WHITE, event).isEmpty());

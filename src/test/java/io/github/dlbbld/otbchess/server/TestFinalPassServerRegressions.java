@@ -4,6 +4,7 @@ package io.github.dlbbld.otbchess.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -448,5 +450,202 @@ class TestFinalPassServerRegressions {
     close(white);
     resume(whiteBack, id, white.token());
     assertEquals(0, whiteBack.count("opponentDisconnected"));
+  }
+
+  // ----- finding 3: the board events of one turn are limited -----
+
+  @Test
+  void aTurnRecordsNoMoreBoardEventsThanTheLimitAndTheMoveIsStillRuledOn() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    final int limit = io.github.dlbbld.otbchess.game.GameSession.MAX_BOARD_EVENTS_PER_TURN;
+    // Touching the knight binds White, so no pawn release ends the weighing of the turn.
+    final JsonObject click = JsonParser.parseString("{\"type\":\"boardEvent\",\"event\":{\"eventType\":\"CLICK\","
+        + "\"square\":\"g1\",\"targetSquare\":\"NONE\",\"piece\":\"WHITE_KNIGHT\",\"displacedPiece\":\"NONE\"}}")
+        .getAsJsonObject();
+    server.onMessage(white.socket, click.toString());
+    final long startedAt = System.nanoTime();
+    for (int i = 1; i < limit; i++) {
+      drag(white, "WHITE_PAWN", i % 2 == 1 ? "e2" : "e4", i % 2 == 1 ? "e4" : "e2");
+    }
+    final long tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+    assertTrue(tookMs < 10000, "a turn at the limit must be recorded promptly, took " + tookMs + " ms");
+    assertTrue(rooms().get(id).getSession().isTurnEventLimitReached());
+    assertEquals(0, white.count("error"));
+    final long forwarded = black.count("opponentBoardEvent");
+
+    drag(white, "WHITE_PAWN", "e4", "e2"); // one more: the pawn is back on e2
+
+    assertEquals("Too many piece movements in one move. Further movements are not recorded.", white.text("error"));
+    assertEquals(forwarded, black.count("opponentBoardEvent"), "a refused event is not forwarded");
+
+    // The touched knight is moved and the clock pressed: the ruling still stands on what was recorded.
+    drag(white, "WHITE_KNIGHT", "g1", "f3");
+    sendWithBoard(white, "clockPress");
+    assertEquals("Move accepted.", white.text("move_accepted"));
+    assertEquals(1, black.count("opponentMoved"));
+    assertFalse(rooms().get(id).getSession().isTurnEventLimitReached(), "a new turn starts at zero");
+  }
+
+  // ----- finding 4: an offer that answers an offer agrees the draw in a pause as well -----
+
+  @Test
+  void anOfferAnsweringAnOfferDuringThePauseAfterAWrongClockPressAgreesTheDraw() throws Exception {
+    setLong("wrongClockPauseMs", 60000);
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    playOneMoveEach(white, black);
+    send(black, "offerDraw");
+    send(black, "opponentClockPressed");
+    assertEquals(Side.NONE, rooms().get(id).getSession().getClock().getRunningFor(), "the arbiter stopped the clocks");
+
+    send(white, "offerDraw"); // used to be answered "The game is paused...", while Accept agreed the draw
+
+    for (final Client client : new Client[] { white, black }) {
+      assertEquals("DRAW_AGREEMENT", client.last("gameEnded").get("resultType").getAsString(), client.types().toString());
+      assertEquals("white", client.last("gameEnded").get("actor").getAsString());
+    }
+    assertEquals(0, white.count("repeatedDrawOffer"));
+  }
+
+  @Test
+  void anOfferAnsweringAnOfferDuringARestorationPauseAgreesTheDraw() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    playOneMoveEach(white, black);
+    send(black, "offerDraw");
+    drag(white, "BLACK_PAWN", "a7", "a6"); // White moves a Black piece: the game is paused for the restoration
+    assertTrue(rooms().get(id).getSession().isWaitingForRestoration());
+
+    send(white, "offerDraw");
+
+    assertEquals(GameState.ENDED, rooms().get(id).getSession().getState());
+    assertEquals("DRAW_AGREEMENT", black.last("gameEnded").get("resultType").getAsString());
+  }
+
+  @Test
+  void anOfferDuringAPauseWithNoOfferToAnswerIsStillNotConsidered() throws Exception {
+    setLong("wrongClockPauseMs", 60000);
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    playOneMoveEach(white, black);
+    send(black, "opponentClockPressed");
+
+    send(white, "offerDraw");
+
+    assertEquals("The game is paused. Please wait until the clock restarts.", white.text("repeatedDrawOffer"));
+    assertFalse(rooms().get(id).getSession().getDrawOfferManager().isDrawOffered());
+    assertEquals(0, black.count("drawOffered"));
+  }
+
+  // ----- finding 5: a resignation needs a running game -----
+
+  @Test
+  void aResignationBeforeAnOpponentJoinedIsRefusedAndTheRoomStaysJoinable() throws Exception {
+    final var creator = new Client();
+    final var joiner = new Client();
+    final String id = create(creator, 600000, null);
+
+    send(creator, "resign");
+
+    final GameRoom room = rooms().get(id);
+    assertEquals("The game has not started.", creator.text("error"));
+    assertEquals(0, creator.count("gameEnded"));
+    assertEquals(GameState.WAITING_FOR_PLAYERS, room.getSession().getState());
+
+    // The joiner used to be seated in a room whose session had ended: the clock ran, every move was dropped.
+    join(joiner, id);
+    room.stopClockTicker();
+    board = MessageConverter.fromStaticPosition(room.getSession().getPositionBeforeTurn());
+    assertEquals(GameState.IN_PROGRESS, room.getSession().getState());
+    assertNull(room.getSession().getResult());
+    drag(creator, "WHITE_PAWN", "e2", "e4");
+    sendWithBoard(creator, "clockPress");
+    assertEquals(1, joiner.count("opponentMoved"), "the game is played normally");
+    send(joiner, "resign");
+    assertEquals("RESIGNATION", creator.last("gameEnded").get("resultType").getAsString());
+    assertEquals("white", creator.last("gameEnded").get("winner").getAsString());
+  }
+
+  // ----- finding 6: a seat that is given back carries no disconnect mark -----
+
+  @Test
+  void aSeatGivenBackWhileItsCloseCallbackRanIsCleanForTheNextJoiner() throws Exception {
+    final var creator = new Client();
+    final var lost = new Client();
+    final var joiner = new Client();
+    final String id = create(creator, 600000, null);
+    final GameRoom room = rooms().get(id);
+    // The socket closes while it is being seated, and its close callback runs before the seat is given back.
+    lost.closesDuringSend = true;
+    lost.duringSend = () -> server.onClose(lost.socket, 1006, "", true);
+
+    join(lost, id);
+
+    assertNull(room.getBlackPlayer());
+    assertNull(room.getDisconnectedAt(Side.BLACK), "the mark must go with the seat");
+
+    join(joiner, id);
+    room.stopClockTicker();
+    assertTrue(room.isConnected(Side.BLACK));
+    send(joiner, "resign");
+    send(creator, "rematchOffer");
+    assertEquals(1, creator.count("rematchOfferSent"), creator.types().toString());
+    assertEquals(0, creator.count("rematchUnavailable"));
+    send(joiner, "rematchOffer");
+    assertEquals(1, creator.count("rematchStarted"));
+  }
+
+  // ----- finding 9: a connection has one game -----
+
+  @Test
+  void aConnectionThatCreatesAnotherGameGivesUpItsWaitingRoom() throws Exception {
+    setInt("maxConcurrentGames", 2);
+    final var one = new Client();
+    final var other = new Client();
+    final var joiner = new Client();
+    final String first = create(one, 600000, null);
+    final String second = create(one, 600000, null);
+    final String third = create(one, 600000, null);
+
+    assertEquals(3, one.count("gameCreated"));
+    assertEquals(Set.of(third), rooms().keySet(), "one connection used to hold every room it ever created");
+    assertEquals(third, seats().get(one.socket));
+
+    // The room limit is not used up: another player creates a game.
+    sendCreate(other, 600000, null);
+    assertEquals(1, other.count("gameCreated"), other.types().toString());
+    assertEquals(0, other.count("error"));
+
+    join(joiner, first);
+    assertEquals("not_found", joiner.last("joinFailed").get("reason").getAsString());
+    join(joiner, third);
+    rooms().get(third).stopClockTicker();
+    assertEquals(1, joiner.count("gameStarted"));
+    assertNotEquals(first, second);
+  }
+
+  @Test
+  void aPlayerInARunningGameCannotCreateAnotherOne() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+
+    sendCreate(white, 600000, null);
+
+    assertEquals("You are already playing a game.", white.text("error"));
+    assertEquals(1, white.count("gameCreated"));
+    assertEquals(Set.of(id), rooms().keySet());
+    assertEquals(id, seats().get(white.socket));
+    assertEquals(GameState.IN_PROGRESS, rooms().get(id).getSession().getState());
+
+    // After the game the same connection may create a new one.
+    send(white, "resign");
+    sendCreate(white, 600000, null);
+    assertEquals(2, white.count("gameCreated"));
   }
 }
