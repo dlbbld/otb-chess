@@ -1,5 +1,7 @@
-import { test, expect, Page } from '@playwright/test';
-import { startTwoPlayerGame, expectGameResult, SCORE_DRAW, TwoPlayerGame } from './helpers/app';
+import { test, expect, Browser, Page } from '@playwright/test';
+import {
+  createGame, joinGame, expectGameStarted, startTwoPlayerGame, expectGameResult, SCORE_DRAW, TwoPlayerGame,
+} from './helpers/app';
 import { dragPiece, expectPiece, pressClock } from './helpers/board';
 
 // Regressions for the findings of the final review pass before the release. Each test replays the journey
@@ -102,4 +104,104 @@ test('the window that is opened last holds the seat', async ({ browser }) => {
   await pressClock(white);
   await expect(arbiter(first)).toContainText('Your turn');
   await expectPiece(first, 'e4', 'WHITE_PAWN');
+});
+
+// ----- a player who is away when the game starts, or while the opponent reconnects -----
+// The test server tells the opponent 1.5 s after a drop and adjudicates the abandonment after 6 s.
+
+const countdown = (page: Page) => page.locator('#arbiterMessage');
+const claimVictory = (page: Page) => page.locator('#arbiterButtons').getByText('Claim victory');
+/** The socket is lost and the page does not reconnect - a phone browser in the background. */
+const dropSocket = (page: Page) => page.evaluate(() => {
+  const ws = (window as any).game.ws; ws.shouldReconnect = false; ws.ws.close();
+});
+/** The page is in front again and reconnects. */
+const comeBack = (page: Page) => page.evaluate(() => {
+  const ws = (window as any).game.ws; ws.shouldReconnect = true; ws._open(null, null, true);
+});
+
+async function waitingCreatorAndJoiner(browser: Browser) {
+  const contexts = [await browser.newContext(), await browser.newContext()];
+  const creator = await contexts[0].newPage();
+  const joiner = await contexts[1].newPage();
+  game = { contexts, white: creator, black: joiner, creator, joiner, gameId: '' };
+  game.gameId = await createGame(creator);
+  return { creator, joiner, gameId: game.gameId };
+}
+
+test('an opponent who joins shortly after the creator dropped does not win a game of a few seconds', async ({ browser }) => {
+  const { creator, joiner, gameId } = await waitingCreatorAndJoiner(browser);
+  await dropSocket(creator);
+  const droppedAt = Date.now();
+  await creator.waitForTimeout(2500);
+
+  await joinGame(joiner, gameId);
+  await expectGameStarted(joiner);
+  const startedAt = Date.now();
+  // The notice of the drop went to nobody. The joiner is told now, counted from the start of the game.
+  await expect(countdown(joiner)).toContainText('Your opponent has disconnected. The game will be ended in', { timeout: 5000 });
+  await expect(claimVictory(joiner)).toBeVisible();
+
+  // 6 s after the drop the creator used to lose - less than 4 s into the game.
+  await joiner.waitForTimeout(Math.max(0, droppedAt + 6600 - Date.now()));
+  expect(Date.now() - startedAt, 'still inside the deadline of this game').toBeLessThan(5500);
+  await expect(resultPanel(joiner)).toBeHidden();
+
+  // The creator is back in time and finds the game running.
+  await comeBack(creator);
+  await expect(arbiter(creator)).toHaveText('Reconnected.', { timeout: 10_000 });
+  await expect(arbiter(joiner)).toHaveText('Your opponent has reconnected.');
+  await expect(claimVictory(joiner)).toHaveCount(0);
+  await dragPiece(creator, 'e2', 'e4');
+  await pressClock(creator);
+  await expect(arbiter(joiner)).toContainText('Your turn');
+  await expectPiece(joiner, 'e4', 'WHITE_PAWN');
+  await joiner.waitForTimeout(Math.max(0, startedAt + 6800 - Date.now()));
+  await expect(resultPanel(joiner)).toBeHidden();
+});
+
+test('an opponent who joins long after the creator dropped is told and can claim the win', async ({ browser }) => {
+  const { creator, joiner, gameId } = await waitingCreatorAndJoiner(browser);
+  await dropSocket(creator);
+  await creator.waitForTimeout(7500); // both timers of the drop are spent
+
+  await joinGame(joiner, gameId);
+  await expectGameStarted(joiner);
+  // This game used to run against nobody: no notice, no countdown, no Claim victory.
+  await expect(countdown(joiner)).toContainText('Your opponent has disconnected. The game will be ended in', { timeout: 5000 });
+  await claimVictory(joiner).click();
+
+  await expectGameResult(joiner, '0-1');
+  await expect(joiner.locator('#gameResultReason')).toHaveText('White left the game. Black wins the game.');
+  await expect(arbiter(joiner)).toHaveText('Your opponent left the game. You win.');
+});
+
+test('a creator who never returns loses by abandonment, counted from the start of the game', async ({ browser }) => {
+  const { creator, joiner, gameId } = await waitingCreatorAndJoiner(browser);
+  await dropSocket(creator);
+  await creator.waitForTimeout(7500);
+  await joinGame(joiner, gameId);
+  await expectGameStarted(joiner);
+  const startedAt = Date.now();
+
+  await expectGameResult(joiner, '0-1');
+  const lasted = Date.now() - startedAt;
+  expect(lasted, 'the abandonment window of the test server is 6 s').toBeGreaterThan(5000);
+  expect(lasted).toBeLessThan(9000);
+  await expect(arbiter(joiner)).toHaveText('Your opponent left the game. You win.');
+});
+
+test('a player who reconnects while the opponent is away sees the countdown and Claim victory again', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  await dropSocket(black);
+  await expect(countdown(white)).toContainText('The game will be ended in', { timeout: 5000 });
+
+  // White's page is refreshed. The notice had gone to the old socket; nothing said the opponent was gone.
+  await white.reload();
+  await expect(countdown(white)).toContainText('Your opponent has disconnected. The game will be ended in', { timeout: 10_000 });
+  await claimVictory(white).click();
+
+  await expectGameResult(white, '1-0');
+  await expect(arbiter(white)).toHaveText('Your opponent left the game. You win.');
 });

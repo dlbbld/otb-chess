@@ -120,14 +120,30 @@ public class GameWebSocketServer extends WebSocketServer {
     if (side == Side.NONE) {
       return;
     }
-    room.setDisconnectedAt(side, System.currentTimeMillis());
+    markAbsent(room, side, conn, gameId);
+  }
+
+  /**
+   * Starts the absence of a player whose socket is gone: the opponent is told after the disconnect grace, and a
+   * running game is adjudicated as abandoned after the abandonment window - both counted from now. Called when a
+   * socket drops, and when a game starts while one seat is not connected: that player is treated as having left at
+   * the start of the game, because a deadline that began before the game existed could end it seconds after its
+   * first move, or - once spent - never.
+   *
+   * <p>
+   * The timers belong to this absence only: a resume (another socket on the seat), a rematch (the seats swap) or a
+   * later call for the same seat (another time stamp) makes them no-ops.
+   */
+  private void markAbsent(GameRoom room, Side side, WebSocket conn, String gameId) {
+    final long since = System.currentTimeMillis();
+    room.setDisconnectedAt(side, since);
 
     // The player may reconnect (idle drop / blip). Defer the "opponent disconnected" notice; if a
     // resume swaps in a new socket for this side within the grace window, the seat no longer points
     // at this (closed) conn and we stay quiet. The notice carries the time remaining until the
     // abandonment adjudication so the client can show a countdown and the Claim-victory button.
     maintenance.schedule(() -> {
-      if (room.getSocket(side) == conn) {
+      if (isSameAbsence(room, side, conn, since)) {
         if (room.getSession().getState() == GameState.ENDED) {
           synchronized (room) {
             room.setRematchOfferedBy(Side.NONE);
@@ -136,11 +152,7 @@ public class GameWebSocketServer extends WebSocketServer {
               "Your opponent has disconnected. A rematch is no longer available.");
           return;
         }
-        final JsonObject msg = new JsonObject();
-        msg.addProperty("type", "opponentDisconnected");
-        msg.addProperty("message", "Your opponent has disconnected.");
-        msg.addProperty("abandonInMs", Math.max(0, abandonMs - disconnectGraceMs));
-        room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
+        sendOpponentDisconnected(room, side.getOppositeSide(), Math.max(0, abandonMs - disconnectGraceMs));
       }
     }, disconnectGraceMs, TimeUnit.MILLISECONDS);
 
@@ -151,8 +163,8 @@ public class GameWebSocketServer extends WebSocketServer {
     // meanwhile (e.g. the leaver's flag fell) makes abandon() a no-op.
     maintenance.schedule(() -> {
       try {
-        if (room.getSocket(side) != conn) {
-          return; // reconnected
+        if (!isSameAbsence(room, side, conn, since)) {
+          return; // reconnected, or a later absence has its own deadline
         }
         final GameResult result = room.getSession().abandon(side);
         if (result == null) {
@@ -167,6 +179,39 @@ public class GameWebSocketServer extends WebSocketServer {
         System.err.println("[abandonment] " + gameId + ": " + e);
       }
     }, abandonMs, TimeUnit.MILLISECONDS);
+  }
+
+  private static boolean isSameAbsence(GameRoom room, Side side, WebSocket conn, long since) {
+    final Long current = room.getDisconnectedAt(side);
+    return room.getSocket(side) == conn && current != null && current == since;
+  }
+
+  private void sendOpponentDisconnected(GameRoom room, Side to, long abandonInMs) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "opponentDisconnected");
+    msg.addProperty("message", "Your opponent has disconnected.");
+    msg.addProperty("abandonInMs", abandonInMs);
+    room.sendToSide(to, GSON.toJson(msg));
+  }
+
+  /**
+   * Tells a player who has just re-attached that the opponent is away, with the time that is left until the
+   * abandonment adjudication. The notice of the opponent's disconnect went to the socket this player has lost, and
+   * the reconnect clears the countdown on their screen. Inside the grace nothing is sent: the pending notice will
+   * reach the new socket. During an arbiter pause the player's own prompt (Revert, Ready) keeps the window.
+   */
+  private void sendOpponentAbsence(GameRoom room, Side side) {
+    final var session = room.getSession();
+    final Long since = room.getDisconnectedAt(side.getOppositeSide());
+    if (since == null || session.getState() != GameState.IN_PROGRESS) {
+      return;
+    }
+    final long gone = System.currentTimeMillis() - since;
+    if (gone < disconnectGraceMs || session.isWaitingForRestoration() || session.isWaitingForReady()
+        || session.isRestorationResumePending()) {
+      return;
+    }
+    sendOpponentDisconnected(room, side, Math.max(0, abandonMs - gone));
   }
 
   @Override
@@ -499,6 +544,14 @@ public class GameWebSocketServer extends WebSocketServer {
 
     // Send initial clock update
     sendClockUpdate(room);
+
+    // The creator may have dropped while waiting. The game starts all the same - they can still
+    // resume - but their absence counts from now, not from a drop that preceded the game.
+    final Side creatorSeat = seat.getOppositeSide();
+    final WebSocket creator = room.getSocket(creatorSeat);
+    if (creator != null && (!creator.isOpen() || room.getDisconnectedAt(creatorSeat) != null)) {
+      markAbsent(room, creatorSeat, creator, gameId);
+    }
 
     System.out.println("Game started: " + gameId);
   }
@@ -1559,6 +1612,8 @@ public class GameWebSocketServer extends WebSocketServer {
     if (drawOffer.isDrawOffered() && side == drawOffer.getOfferingSide().getOppositeSide()) {
       sendDrawOfferToOpponent(room, drawOffer.getOfferingSide(), room.getDrawOfferMessage());
     }
+
+    sendOpponentAbsence(room, side);
 
     System.out.println("Resumed " + side.name().toLowerCase() + " in game " + gameId);
   }

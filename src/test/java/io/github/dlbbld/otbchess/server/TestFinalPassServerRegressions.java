@@ -331,4 +331,122 @@ class TestFinalPassServerRegressions {
     assertEquals(0, white.count("opponentDisconnected"));
     assertTrue(rooms().get(id).isConnected(Side.BLACK));
   }
+
+  // ----- finding 2: a player who is away when the game starts, or when the opponent reconnects -----
+
+  @Test
+  void aCreatorWhoDroppedLongAgoIsTreatedAsHavingLeftWhenTheGameStarts() throws Exception {
+    setLong("disconnectGraceMs", 60);
+    setLong("abandonMs", 400);
+    final var creator = new Client();
+    final var joiner = new Client();
+    final String id = create(creator, 600000, null);
+    close(creator);
+    Thread.sleep(600); // both timers of the drop are spent: this game used to run without any deadline
+
+    final long joinedAt = System.nanoTime();
+    join(joiner, id);
+    rooms().get(id).stopClockTicker();
+    assertEquals(GameState.IN_PROGRESS, rooms().get(id).getSession().getState());
+
+    await("the present player is told that the opponent is away", () -> joiner.count("opponentDisconnected") == 1);
+    assertEquals(340, joiner.last("opponentDisconnected").get("abandonInMs").getAsLong());
+    await("the game is adjudicated", () -> joiner.count("gameEnded") == 1);
+    final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - joinedAt);
+    assertTrue(elapsedMs >= 390, "the deadline counts from the start of the game, was " + elapsedMs + " ms");
+    assertEquals("ABANDONMENT", joiner.last("gameEnded").get("resultType").getAsString());
+    assertEquals("black", joiner.last("gameEnded").get("winner").getAsString());
+  }
+
+  @Test
+  void theDeadlineOfADropBeforeTheGameDoesNotEndTheGameAndAReturningCreatorPlays() throws Exception {
+    setLong("disconnectGraceMs", 60);
+    setLong("abandonMs", 1200);
+    final var creator = new Client();
+    final var joiner = new Client();
+    final var creatorBack = new Client();
+    final String id = create(creator, 600000, null);
+    close(creator);
+    Thread.sleep(800);
+    join(joiner, id); // 400 ms before the deadline of the drop
+    rooms().get(id).stopClockTicker();
+
+    Thread.sleep(700); // past that deadline, well before the one of this game
+    assertEquals(GameState.IN_PROGRESS, rooms().get(id).getSession().getState(),
+        "the creator used to lose here, 400 ms into the game");
+    assertEquals(0, joiner.count("gameEnded"));
+    assertEquals(1, joiner.count("opponentDisconnected"), "notice counted from the start of the game");
+
+    resume(creatorBack, id, creator.token());
+    assertEquals("IN_PROGRESS", creatorBack.last("resync").get("state").getAsString());
+    assertEquals(1, joiner.count("opponentReconnected"));
+    Thread.sleep(700); // past the deadline of this game: the resume has defused it
+    assertEquals(GameState.IN_PROGRESS, rooms().get(id).getSession().getState());
+    assertEquals(0, joiner.count("gameEnded"));
+  }
+
+  @Test
+  void aCreatorWhoIsConnectedGetsNoAbsenceWhenTheGameStarts() throws Exception {
+    setLong("disconnectGraceMs", 0);
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    Thread.sleep(80);
+    assertNull(rooms().get(id).getDisconnectedAt(Side.WHITE));
+    assertEquals(0, black.count("opponentDisconnected"));
+  }
+
+  @Test
+  void aPlayerWhoReconnectsWhileTheOpponentIsAwayIsToldAgainWithTheTimeLeft() throws Exception {
+    setLong("disconnectGraceMs", 40);
+    setLong("abandonMs", 60000);
+    final var white = new Client();
+    final var black = new Client();
+    final var whiteBack = new Client();
+    final String id = start(white, black);
+    close(black);
+    await("first notice", () -> white.count("opponentDisconnected") == 1);
+
+    // White's own socket blips: the reconnect clears the countdown and Claim victory on the screen.
+    close(white);
+    Thread.sleep(100);
+    resume(whiteBack, id, white.token());
+
+    assertEquals(List.of("resync", "opponentDisconnected"), whiteBack.types());
+    final long left = whiteBack.last("opponentDisconnected").get("abandonInMs").getAsLong();
+    assertTrue(left > 59000 && left < 60000, "the time left, not a fresh window: " + left);
+    send(whiteBack, "claimVictory");
+    assertEquals("ABANDONMENT", whiteBack.last("gameEnded").get("resultType").getAsString());
+    assertEquals("white", whiteBack.last("gameEnded").get("winner").getAsString());
+  }
+
+  @Test
+  void aReconnectInsideTheGraceGetsTheOneNoticeOnTheNewSocket() throws Exception {
+    setLong("disconnectGraceMs", 400);
+    setLong("abandonMs", 60000);
+    final var white = new Client();
+    final var black = new Client();
+    final var whiteBack = new Client();
+    final String id = start(white, black);
+    close(black);
+    close(white);
+    resume(whiteBack, id, white.token());
+    assertEquals(0, whiteBack.count("opponentDisconnected"), "inside the grace nothing is said yet");
+
+    await("the pending notice reaches the new socket", () -> whiteBack.count("opponentDisconnected") == 1);
+    Thread.sleep(100);
+    assertEquals(1, whiteBack.count("opponentDisconnected"));
+  }
+
+  @Test
+  void aReconnectWithTheOpponentPresentSaysNothingAboutAnAbsence() throws Exception {
+    setLong("disconnectGraceMs", 0);
+    final var white = new Client();
+    final var black = new Client();
+    final var whiteBack = new Client();
+    final String id = start(white, black);
+    close(white);
+    resume(whiteBack, id, white.token());
+    assertEquals(0, whiteBack.count("opponentDisconnected"));
+  }
 }
