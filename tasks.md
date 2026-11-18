@@ -3,6 +3,12 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## Further improvements (after 0.2.0)
+
+- [x] Development continues on `further-improvements`, created from the released `main` (`9436251`).
+  `start.bat` serves this branch by default; `TestWindowsLauncher`, the README, `RELEASING.md` and the agent
+  instructions name it. Not run: the Windows-only launcher tests (they need the Windows machine).
+
 ## 0.2.0 — Game Lifecycle and Draw Guards
 
 - [x] Scope: everything on `latest-ai-model-review` since `0.1.6` - the model review of `0.1.6`, its

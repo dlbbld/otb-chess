@@ -46,7 +46,7 @@ On Windows, `start.bat` fetches the latest pushed commit of the testing branch a
 from `..\otb-chess-stable`. Push verified changes to that branch, restart `start.bat`, then test
 at http://localhost:8080 before merging the PR. The branch is taken from the `OTB_TEST_BRANCH`
 environment variable, else the first argument (`start.bat my/branch`), else the default
-`latest-ai-model-review`. Local uncommitted edits are excluded; use `start-dev.bat` to run those.
+`further-improvements`. Local uncommitted edits are excluded; use `start-dev.bat` to run those.
 A failed fetch stops startup instead of serving an older commit.
 
 ```bash
