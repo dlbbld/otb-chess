@@ -392,6 +392,23 @@ class Game {
       this.showGameUnavailable(data.message || 'This game is no longer available.');
     });
 
+    // The same player opened this game in another window, which now holds the seat. This window
+    // is out of the game: freeze it and say so, instead of leaving a board that looks alive while
+    // the server takes nothing from it. The saved session stays - it belongs to the other window.
+    this.ws.on('sessionReplaced', (data) => {
+      this.ws.shouldReconnect = false;
+      this.gameActive = false;
+      this.stopDisconnectCountdown();
+      document.querySelectorAll('.game-layout button').forEach((btn) => { btn.disabled = true; });
+      document.getElementById('drawOfferPanel').style.display = 'none';
+      if (this.board) this.board.setEnabled(false);
+      const clockEl = document.getElementById('chessClock');
+      if (clockEl) clockEl.classList.remove('paused');
+      this.clearOpponentInfo();
+      this.clearArbiterButtons();
+      this.showArbiterMessage(data.message || 'This game is now open in another window.', 'info');
+    });
+
     // Tried to join a game with no free seat (not found, already full, or already ended). Same
     // friendly treatment as a failed resume: a clear message and a way back to the lobby.
     this.ws.on('joinFailed', (data) => {

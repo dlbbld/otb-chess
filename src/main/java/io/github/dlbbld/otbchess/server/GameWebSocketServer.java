@@ -197,6 +197,10 @@ public class GameWebSocketServer extends WebSocketServer {
       if (isLateGameplayMessage(conn, type)) {
         return;
       }
+      if (isSeatlessGameplayMessage(conn, type)) {
+        sendError(conn, "You are not a player in this game.");
+        return;
+      }
       switch (type) {
         case "createGame" -> handleCreateGame(conn, json);
         case "joinGame" -> handleJoinGame(conn, json);
@@ -245,6 +249,19 @@ public class GameWebSocketServer extends WebSocketServer {
     final String gameId = playerGameMap.get(conn);
     final GameRoom room = gameId == null ? null : gameRooms.get(gameId);
     return room != null && room.isGameEndAnnounced();
+  }
+
+  /**
+   * A game action from a connection that is known to a room but holds no seat in it. Only the two seated
+   * connections play: such an action is refused before any handler can act on it for "no side".
+   */
+  private boolean isSeatlessGameplayMessage(WebSocket conn, String type) {
+    if (!GAMEPLAY_MESSAGE_TYPES.contains(type) && !"rematchOffer".equals(type)) {
+      return false;
+    }
+    final String gameId = playerGameMap.get(conn);
+    final GameRoom room = gameId == null ? null : gameRooms.get(gameId);
+    return room != null && room.getSide(conn) == Side.NONE;
   }
 
   @Override
@@ -1491,6 +1508,17 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void resumeSeat(WebSocket conn, String gameId, GameRoom room, Side side) {
+    // A seat has one connection. If the previous socket is still open - the same player opened the
+    // game in another window - it leaves the game here and is told so; otherwise it would keep
+    // acting in a game in which it holds no seat.
+    final WebSocket previous = room.getSocket(side);
+    if (previous != null && previous != conn) {
+      playerGameMap.remove(previous, gameId);
+      final JsonObject replaced = new JsonObject();
+      replaced.addProperty("type", "sessionReplaced");
+      replaced.addProperty("message", "This game is now open in another window. This window no longer takes part.");
+      send(previous, replaced);
+    }
     // Swap the dropped socket for the new one and resend current state.
     room.setSocket(side, conn);
     room.setDisconnectedAt(side, null);

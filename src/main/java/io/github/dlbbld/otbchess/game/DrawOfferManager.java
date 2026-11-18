@@ -225,6 +225,9 @@ public class DrawOfferManager {
     if (!drawOffered) {
       return Optional.of("No draw offer is active.");
     }
+    if (!isPlayer(side)) {
+      return Optional.of(NOT_A_PLAYER);
+    }
     if (side == offeringSide) {
       return Optional.of("You cannot accept your own draw offer.");
     }
@@ -239,7 +242,14 @@ public class DrawOfferManager {
    * own made now is the acceptance of that offer, not a new offer.
    */
   public boolean canAccept(Side side) {
-    return drawOffered && side != offeringSide && !opponentTouchedPiece;
+    return drawOffered && isPlayer(side) && side != offeringSide && !opponentTouchedPiece;
+  }
+
+  private static final String NOT_A_PLAYER = "Only the player the offer was made to can answer it.";
+
+  /** An offer is answered by the other player - never by "no side". */
+  private static boolean isPlayer(Side side) {
+    return side == Side.WHITE || side == Side.BLACK;
   }
 
   /**
@@ -249,6 +259,9 @@ public class DrawOfferManager {
   public Optional<String> rejectDraw(Side side) {
     if (!drawOffered) {
       return Optional.of("No draw offer is active.");
+    }
+    if (!isPlayer(side)) {
+      return Optional.of(NOT_A_PLAYER);
     }
     if (side == offeringSide) {
       return Optional.of("You cannot reject your own draw offer.");
