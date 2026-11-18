@@ -3,6 +3,7 @@
 package io.github.dlbbld.otbchess.game;
 
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -293,6 +294,7 @@ public class GameSession {
       resumedByClockPress = true;
     }
     if (clock.getRunningFor() == Side.NONE) {
+      noteToldToWaitForClock(side);
       return ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts.");
     }
     if (checkFlagFall().isPresent()) {
@@ -517,7 +519,7 @@ public class GameSession {
         // no offer to answer: this is an offer of its own
       }
     }
-    final String pauseMessage = pauseMessage("offering a draw");
+    final String pauseMessage = pauseMessage(side, "offering a draw");
     if (pauseMessage != null) {
       return ArbiterResponse.incompleteMove(pauseMessage);
     }
@@ -574,7 +576,7 @@ public class GameSession {
         // no offer to answer: this is an offer of its own
       }
     }
-    final String pauseMessage = pauseMessage("offering a draw");
+    final String pauseMessage = pauseMessage(side, "offering a draw");
     if (pauseMessage != null) {
       return DrawOfferManager.DrawOfferResult.repeated(pauseMessage);
     }
@@ -646,16 +648,30 @@ public class GameSession {
    * @return the refusal for an offer or claim made while the arbiter has stopped the clocks - a restoration pause or
    *         the admonishment pause after a wrong clock press - or {@code null} when play is on
    */
-  private String pauseMessage(String action) {
+  private String pauseMessage(Side side, String action) {
     if (waitingForRestoration) {
       return "The game is paused. Please restore the position before " + action + ".";
     }
     if (waitingForReady) {
       return "The game is paused. Please wait until both players are ready.";
     }
-    return restorationResumePending || isWrongClockPressPause()
-        ? "The game is paused. Please wait until the clock restarts."
-        : null;
+    if (restorationResumePending || isWrongClockPressPause()) {
+      noteToldToWaitForClock(side);
+      return "The game is paused. Please wait until the clock restarts.";
+    }
+    return null;
+  }
+
+  /** Remembers who was told to wait for the restart after a wrong clock press: they are told when it comes. */
+  private void noteToldToWaitForClock(Side side) {
+    if (isWrongClockPressPause() && !restorationResumePending) {
+      toldToWaitForClock.add(side);
+    }
+  }
+
+  /** @return and clears whether the side was told, during the admonishment pause, to wait for the clock. */
+  public synchronized boolean consumeToldToWaitForClock(Side side) {
+    return toldToWaitForClock.remove(side);
   }
 
   /** The admonishment pause after a wrong clock press: the arbiter restarts the interrupted clock by itself. */
@@ -816,7 +832,7 @@ public class GameSession {
     }
     // While the arbiter has stopped the clocks nothing is adjudicated: like a draw offer, a claim made
     // now is not considered at all - no penalty time, no converted offer, no step on a claim ladder.
-    final String pauseMessage = pauseMessage("claiming a draw");
+    final String pauseMessage = pauseMessage(side, "claiming a draw");
     if (pauseMessage != null) {
       return DrawClaimResult.paused(pauseMessage);
     }
@@ -992,6 +1008,11 @@ public class GameSession {
   // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
   private Side wrongClockPressPausedFor;
   private long wrongClockPauseId;
+  // Who was answered "wait until the clock restarts" during the current admonishment pause.
+  private final Set<Side> toldToWaitForClock = EnumSet.noneOf(Side.class);
+  /** What both players read when the arbiter restarts the clock, after a restoration and after this pause alike. */
+  public static final String CLOCK_RESTARTED = "Clock restarted. Game continues.";
+  private static final String WRONG_CLOCK_WARNING = " Warning: the next press of your opponent's clock loses the game.";
 
   /**
    * Outcome of a press of the opponent's clock lever.
@@ -1003,9 +1024,16 @@ public class GameSession {
    * @param opponentInfo passive info for the opponent ({@code null} for a no-op and for the game-ending press, which
    *                     speaks through {@code gameEnded} instead)
    * @param pauseId identifies this pause for its delayed callback; zero when no resume is scheduled
+   * @param warned              true for the second offense: the next one loses the game
+   * @param restartMessage      what the offender reads when the clock restarts ({@code null} without a pause)
+   * @param opponentRestartInfo the opponent's passive info once the clock has restarted ({@code null} without a pause)
    */
   public record WrongClockPressOutcome(boolean offense, boolean gameLost, String message, String opponentInfo,
-      long pauseId) {
+      long pauseId, boolean warned, String restartMessage, String opponentRestartInfo) {
+
+    private static WrongClockPressOutcome withoutPause(boolean offense, boolean gameLost) {
+      return new WrongClockPressOutcome(offense, gameLost, null, null, 0, false, null, null);
+    }
   }
 
   /**
@@ -1016,28 +1044,31 @@ public class GameSession {
     checkFlagFall();
     final Side opponent = side.getOppositeSide();
     if (state != GameState.IN_PROGRESS || clock.getRunningFor() != opponent) {
-      return new WrongClockPressOutcome(false, false, null, null, 0);
+      return WrongClockPressOutcome.withoutPause(false, false);
     }
     final int count = wrongClockPressCounts.merge(side, 1, Integer::sum);
     if (count >= WRONG_CLOCK_PRESS_LIMIT) {
       terminationActor = side;
       endGame(new GameResult(GameResultType.WRONG_CLOCK_PRESS_GAME_LOST, opponent,
           sideName(side) + " loses the game by repeatedly pressing the opponent's clock."));
-      return new WrongClockPressOutcome(true, true, null, null, 0);
+      return WrongClockPressOutcome.withoutPause(true, true);
     }
     clock.stopClock();
     wrongClockPressPausedFor = opponent;
     wrongClockPauseId++;
+    toldToWaitForClock.clear();
     if (count == WRONG_CLOCK_PRESS_LIMIT - 1) {
+      final String warned = "Your opponent pressed your clock and has been warned: the next press loses them the game.";
       return new WrongClockPressOutcome(true, false,
           "Please do not press your opponent's clock. The game is paused and will continue shortly."
-              + " Warning: the next press of your opponent's clock loses the game.",
-          "Your opponent pressed your clock and has been warned: the next press loses them the game."
-              + " The game is paused; your clock will restart shortly.", wrongClockPauseId);
+              + WRONG_CLOCK_WARNING,
+          warned + " The game is paused; your clock will restart shortly.", wrongClockPauseId, true,
+          CLOCK_RESTARTED + WRONG_CLOCK_WARNING, warned + " Your clock has restarted.");
     }
     return new WrongClockPressOutcome(true, false,
         "Please do not press your opponent's clock. The game is paused and will continue shortly.",
-        "Your opponent pressed your clock. The game is paused; your clock will restart shortly.", wrongClockPauseId);
+        "Your opponent pressed your clock. The game is paused; your clock will restart shortly.", wrongClockPauseId,
+        false, CLOCK_RESTARTED, "Your opponent pressed your clock. Your clock has restarted.");
   }
 
   /**

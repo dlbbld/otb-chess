@@ -33,6 +33,7 @@ import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.event.BoardEvent;
+import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
 import io.github.dlbbld.otbchess.game.model.DrawClaimType;
 import io.github.dlbbld.otbchess.game.model.GameResult;
@@ -1403,12 +1404,12 @@ public class GameWebSocketServer extends WebSocketServer {
     if (releasedMoveIsFinal) {
       // "Your move is final" is only for the committer (the side to move); the opponent just waits.
       final Side mover = room.getSession().getHavingMove();
-      msg.addProperty("message", "Clock restarted. Game continues.");
+      msg.addProperty("message", GameSession.CLOCK_RESTARTED);
       room.sendToSide(mover.getOppositeSide(), GSON.toJson(msg));
       msg.addProperty("message", "Clock restarted. Your move is final — press the clock to continue.");
       room.sendToSide(mover, GSON.toJson(msg));
     } else {
-      msg.addProperty("message", "Clock restarted. Game continues.");
+      msg.addProperty("message", GameSession.CLOCK_RESTARTED);
       room.sendToBoth(GSON.toJson(msg));
     }
     sendClockUpdate(room);
@@ -1499,15 +1500,48 @@ public class GameWebSocketServer extends WebSocketServer {
     maintenance.schedule(() -> {
       try {
         synchronized (room) {
-          if (room.getSession() == pausedSession
-              && pausedSession.resumeAfterWrongClockPress(outcome.pauseId()) != null) {
-            sendClockUpdate(room);
+          if (room.getSession() == pausedSession) {
+            final Side restarted = pausedSession.resumeAfterWrongClockPress(outcome.pauseId());
+            if (restarted != null) {
+              sendClockRestarted(room, side, outcome, pausedSession.consumeToldToWaitForClock(restarted));
+              sendClockUpdate(room);
+            }
           }
         }
       } catch (final RuntimeException e) {
         System.err.println("[wrong-clock-resume] " + room.getGameId() + ": " + e);
       }
     }, wrongClockPauseMs, TimeUnit.MILLISECONDS);
+  }
+
+  /**
+   * The admonishment pause is over: both players were told that the clock would restart, so both are told that it
+   * has. The offender's arbiter window held the admonishment; a warning that still applies is repeated there. The
+   * opponent's passive info is brought up to date, and the arbiter speaks to the opponent only when it had told them
+   * to wait during the pause - an instruction standing in that window otherwise (a touch-move ruling) stays.
+   */
+  private void sendClockRestarted(GameRoom room, Side offender, GameSession.WrongClockPressOutcome outcome,
+      boolean opponentWasToldToWait) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "clockRestarted");
+    msg.addProperty("message", outcome.restartMessage());
+    if (outcome.warned()) {
+      msg.addProperty("style", "error");
+    }
+    room.sendToSide(offender, GSON.toJson(msg));
+
+    final Side opponent = offender.getOppositeSide();
+    final JsonObject info = new JsonObject();
+    info.addProperty("type", "opponentInfo");
+    info.addProperty("message", outcome.opponentRestartInfo());
+    room.sendToSide(opponent, GSON.toJson(info));
+
+    if (opponentWasToldToWait) {
+      final JsonObject restarted = new JsonObject();
+      restarted.addProperty("type", "clockRestarted");
+      restarted.addProperty("message", GameSession.CLOCK_RESTARTED);
+      room.sendToSide(opponent, GSON.toJson(restarted));
+    }
   }
 
   private void sendRestoreInstructions(GameRoom room, Side side) {
@@ -1962,7 +1996,19 @@ public class GameWebSocketServer extends WebSocketServer {
     };
   }
 
+  /**
+   * The clock values of a game in play. A game that has ended gets its final values exactly once, from the
+   * announcement of the result ({@link #announceGameEnded}): a caller that reaches this after the deciding action
+   * sends nothing, so that the same final values do not go out twice.
+   */
   private void sendClockUpdate(GameRoom room) {
+    if (room.getSession().getState() == GameState.ENDED) {
+      return;
+    }
+    sendClockValues(room);
+  }
+
+  private void sendClockValues(GameRoom room) {
     final var clock = room.getSession().getClock();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "clockUpdate");
@@ -2007,7 +2053,7 @@ public class GameWebSocketServer extends WebSocketServer {
     // The final clock values go out before the result, for every ending: after a flag fall the
     // flagged side's time is clamped to 0, and without this update the client's last cached value
     // is the previous tick's positive remainder - the LCD would show 0:01 on a game lost on time.
-    sendClockUpdate(room);
+    sendClockValues(room);
 
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameEnded");

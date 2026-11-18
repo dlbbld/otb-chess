@@ -4,6 +4,8 @@ class Game {
     this.board = null;
     this.ws = new GameWebSocket();
     this.side = null; // 'white' or 'black'
+    // Whether the player turned the board with Flip board (the opponent's colour is at the bottom).
+    this.boardTurnedByPlayer = false;
     this.gameId = null;
     this.isMyTurn = false;
     // FIDE 9.2 / 9.3: at most one draw claim per move. Set when the server reports a
@@ -340,7 +342,11 @@ class Game {
       const changedSeat = this.side !== data.side;
       this.gameId = data.gameId;
       this.side = data.side;
-      if ((this.side === 'black') !== this.board.flipped) {
+      // The board shows the player's colour at the bottom unless the player turned it (Flip board):
+      // a reconnect on this page keeps the board as the player has it. A new colour (a rematch
+      // missed while away) starts from the own side again.
+      if (changedSeat) this.boardTurnedByPlayer = false;
+      if (((this.side === 'black') !== this.boardTurnedByPlayer) !== this.board.flipped) {
         this.board.flip();
       }
       this.board.setPosition(data.board);
@@ -557,6 +563,12 @@ class Game {
 
     this.ws.on('opponentClockPressed', (data) => {
       this.showArbiterMessage(data.message, 'error');
+    });
+
+    // The pause after a wrong clock press is over. Only the message changes: buttons and the
+    // turn are as they were, and the clock itself comes with the clock update that follows.
+    this.ws.on('clockRestarted', (data) => {
+      this.showArbiterMessage(data.message, data.style || null);
     });
 
     this.ws.on('wrongTimeDrawOffer', (data) => {
@@ -782,6 +794,7 @@ class Game {
       this.gameId = data.gameId;
       this.side = data.side;
       // The seats swapped: orient the board absolutely for the NEW colour (flip() only toggles).
+      this.boardTurnedByPlayer = false;
       if ((this.side === 'black') !== this.board.flipped) {
         this.board.flip();
       }
@@ -969,6 +982,7 @@ class Game {
 
     document.getElementById('flipBoardBtn').addEventListener('click', () => {
       this.board.flip();
+      this.boardTurnedByPlayer = !this.boardTurnedByPlayer;
       // After a flip the floating piece's screen position is stale; clearing it
       // keeps the visual coherent. Next opponent DRAG_HOVER will not respawn it
       // (DRAG_START is what spawns), but on the dragger's next square change a

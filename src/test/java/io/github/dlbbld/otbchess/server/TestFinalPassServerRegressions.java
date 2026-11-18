@@ -690,4 +690,177 @@ class TestFinalPassServerRegressions {
     assertEquals("1. e4 e5 2. Nf3 1/2-1/2", black.last("pgn").get("pgn").getAsString().strip());
     assertEquals(List.of("e4", "e5", "Nf3"), rooms().get(id).getSession().getBoard().getPerformedMovesAsSan());
   }
+
+  // ----- note 1: the final clock values go out once -----
+
+  /** The same move without the position of the board: the server then rules on it with the clock press only. */
+  private void dragWithoutBoardState(Client client, String piece, String from, String to) {
+    board.put(from, "NONE");
+    board.put(to, piece);
+    final JsonObject event = new JsonObject();
+    event.addProperty("eventType", "DRAG_MOVE");
+    event.addProperty("square", from);
+    event.addProperty("targetSquare", to);
+    event.addProperty("piece", piece);
+    event.addProperty("displacedPiece", "NONE");
+    final JsonObject message = new JsonObject();
+    message.addProperty("type", "boardEvent");
+    message.add("event", event);
+    server.onMessage(client.socket, message.toString());
+  }
+
+  private void playUpToTheMate(Client white, Client black) {
+    drag(white, "WHITE_PAWN", "f2", "f3");
+    sendWithBoard(white, "clockPress");
+    drag(black, "BLACK_PAWN", "e7", "e5");
+    sendWithBoard(black, "clockPress");
+    drag(white, "WHITE_PAWN", "g2", "g4");
+    sendWithBoard(white, "clockPress");
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = { true, false })
+  void aMoveThatEndsTheGameIsFollowedByOneFinalClockUpdate(boolean endsWithTheClockPress) throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    start(white, black);
+    playUpToTheMate(white, black);
+    final int whiteBefore = white.messages.size();
+    final int blackBefore = black.messages.size();
+
+    if (endsWithTheClockPress) {
+      dragWithoutBoardState(black, "BLACK_QUEEN", "d8", "h4");
+      assertEquals(0, black.count("gameEnded"), "without the board the mate is seen with the clock press");
+      sendWithBoard(black, "clockPress");
+    } else {
+      drag(black, "BLACK_QUEEN", "d8", "h4"); // the mate ends the game without a clock press
+    }
+
+    for (final var entry : Map.of(white, whiteBefore, black, blackBefore).entrySet()) {
+      final List<String> types = entry.getKey().types();
+      final List<String> sinceTheMove = types.subList(entry.getValue(), types.size());
+      assertEquals("CHECKMATE", entry.getKey().last("gameEnded").get("resultType").getAsString(), types.toString());
+      assertEquals(1, sinceTheMove.stream().filter("clockUpdate"::equals).count(),
+          "the final clock values used to be sent twice: " + sinceTheMove);
+      assertEquals(List.of("clockUpdate", "gameEnded"), sinceTheMove.subList(sinceTheMove.size() - 2,
+          sinceTheMove.size()), "the clock values come directly before the result");
+    }
+  }
+
+  @Test
+  void anAcceptedMoveThatDoesNotEndTheGameStillSendsItsClockUpdate() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    start(white, black);
+    final long before = black.count("clockUpdate");
+
+    drag(white, "WHITE_PAWN", "e2", "e4");
+    sendWithBoard(white, "clockPress");
+
+    assertEquals(before + 1, black.count("clockUpdate"));
+    assertEquals("black", black.last("clockUpdate").get("running").getAsString());
+  }
+
+  // ----- note 2: the restart after a wrong clock press is announced -----
+
+  private static final String RESTARTED = "Clock restarted. Game continues.";
+
+  @Test
+  void theRestartAfterAWrongClockPressIsAnnouncedToTheOffenderAndInTheOpponentsInfo() throws Exception {
+    setLong("wrongClockPauseMs", 60);
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+
+    send(black, "opponentClockPressed"); // White is on move: Black stops White's clock
+    await("the clock restarts", () -> rooms(id).getSession().getClock().getRunningFor() == Side.WHITE);
+    await("the restart is announced", () -> black.count("clockRestarted") == 1);
+
+    assertEquals(RESTARTED, black.text("clockRestarted"));
+    assertFalse(black.last("clockRestarted").has("style"));
+    assertEquals("Your opponent pressed your clock. Your clock has restarted.", white.text("opponentInfo"));
+    assertEquals(0, white.count("clockRestarted"),
+        "White was not told to wait: what stands in White's arbiter window is not replaced");
+    // The message comes before the clock values that show the running clock.
+    final List<String> types = black.types();
+    assertEquals(List.of("clockRestarted", "clockUpdate"), types.subList(types.size() - 2, types.size()));
+    assertEquals("white", black.last("clockUpdate").get("running").getAsString());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = { "clockPress", "offerDraw", "claimDraw" })
+  void aPlayerToldToWaitDuringThePauseIsToldWhenTheClockRestarts(String action) throws Exception {
+    setLong("wrongClockPauseMs", 400);
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    send(black, "opponentClockPressed");
+
+    final String paused = "The game is paused. Please wait until the clock restarts.";
+    switch (action) {
+      case "clockPress" -> {
+        sendWithBoard(white, "clockPress");
+        assertEquals(paused, white.text("incomplete_move"));
+      }
+      case "offerDraw" -> {
+        send(white, "offerDraw");
+        assertEquals(paused, white.text("repeatedDrawOffer"));
+      }
+      default -> {
+        claim(white, "THREEFOLD_ON_BOARD");
+        assertEquals(paused, white.text("drawClaimResult"));
+      }
+    }
+    assertEquals(0, white.count("clockRestarted"));
+
+    await("the clock restarts", () -> rooms(id).getSession().getClock().getRunningFor() == Side.WHITE);
+    await("White is told", () -> white.count("clockRestarted") == 1);
+    assertEquals(RESTARTED, white.text("clockRestarted"));
+    assertEquals(1, black.count("clockRestarted"));
+  }
+
+  @Test
+  void theRestartAfterTheSecondPressRepeatsTheWarning() throws Exception {
+    setLong("wrongClockPauseMs", 60);
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    send(black, "opponentClockPressed");
+    await("the first pause ends", () -> black.count("clockRestarted") == 1);
+
+    send(black, "opponentClockPressed");
+    await("the second pause ends", () -> black.count("clockRestarted") == 2);
+
+    assertEquals(RESTARTED + " Warning: the next press of your opponent's clock loses the game.",
+        black.text("clockRestarted"));
+    assertEquals("error", black.last("clockRestarted").get("style").getAsString());
+    assertEquals("Your opponent pressed your clock and has been warned: the next press loses them the game."
+        + " Your clock has restarted.", white.text("opponentInfo"));
+    assertEquals(Side.WHITE, rooms(id).getSession().getClock().getRunningFor());
+  }
+
+  @Test
+  void aPauseTakenOverByARestorationIsNotAnnouncedAsARestart() throws Exception {
+    setLong("wrongClockPauseMs", 150);
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    send(black, "opponentClockPressed");
+    drag(white, "BLACK_PAWN", "a7", "a6"); // White moves a Black piece: the restoration takes the pause over
+    assertTrue(rooms(id).getSession().isWaitingForRestoration());
+
+    Thread.sleep(400);
+
+    assertEquals(0, black.count("clockRestarted"));
+    assertEquals(0, white.count("clockRestarted"));
+    assertEquals(Side.NONE, rooms(id).getSession().getClock().getRunningFor());
+  }
+
+  private GameRoom rooms(String id) {
+    try {
+      return rooms().get(id);
+    } catch (final Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
 }

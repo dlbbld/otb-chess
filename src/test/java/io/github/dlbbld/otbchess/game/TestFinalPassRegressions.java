@@ -259,4 +259,81 @@ class TestFinalPassRegressions {
 
     assertEquals("1. a3 a6 0-1", session.exportPgn().strip());
   }
+
+  // ----- note 2: what the players read when the clock restarts after a wrong clock press -----
+
+  @Test
+  void aWrongClockPressCarriesWhatIsSaidWhenTheClockRestarts() {
+    final var session = startedSession();
+
+    final var first = session.pressOpponentClock(Side.BLACK);
+    assertFalse(first.warned());
+    assertEquals("Clock restarted. Game continues.", first.restartMessage());
+    assertEquals("Your opponent pressed your clock. Your clock has restarted.", first.opponentRestartInfo());
+    assertEquals(Side.WHITE, session.resumeAfterWrongClockPress(first.pauseId()));
+
+    final var second = session.pressOpponentClock(Side.BLACK);
+    assertTrue(second.warned());
+    assertEquals("Clock restarted. Game continues. Warning: the next press of your opponent's clock loses the game.",
+        second.restartMessage());
+    assertEquals("Your opponent pressed your clock and has been warned: the next press loses them the game."
+        + " Your clock has restarted.", second.opponentRestartInfo());
+    assertEquals(Side.WHITE, session.resumeAfterWrongClockPress(second.pauseId()));
+
+    final var third = session.pressOpponentClock(Side.BLACK);
+    assertTrue(third.gameLost());
+    assertNull(third.restartMessage());
+    assertNull(third.opponentRestartInfo());
+
+    final var noOffense = startedSession().pressOpponentClock(Side.WHITE); // Black's lever is down
+    assertFalse(noOffense.offense());
+    assertNull(noOffense.restartMessage());
+  }
+
+  @Test
+  void onlyAPlayerAnsweredWaitDuringThePauseIsRememberedAsToldToWait() {
+    final var session = startedSession();
+    assertFalse(session.consumeToldToWaitForClock(Side.WHITE), "no pause, nobody was told");
+
+    session.pressOpponentClock(Side.BLACK);
+    assertFalse(session.consumeToldToWaitForClock(Side.WHITE), "White did nothing during the pause");
+
+    assertEquals("The game is paused. Please wait until the clock restarts.",
+        session.pressClockButton(Side.WHITE, session.getPositionBeforeTurn()).renderedPlayerMessage());
+    assertTrue(session.consumeToldToWaitForClock(Side.WHITE));
+    assertFalse(session.consumeToldToWaitForClock(Side.WHITE), "asked once");
+    assertFalse(session.consumeToldToWaitForClock(Side.BLACK));
+
+    // An offer and a claim are answered the same way, for the player on move and for the offender.
+    session.offerDrawWrongTime(Side.WHITE);
+    session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null);
+    assertTrue(session.consumeToldToWaitForClock(Side.WHITE));
+    assertTrue(session.consumeToldToWaitForClock(Side.BLACK));
+  }
+
+  @Test
+  void aNewPauseForgetsWhoWasToldToWaitInTheOldOne() {
+    final var session = startedSession();
+    final var first = session.pressOpponentClock(Side.BLACK);
+    session.pressClockButton(Side.WHITE, session.getPositionBeforeTurn());
+    assertEquals(Side.WHITE, session.resumeAfterWrongClockPress(first.pauseId()));
+
+    session.pressOpponentClock(Side.BLACK);
+
+    assertFalse(session.consumeToldToWaitForClock(Side.WHITE));
+  }
+
+  @Test
+  void aRestorationPauseIsNotRememberedAsAWaitForTheWrongClockPress() {
+    final var session = startedSession();
+    session.pressOpponentClock(Side.BLACK);
+    // White moves a Black piece: the restoration takes over, and its end is announced by the restoration itself.
+    assertTrue(session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.A7, Square.A6, Piece.BLACK_PAWN, 0))
+        .isPresent());
+    session.enterWaitingForRestoration(); // what the server does with that ruling
+
+    session.offerDrawWrongTime(Side.WHITE);
+
+    assertFalse(session.consumeToldToWaitForClock(Side.WHITE));
+  }
 }

@@ -2,7 +2,7 @@ import { test, expect, Browser, Page } from '@playwright/test';
 import {
   createGame, joinGame, expectGameStarted, startTwoPlayerGame, expectGameResult, SCORE_DRAW, TwoPlayerGame,
 } from './helpers/app';
-import { clickSquare, dragPiece, expectPiece, pressClock } from './helpers/board';
+import { clickSquare, dragPiece, expectPiece, flipBoard, pressClock, pressOwnClock, squareLocator } from './helpers/board';
 import { startIsolatedServer } from './helpers/isolated-server';
 
 // Regressions for the findings of the final review pass before the release. Each test replays the journey
@@ -396,4 +396,175 @@ test.describe('on a server of its own', () => {
     await expect(arbiter(white)).toHaveText('You accepted the draw offer.');
     await expect(arbiter(black)).toHaveText('Your opponent accepted the draw offer.');
   });
+
+  test('a player told to wait during the pause after a wrong clock press is told when the clock restarts', async ({ browser, request }) => {
+    isolated = await startIsolatedServer(request, { OTB_WRONG_CLOCK_PAUSE_MS: '4000' });
+    const contexts = [await isolated.context(browser), await isolated.context(browser)];
+    const white = await contexts[0].newPage();
+    const black = await contexts[1].newPage();
+    game = { contexts, white, black, creator: white, joiner: black, gameId: '' };
+    game.gameId = await createGame(white);
+    await joinGame(black, game.gameId);
+    await expectGameStarted(white);
+    await expectGameStarted(black);
+
+    await black.locator('#topClockBtn').click();
+    await expect(white.locator('#opponentInfoPanel')).toContainText('The game is paused');
+    // White moves and presses the clock inside the pause: the arbiter asks White to wait.
+    await dragPiece(white, 'e2', 'e4');
+    await pressClock(white);
+    await expect(arbiter(white)).toHaveText('The game is paused. Please wait until the clock restarts.');
+
+    // That request used to stay in the window after the clock had restarted.
+    await expect(arbiter(white)).toHaveText(RESTARTED, { timeout: 10_000 });
+    await expect(arbiter(black)).toHaveText(RESTARTED);
+    await expect(white.locator('#chessClock')).not.toHaveClass(/paused/);
+    // White presses again, now that the clock runs: the move stands.
+    await pressClock(white);
+    await expect(arbiter(black)).toContainText('Your turn');
+    await expectPiece(black, 'e4', 'WHITE_PAWN');
+  });
+});
+
+// ----- the three notes of the final pass -----
+
+const RESTARTED = 'Clock restarted. Game continues.';
+
+test('the restart of the clock after a wrong clock press is announced on both boards', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // White is on move; Black presses White's clock. The test server pauses for one second.
+  await black.locator('#topClockBtn').click();
+  await expect(arbiter(black)).toContainText('The game is paused and will continue shortly.');
+  await expect(white.locator('#opponentInfoPanel')).toContainText('your clock will restart shortly');
+
+  // Both messages used to stand unchanged after the clock had restarted.
+  await expect(arbiter(black)).toHaveText(RESTARTED, { timeout: 10_000 });
+  await expect(arbiter(black)).not.toHaveClass(/error/);
+  await expect(white.locator('#opponentInfoPanel')).toHaveText('Your opponent pressed your clock. Your clock has restarted.');
+  await expect(black.locator('#chessClock')).not.toHaveClass(/paused/);
+  // White did nothing during the pause: what the arbiter had told White stays.
+  await expect(arbiter(white)).toContainText('clock has been started');
+
+  // The second press: the warning is still there after the restart.
+  await black.locator('#topClockBtn').click();
+  await expect(arbiter(black)).toContainText('The game is paused and will continue shortly. Warning');
+  await expect(arbiter(black)).toHaveText(
+    `${RESTARTED} Warning: the next press of your opponent's clock loses the game.`, { timeout: 10_000 });
+  await expect(arbiter(black)).toHaveClass(/error/);
+  await expect(white.locator('#opponentInfoPanel')).toHaveText(
+    'Your opponent pressed your clock and has been warned: the next press loses them the game. Your clock has restarted.');
+
+  // The game goes on, and the move closes the episode.
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await expect(arbiter(black)).toContainText('Your turn');
+  await expect(white.locator('#opponentInfoPanel')).toBeHidden();
+});
+
+/** Records the types of the messages this page receives from now on. */
+const recordMessages = (page: Page) => page.evaluate(() => {
+  (window as any).received = [];
+  (window as any).game.ws.ws.addEventListener('message', (e: MessageEvent) => {
+    (window as any).received.push(JSON.parse(e.data).type);
+  });
+});
+const received = (page: Page) => page.evaluate(() => (window as any).received as string[]);
+
+test('a move that ends the game is followed by one final clock update, not two', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  await dragPiece(white, 'f2', 'f3');
+  await pressClock(white);
+  await expect(arbiter(black)).toContainText('Your turn');
+  await dragPiece(black, 'e7', 'e5');
+  await pressClock(black);
+  await expect(arbiter(white)).toContainText('Your turn');
+  await dragPiece(white, 'g2', 'g4');
+  await pressClock(white);
+  await expect(arbiter(black)).toContainText('Your turn');
+  await recordMessages(white);
+  await recordMessages(black);
+
+  await dragPiece(black, 'd8', 'h4'); // mate: the game ends without a clock press
+
+  for (const page of [white, black]) {
+    await expectGameResult(page, '0-1');
+    await expect(page.locator('#gameResultReason')).toContainText('checkmate');
+  }
+  // From the arbiter's answer to the move on: the clock values once, then the result.
+  const whiteTypes = await received(white);
+  const blackTypes = await received(black);
+  expect(whiteTypes.slice(whiteTypes.lastIndexOf('opponentMoved'))).toEqual(['opponentMoved', 'clockUpdate', 'gameEnded']);
+  expect(blackTypes.slice(blackTypes.lastIndexOf('move_accepted'))).toEqual(['move_accepted', 'clockUpdate', 'gameEnded']);
+});
+
+/** Whose side the player has at the bottom of the board. */
+async function colourAtTheBottom(page: Page) {
+  const a1 = await squareLocator(page, 'a1').boundingBox();
+  const a8 = await squareLocator(page, 'a8').boundingBox();
+  return a1!.y > a8!.y ? 'white' : 'black';
+}
+
+test('a board turned with Flip board stays turned when the connection is lost and comes back', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  await flipBoard(white);
+  await flipBoard(black);
+  expect(await colourAtTheBottom(white)).toBe('black');
+  expect(await colourAtTheBottom(black)).toBe('white');
+
+  // Both lose the connection one after the other and reconnect on the same page.
+  for (const [page, other] of [[white, black], [black, white]] as const) {
+    await dropSocket(page);
+    await comeBack(page);
+    await expect(arbiter(page)).toHaveText('Reconnected.', { timeout: 10_000 });
+    await expect(arbiter(other)).not.toContainText('disconnected');
+  }
+
+  // The reconnect used to turn each board back to the player's own colour.
+  expect(await colourAtTheBottom(white)).toBe('black');
+  expect(await colourAtTheBottom(black)).toBe('white');
+  // The clocks follow the board: the own clock is at the top, and the game is played from there.
+  await expect(white.locator('#topClockDisplay')).toHaveClass(/own-clock/);
+  await dragPiece(white, 'e2', 'e4');
+  await pressOwnClock(white);
+  await expect(arbiter(black)).toContainText('Your turn');
+  await expectPiece(black, 'e4', 'WHITE_PAWN');
+
+  // Flip board again gives the own colour back, and that stays across a reconnect as well.
+  await flipBoard(black);
+  await dropSocket(black);
+  await comeBack(black);
+  await expect(arbiter(black)).toHaveText('Reconnected.', { timeout: 10_000 });
+  expect(await colourAtTheBottom(black)).toBe('black');
+
+  // A page that is loaded anew starts from the player's own colour.
+  await white.reload();
+  await expect(arbiter(white)).toHaveText('Reconnected.', { timeout: 15_000 });
+  expect(await colourAtTheBottom(white)).toBe('white');
+});
+
+test('a rematch shows the new colour at the bottom although the board was turned', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  await flipBoard(white);
+  expect(await colourAtTheBottom(white)).toBe('black');
+  await white.locator('#resignBtn').click();
+  await expectGameResult(white, '0-1');
+
+  await white.locator('#rematchBtn').click();
+  await black.locator('#rematchBtn').click();
+  await expect(resultPanel(white)).toBeHidden();
+
+  // White of the first game plays Black now, and Black is at the bottom because it is the own colour.
+  expect(await white.evaluate(() => (window as any).game.side)).toBe('black');
+  expect(await colourAtTheBottom(white)).toBe('black');
+  expect(await colourAtTheBottom(black)).toBe('white');
+  // The turn of the board from the first game is forgotten: a reconnect keeps the own colour.
+  await dropSocket(white);
+  await comeBack(white);
+  await expect(arbiter(white)).toHaveText('Reconnected.', { timeout: 10_000 });
+  expect(await colourAtTheBottom(white)).toBe('black');
 });

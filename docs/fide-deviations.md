@@ -168,8 +168,8 @@ As with A-003, **the count accumulates across different moves** and never resets
 
 **Our policy** (same three-step ladder as A-003/A-005, counted per player across the whole game):
 
-1. First press: the arbiter **pauses the game** — offender: *"Please do not press your opponent's clock. The game is paused and will continue shortly."*; the opponent sees what happened passively (info window). After the admonishment pause (`OTB_WRONG_CLOCK_PAUSE_MS`, default 5 s) the interrupted clock restarts.
-2. Second press: same pause plus the warning — the next press loses the game.
+1. First press: the arbiter **pauses the game** — offender: *"Please do not press your opponent's clock. The game is paused and will continue shortly."*; the opponent sees what happened passively (info window). After the admonishment pause (`OTB_WRONG_CLOCK_PAUSE_MS`, default 5 s) the interrupted clock restarts, and both players are told: the offender reads *"Clock restarted. Game continues."*, the opponent's info window says *"Your opponent pressed your clock. Your clock has restarted."*
+2. Second press: same pause plus the warning — the next press loses the game. The warning is repeated in the restart message.
 3. Third press: **loss of the game** (`WRONG_CLOCK_PRESS_GAME_LOST`). Offender: told they were warned and lose; opponent: *"Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game."*
 
 While the admonishment pause lasts nothing is adjudicated, as in a restoration pause: a draw claim or a draw offer by either player is answered with *"The game is paused. Please wait until the clock restarts."* — no penalty time, no offer for the opponent, no step on a claim or offer ladder, and the one claim of the move is not used up.

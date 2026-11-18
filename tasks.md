@@ -565,7 +565,7 @@ Findings 2, 5, 7, 8 and 9 are on `main` as well; finding 1 is on `main` for a ha
   client reach `OTB_MAX_GAMES`; until those rooms expire everybody else is answered "The server is at
   capacity. Please try again shortly." Running games are not affected. Required: a connection that creates a
   game gives up the waiting room it had.
-- [x] Noted, no change proposed. (1) When the game ends with an accepted move, two identical final clock
+- [x] Noted, no change proposed at first; all three fixed afterwards (see "The three notes" below). (1) When the game ends with an accepted move, two identical final clock
   updates are still sent before the result (clock press and automatic ending; the ticker path of finding 6
   of the cloud review is fixed). Harmless. (2) After the pause that follows a wrong clock press no message
   announces the restart: "The game is paused. Please wait until the clock restarts." stays in the arbiter
@@ -623,8 +623,31 @@ its journey (finding 6: Java only, see there).
   (Windows-only launcher tests). `CI=1 npx playwright test --retries=0`: 200 passed, 1 skipped (Windows-only),
   in 5.9 minutes. `RuleFuzzer`: 20,000 games, 0 findings. `TouchMoveOracle`: 33,793 cases, 0 differences.
   Not run: the Windows-only launcher tests.
-- [ ] Not changed: the three notes at the end of the review above (double final clock update, no message when
-  the clock restarts after a wrong clock press, Flip board undone by a reconnect).
+- [x] Not changed at first: the three notes at the end of the review above (double final clock update, no message
+  when the clock restarts after a wrong clock press, Flip board undone by a reconnect). Fixed afterwards, see
+  the next section.
+
+### The three notes of the final review pass — 2026-11-18
+
+- [x] **The final clock values go out once (note 1).** `sendClockUpdate` sends nothing for a game that has ended;
+  the announcement of the result sends the final values (`sendClockValues`), directly before `gameEnded`. Before,
+  a mate on the board and a game-ending clock press sent the same values twice.
+- [x] **The restart after a wrong clock press is announced (note 2).** New message `clockRestarted`. The offender
+  reads "Clock restarted. Game continues." in place of the admonishment, after the second press with the warning
+  repeated (error style). The opponent's info window changes to "Your opponent pressed your clock. Your clock has
+  restarted." The opponent's arbiter window is changed only if the arbiter had answered them "The game is
+  paused. Please wait until the clock restarts." during the pause (`GameSession.consumeToldToWaitForClock`), so
+  that a touch-move ruling standing there is not overwritten. A pause taken over by a restoration is not
+  announced here; the restoration announces its own resume.
+- [x] **Flip board survives a reconnect (note 3).** The client remembers that the player turned the board
+  (`boardTurnedByPlayer`); `resync` keeps the board as the player has it. A new colour (rematch, also one missed
+  while away) and a page loaded anew start from the own colour. Client only: no Java test.
+- [x] Tests: `TestFinalPassRegressions` (+4), `TestFinalPassServerRegressions` (+6 methods, 9 cases),
+  `final-pass.spec.ts` (+5). The clock-update test and three browser tests were run against the old code and
+  fail there.
+- [x] Verification on macOS: `mvn -q package` runs 408 Java tests, 0 failures, 4 skipped (Windows-only launcher
+  tests). `CI=1 npx playwright test --retries=0`: 205 passed, 1 skipped (Windows-only). `RuleFuzzer`: 20,000
+  games, 0 findings. `TouchMoveOracle`: 33,793 cases, 0 differences. Not run: the Windows-only launcher tests.
 
 ### Review baseline verification
 
