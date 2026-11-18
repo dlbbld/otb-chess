@@ -648,4 +648,46 @@ class TestFinalPassServerRegressions {
     sendCreate(white, 600000, null);
     assertEquals(2, white.count("gameCreated"));
   }
+
+  // ----- findings 7 and 8: no draw before both players have moved; the offered move is in the record -----
+
+  @Test
+  void acceptingOnTheFirstMoveIsRefusedAndTheOfferStaysOnTheTable() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    send(white, "offerDraw");
+    assertEquals(1, black.count("drawOffered"));
+    final String tooEarly = "A draw can be agreed only after both players have made at least one move (FIDE 5.2.3).";
+
+    send(black, "acceptDraw");
+    assertEquals(tooEarly, black.text("drawAcceptRejected"));
+    send(black, "offerDraw");
+    assertEquals(tooEarly, black.text("repeatedDrawOffer"));
+
+    final var session = rooms().get(id).getSession();
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+    assertEquals(Side.WHITE, session.getDrawOfferManager().getOfferingSide());
+    assertEquals(0, white.count("gameEnded"));
+    assertEquals(0, white.count("drawOffered"), "Black's answer is no offer of its own");
+    assertEquals(0, white.count("drawRejected"));
+    assertEquals(0, black.count("drawOfferExpired"), "the panel with White's offer stays");
+  }
+
+  @Test
+  void theMoveMadeWithTheAcceptedOfferAndTheResultAreInThePgn() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    playOneMoveEach(white, black);
+    drag(white, "WHITE_KNIGHT", "g1", "f3");
+    sendWithBoard(white, "offerDraw");
+
+    send(black, "acceptDraw");
+    send(black, "requestPgn");
+
+    assertEquals("DRAW_AGREEMENT", white.last("gameEnded").get("resultType").getAsString());
+    assertEquals("1. e4 e5 2. Nf3 1/2-1/2", black.last("pgn").get("pgn").getAsString().strip());
+    assertEquals(List.of("e4", "e5", "Nf3"), rooms().get(id).getSession().getBoard().getPerformedMovesAsSan());
+  }
 }

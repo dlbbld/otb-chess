@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { startTwoPlayerGame, expectGameResult, claimThreefoldOnBoard, TwoPlayerGame } from './helpers/app';
-import { dragPiece, pressClock, clickSquare } from './helpers/board';
+import { bothPlayersMove, dragPiece, pressClock, clickSquare } from './helpers/board';
 
 let game: TwoPlayerGame;
 test.afterEach(async () => {
@@ -10,6 +10,7 @@ test.afterEach(async () => {
 for (const recipient of ['white', 'black'] as const) {
   test(`${recipient} can accept a pending draw offer after refreshing`, async ({ browser }) => {
     game = await startTwoPlayerGame(browser);
+    await bothPlayersMove(game.white, game.black);
     const offerer = recipient === 'white' ? 'black' : 'white';
     await game[offerer].locator('#offerDrawBtn').click();
     await expect(game[recipient].locator('#drawOfferPanel')).toBeVisible();
@@ -48,6 +49,7 @@ test('a correct-time offer can be rejected after refresh and stays rejected on a
 
 test('refresh preserves the explanation for an offer converted from a rejected draw claim', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
+  await bothPlayersMove(game.white, game.black);
   await claimThreefoldOnBoard(game.white);
   await expect(game.black.locator('#drawOfferMessage')).toContainText('still counts as a draw offer');
   const explanation = await game.black.locator('#drawOfferMessage').innerText();

@@ -380,6 +380,7 @@ class TestGameSession {
   void testDrawOfferAccepted() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    DrawTestSupport.bothPlayersMove(session);
 
     // White plays e4 and offers draw
     final Side white = session.getHavingMove();
@@ -422,6 +423,7 @@ class TestGameSession {
   void testCorrectTimeDrawOfferSurvivesOffererClockPress() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    DrawTestSupport.bothPlayersMove(session);
 
     final Side white = session.getHavingMove();
     session.recordEvent(white, BoardEvent.dragMove(Square.E2, Square.E4, Piece.WHITE_PAWN, 0));

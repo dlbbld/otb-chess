@@ -142,6 +142,9 @@ class TestFourthPassServerRegressions {
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black, true, null);
+    board = ServerDrawTestSupport.bothPlayersMove(server, room(id), white.socket, black.socket);
+    white.messages.clear();
+    black.messages.clear();
 
     send(white, "offerDraw");
     assertEquals(1, black.count("drawOffered"));
@@ -166,6 +169,9 @@ class TestFourthPassServerRegressions {
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black, true, null);
+    board = ServerDrawTestSupport.bothPlayersMove(server, room(id), white.socket, black.socket);
+    white.messages.clear();
+    black.messages.clear();
     final var offers = room(id).getSession().getDrawOfferManager();
 
     send(black, "offerDraw");

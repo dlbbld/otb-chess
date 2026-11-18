@@ -149,6 +149,10 @@ class RuleFuzzer {
           ready = false;
           toldFinal = false;
           toldCastle = null;
+          // A game can end while a ruling is still open (a draw agreed during the restoration pause):
+          // what the arbiter asked for in the old game says nothing about the new one.
+          toldTouched = null;
+          toldCastleAny = false;
         }
         case "resync" -> {
           side = m.get("side").getAsString();

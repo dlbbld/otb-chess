@@ -3,7 +3,7 @@ import {
   createGame, joinGame, expectGameStarted, expectGameResult, startTwoPlayerGame, claimThreefoldOnBoard,
   claimThreefoldWithMove, CreateOptions, SCORE_DRAW, TwoPlayerGame,
 } from './helpers/app';
-import { clickSquare, dragPiece, expectPiece, pressClock } from './helpers/board';
+import { bothPlayersMove, clickSquare, dragPiece, expectPiece, pressClock } from './helpers/board';
 import { startIsolatedServer } from './helpers/isolated-server';
 
 // Regressions for the findings of the cloud review of the review branch. Each test replays the journey of
@@ -122,6 +122,7 @@ test('claiming victory after the own clock ran out loses on time', async ({ brow
 test('an offer answering an offer made with a move that is not yet completed agrees the draw', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
   // White makes the move, offers a draw with it and does not press the clock.
   await dragPiece(white, 'e2', 'e4');
   await white.locator('#offerDrawBtn').click();

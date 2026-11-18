@@ -1,6 +1,6 @@
 import { test, expect, Browser } from '@playwright/test';
 import { startTwoPlayerGame, createGame, joinGame, expectGameStarted, expectGameResult, clickRestore, claimFiftyMoveOnBoard, CreateOptions, SCORE_DRAW, TwoPlayerGame } from './helpers/app';
-import { dragPiece, pressClock, expectPiece } from './helpers/board';
+import { bothPlayersMove, dragPiece, pressClock, expectPiece } from './helpers/board';
 
 let game: TwoPlayerGame;
 test.afterEach(async () => {
@@ -231,6 +231,7 @@ test('resigning after the opponent\'s expiry keeps the win on time', async ({ br
 test('the result is announced once and late actions do not disturb a rematch offer', async ({ browser }) => {
   const { logs } = await startLoggedGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
   await white.locator('#offerDrawBtn').click();
   await black.locator('#acceptDrawBtn').click();
   for (const page of [white, black]) await expectGameResult(page, SCORE_DRAW);

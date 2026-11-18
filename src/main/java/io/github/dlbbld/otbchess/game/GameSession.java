@@ -506,8 +506,16 @@ public class GameSession {
 
     // An offer that answers the opponent's acceptable offer is its acceptance, and a draw can be
     // agreed at any time - also while the arbiter has stopped the clocks, exactly like Accept.
-    if (agreeDrawByCounterOffer(side)) {
-      return ArbiterResponse.incompleteMove(DRAW_AGREEMENT_DESCRIPTION);
+    switch (answerOfferWithOffer(side)) {
+      case AGREED -> {
+        return ArbiterResponse.incompleteMove(DRAW_AGREEMENT_DESCRIPTION);
+      }
+      case TOO_EARLY -> {
+        return ArbiterResponse.incompleteMove(DRAW_TOO_EARLY);
+      }
+      default -> {
+        // no offer to answer: this is an offer of its own
+      }
     }
     final String pauseMessage = pauseMessage("offering a draw");
     if (pauseMessage != null) {
@@ -555,8 +563,16 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
     }
 
-    if (agreeDrawByCounterOffer(side)) {
-      return DrawOfferManager.DrawOfferResult.drawAgreed();
+    switch (answerOfferWithOffer(side)) {
+      case AGREED -> {
+        return DrawOfferManager.DrawOfferResult.drawAgreed();
+      }
+      case TOO_EARLY -> {
+        return DrawOfferManager.DrawOfferResult.repeated(DRAW_TOO_EARLY);
+      }
+      default -> {
+        // no offer to answer: this is an offer of its own
+      }
     }
     final String pauseMessage = pauseMessage("offering a draw");
     if (pauseMessage != null) {
@@ -573,21 +589,57 @@ public class GameSession {
     return result;
   }
 
+  /** What became of an offer that was made while the opponent's offer was on the table. */
+  private enum CounterOffer {
+    /** There was no offer of the opponent that could be accepted: the new offer stands for itself. */
+    NO_OFFER_TO_ANSWER,
+    /** The draw is agreed and the game has ended. */
+    AGREED,
+    /** The offer could be accepted, but not yet: FIDE 5.2.3. Nothing changed. */
+    TOO_EARLY
+  }
+
   /**
    * Both players want a draw: an offer made while the opponent's offer can still be accepted is the acceptance of
    * that offer. Registering it as a new offer instead would replace the pending one and leave each player waiting
    * for the other. An offer that can no longer be accepted (the recipient touched a piece or made the move) is not
    * agreed this way; the new offer then simply takes its place.
-   *
-   * @return whether the game ended in a draw by agreement
    */
-  private boolean agreeDrawByCounterOffer(Side side) {
+  private CounterOffer answerOfferWithOffer(Side side) {
     if (!drawOfferManager.canAccept(side)) {
-      return false;
+      return CounterOffer.NO_OFFER_TO_ANSWER;
     }
-    terminationActor = side;
-    endGame(new GameResult(GameResultType.DRAW_AGREEMENT, Side.NONE, DRAW_AGREEMENT_DESCRIPTION));
-    return true;
+    if (!haveBothPlayersMadeAMove()) {
+      return CounterOffer.TOO_EARLY;
+    }
+    agreeDraw(side);
+    return CounterOffer.AGREED;
+  }
+
+  /**
+   * FIDE 5.2.3: a game is drawn upon agreement "provided both players have made at least one move". A move made on
+   * the board counts although its clock press is still outstanding - that is the moment FIDE 9.1.2.1 asks the offer
+   * to be made at.
+   */
+  private boolean haveBothPlayersMadeAMove() {
+    return board.getPerformedMovesAsSan().size() + (finalMoveCommitment == null ? 0 : 1) >= 2;
+  }
+
+  /**
+   * Ends the game as a draw by agreement, accepted by {@code acceptingSide}. A move the offering player has made on
+   * the board and not yet completed with the clock belongs to the game (FIDE 9.1.2.1: the offer is made after the
+   * move and before the clock press): it is performed first, so that the game record ends with it.
+   */
+  private GameResult agreeDraw(Side acceptingSide) {
+    if (finalMoveCommitment != null && drawOfferManager.getOfferingSide() == board.getSideToMove()
+        && (mustExecuteMove == null || mustExecuteMove.equals(finalMoveCommitment.move().moveSpecification()))) {
+      board.move(finalMoveCommitment.move().moveSpecification());
+    }
+    terminationActor = acceptingSide; // the player who accepted the offer (for the personalised message)
+    final GameResult drawResult = new GameResult(GameResultType.DRAW_AGREEMENT, Side.NONE,
+        DRAW_AGREEMENT_DESCRIPTION);
+    endGame(drawResult);
+    return drawResult;
   }
 
   /**
@@ -635,16 +687,19 @@ public class GameSession {
       this.lastAcceptDrawRejection = rejection.get();
       return Optional.empty();
     }
+    if (!haveBothPlayersMadeAMove()) {
+      // The offer itself stays on the table; it can be accepted once both players have moved.
+      this.lastAcceptDrawRejection = DRAW_TOO_EARLY;
+      return Optional.empty();
+    }
 
     this.lastAcceptDrawRejection = null;
-    terminationActor = side; // the player who accepted the offer (for the personalised message)
-    final GameResult drawResult = new GameResult(GameResultType.DRAW_AGREEMENT, Side.NONE,
-        DRAW_AGREEMENT_DESCRIPTION);
-    endGame(drawResult);
-    return Optional.of(drawResult);
+    return Optional.of(agreeDraw(side));
   }
 
   private static final String DRAW_AGREEMENT_DESCRIPTION = "The game is drawn by agreement.";
+  private static final String DRAW_TOO_EARLY = "A draw can be agreed only after both players have made at least"
+      + " one move (FIDE 5.2.3).";
 
   private String lastAcceptDrawRejection;
 
@@ -723,7 +778,7 @@ public class GameSession {
     // reject / touch-piece-invalidation flow without going through the wrong-time escalation.
     // The same holds for this implied offer as for a spoken one: if the opponent's offer can still
     // be accepted, both players want the draw and the game is drawn by agreement.
-    if (claimResult.convertsToDrawOffer() && !agreeDrawByCounterOffer(side)) {
+    if (claimResult.convertsToDrawOffer() && answerOfferWithOffer(side) != CounterOffer.AGREED) {
       drawOfferManager.offerDrawCorrectTime(side, rejectedClaimDrawOfferMessage(type));
     }
 
@@ -1391,8 +1446,22 @@ public class GameSession {
 
   // ===== PGN export =====
 
+  /**
+   * The moves of the game in PGN movetext. The library ends a game it does not see decided on the board with the
+   * "unknown" marker {@code *}; once this game has a result, the marker is replaced by it.
+   */
   public synchronized String exportPgn() {
-    return PgnCreate.toPgnString(board);
+    final String pgn = PgnCreate.toPgnString(board);
+    final int marker = pgn.lastIndexOf('*');
+    if (state != GameState.ENDED || result == null || marker < 0) {
+      return pgn;
+    }
+    final String token = switch (result.winner()) {
+      case WHITE -> "1-0";
+      case BLACK -> "0-1";
+      default -> "1/2-1/2";
+    };
+    return pgn.substring(0, marker) + token + pgn.substring(marker + 1);
   }
 
   // ===== Getters =====

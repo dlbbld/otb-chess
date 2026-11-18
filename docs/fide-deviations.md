@@ -223,7 +223,7 @@ While the admonishment pause lasts nothing is adjudicated, as in a restoration p
 
 **Rationale**: at a board, "I offer a draw" answered by "I offer a draw" is an agreement; no arbiter would let the second sentence cancel the first. The earlier behaviour kept one offer slot and overwrote it, so that each player waited for the other, the second player's panel accepted nothing ("You cannot accept your own draw offer"), and its Reject button withdrew the player's own offer while the opponent was told it had been rejected. An offer that can no longer be accepted (A-002) is different: there the second player has declined by moving, and their offer is a new one.
 
-**Where in code**: `GameSession.agreeDrawByCounterOffer`, `DrawOfferManager.canAccept` / `rejectDraw`. Pinned by `TestFourthPassRegressions`, `TestFourthPassServerRegressions` and `fourth-pass.spec.ts`; the offer-with-a-move case by `TestCloudReviewServerRegressions` and `cloud-review.spec.ts`.
+**Where in code**: `GameSession.answerOfferWithOffer`, `DrawOfferManager.canAccept` / `rejectDraw`. Pinned by `TestFourthPassRegressions`, `TestFourthPassServerRegressions` and `fourth-pass.spec.ts`; the offer-with-a-move case by `TestCloudReviewServerRegressions` and `cloud-review.spec.ts`.
 
 ---
 

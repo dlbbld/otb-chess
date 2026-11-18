@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { startTwoPlayerGame, clickRestore, expectGameResult, SCORE_DRAW, TwoPlayerGame } from './helpers/app';
-import { clickSquare, dragPiece, expectEmpty, expectPiece, pressClock } from './helpers/board';
+import { bothPlayersMove, clickSquare, dragPiece, expectEmpty, expectPiece, pressClock } from './helpers/board';
 
 // Regressions for the third review pass. Each test replays the journey the finding was reproduced with:
 // a release and a touch must never give opposite orders, "your move is final" must be true, and a draw
@@ -134,6 +134,7 @@ test('a completed move is still called final, and its clock press is accepted', 
 test('a counter offer agrees the draw instead of replacing the pending offer', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
   await white.locator('#offerDrawBtn').click();
   await expect(offerPanel(black)).toBeVisible();
 
@@ -151,6 +152,7 @@ test('a counter offer agrees the draw instead of replacing the pending offer', a
 test('an own offer closes the outdated panel, and no button can withdraw the offer', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
   await black.locator('#offerDrawBtn').click();
   await expect(offerPanel(white)).toBeVisible();
   // White answers with a move: Black's offer can no longer be accepted, its panel stays by design.

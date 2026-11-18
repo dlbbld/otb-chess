@@ -265,6 +265,7 @@ class TestFourthPassRegressions {
   @ValueSource(strings = { "WHITE", "BLACK" })
   void aCounterOfferAgreesTheDrawInsteadOfReplacingThePendingOffer(String first) {
     final var session = session();
+    DrawTestSupport.bothPlayersMove(session);
     final Side offerer = Side.valueOf(first);
     assertTrue(session.offerDrawWrongTime(offerer).accepted());
 
@@ -280,6 +281,7 @@ class TestFourthPassRegressions {
   @Test
   void aCounterOfferMadeWithAMoveOnTheBoardAgreesTheDrawWithoutJudgingTheMove() {
     final var session = session();
+    DrawTestSupport.bothPlayersMove(session);
     assertTrue(session.offerDrawWrongTime(Side.BLACK).accepted());
     // An illegal move that commits to nothing: the offer can still be accepted.
     drag(session, Piece.WHITE_PAWN, Square.E2, Square.E5);
@@ -289,12 +291,13 @@ class TestFourthPassRegressions {
 
     assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, response.type());
     assertDrawnByAgreement(session, Side.WHITE);
-    assertEquals(0, session.getBoard().getPerformedMovesAsSan().size());
+    assertEquals(2, session.getBoard().getPerformedMovesAsSan().size(), "only the two opening moves");
   }
 
   @Test
   void anOfferThatCanNoLongerBeAcceptedIsReplacedAndTheNewOfferCannotBeRejectedByItsMaker() {
     final var session = session();
+    DrawTestSupport.bothPlayersMove(session);
     assertTrue(session.offerDrawWrongTime(Side.BLACK).accepted());
     drag(session, Piece.WHITE_PAWN, Square.E2, Square.E4);
     // The server's bookkeeping for "the recipient made the move": Black's offer can no longer be accepted.
@@ -319,6 +322,7 @@ class TestFourthPassRegressions {
   @Test
   void aRejectedClaimThatMeetsThePendingOfferOfTheOpponentAgreesTheDraw() {
     final var session = session();
+    DrawTestSupport.bothPlayersMove(session);
     drag(session, Piece.WHITE_PAWN, Square.E2, Square.E4);
     final BitboardPosition afterE4 = moved(session, Piece.WHITE_PAWN, Square.E2, Square.E4);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, session.offerDrawCorrectTime(Side.WHITE, afterE4).type());

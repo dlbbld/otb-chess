@@ -687,6 +687,16 @@ An offer made while the opponent's offer **can still be accepted** is the accept
 
 If the opponent's offer can **no longer** be accepted (the player touched a piece or made the move, see *Loss of right to accept*), the new offer takes its place, and the panel that still showed the old offer is closed on the new offerer's side (`drawOfferExpired`).
 
+The same holds while the arbiter has stopped the clocks (a restoration, the pause after a wrong clock press): a draw can be agreed at any time, by *Accept* and equally by an answering offer; only an offer with nothing to answer is not considered during a pause.
+
+#### When a draw can be agreed (FIDE 5.2.3)
+
+A game is drawn upon agreement *"provided both players have made at least one move"*. A move made on the board counts although its clock press is still outstanding - that is exactly the moment at which an offer is to be made (9.1.2.1). Before that, *Accept* and an answering offer are refused with *"A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."* The offer itself is made and stays on the table. In practice: White's first move with an offer cannot be accepted (Black has not moved); Black's first move with an offer can.
+
+#### The game record of an agreed draw
+
+The move the offering player made on the board before offering belongs to the game, whether or not the clock was pressed before the opponent accepted: it is performed when the draw is agreed, so the record ends with it. After a rejected draw claim this is the move the claimer owes (and has put on the board) - never a different one. The PGN export ends with the result of the game (`1-0`, `0-1`, `1/2-1/2`) once it is decided, and with `*` while it runs.
+
 #### Accepting or rejecting
 
 Both outcomes are **personalised per player** so it is always clear who did what:

@@ -491,10 +491,10 @@ release's tasks until it ships.
 - [x] The tests of `6b661ed` that depend on a 50 ms clock, repeated 8 times under full CPU load: 0 failures.
 - [x] Not run: the Windows-only launcher tests.
 
-Findings. None is fixed yet. Each was reproduced against the server, the first two also in the browser.
+Findings. All nine are fixed (next section). Each was reproduced against the server, the first two also in the browser.
 Findings 2, 5, 7, 8 and 9 are on `main` as well; finding 1 is on `main` for a hand-made message.
 
-- [ ] **1. P1 — A connection that no longer holds a seat still acts in the game: with the game open in two
+- [x] **1. P1 — A connection that no longer holds a seat still acts in the game: with the game open in two
   tabs a player agrees a draw alone.** A resume attaches the new socket to the seat, but the old socket stays
   open and keeps its entry in `playerGameMap` (`resumeSeat`). Its messages are handled with `Side.NONE`, and
   `DrawOfferManager.canAccept`, `acceptDraw` and `rejectDraw` only compare with the offering side. Replayed in
@@ -508,7 +508,7 @@ Findings 2, 5, 7, 8 and 9 are on `main` as well; finding 1 is on `main` for a ha
   On `main` the draw needs a hand-made `acceptDraw`; the counter offer of `dcd23e0` put it on a button.
   Required: a seat has one connection - a resume takes the old socket out of the game and tells it so, and no
   game action is accepted from a connection without a seat.
-- [ ] **2. P2 — A game starts against a player who is not there, and the abandonment deadline counts from the
+- [x] **2. P2 — A game starts against a player who is not there, and the abandonment deadline counts from the
   socket drop instead of from the start of the game.** The creator's socket drops while waiting for the opponent
   (tab closed, or the phone browser in the background while the code is being sent). `onClose` starts both
   timers although no game is running, and `joinRoom` seats the joiner without looking at the creator's
@@ -526,7 +526,7 @@ Findings 2, 5, 7, 8 and 9 are on `main` as well; finding 1 is on `main` for a ha
   Required: a player who is absent when the game starts is treated as having left at that moment - notice,
   countdown, Claim victory and the abandonment deadline count from the start of the game; a player who
   reconnects is told when the opponent is away.
-- [ ] **3. P3 — The cost of one board event still grows with the square of the turn's length (finding 5 of the
+- [x] **3. P3 — The cost of one board event still grows with the square of the turn's length (finding 5 of the
   cloud review is only partly fixed).** `ReleaseReplay` replays the turn once per event, but every release in
   it that is part of a legal move still asks `TouchMoveEvaluator.findObligation`, which reads the whole turn
   so far. Measured with the pattern of the regression test (knight touched, pawn moved back and forth): 800
@@ -535,31 +535,31 @@ Findings 2, 5, 7, 8 and 9 are on `main` as well; finding 1 is on `main` for a ha
   ("must not grow with the square") says more than the code does. No player reaches such a turn by hand; a
   scripted client on the public server can keep a worker thread busy for as long as it likes. Required: bound
   the work - carry the replay and the obligation from event to event, or limit the board events of one turn.
-- [ ] **4. P3 — During a pause, answering the opponent's offer with Offer draw is refused, while Accept agrees
+- [x] **4. P3 — During a pause, answering the opponent's offer with Offer draw is refused, while Accept agrees
   the draw.** `offerDrawWrongTime` and `offerDrawCorrectTime` check the pause before `agreeDrawByCounterOffer`.
   Black offers a draw and then presses White's clock; White presses Offer draw: "The game is paused. Please
   wait until the clock restarts." White presses Accept: drawn. The same in a restoration pause. Contradicts
   A-009 and the comment in `GameWebSocketServer.offerDraw` ("whatever else is true of the moment"). Required:
   an offer that answers an acceptable offer agrees the draw in a pause as well.
-- [ ] **5. P3 — `resign` is accepted in a room whose game has not started.** Only with a hand-made message (the
+- [x] **5. P3 — `resign` is accepted in a room whose game has not started.** Only with a hand-made message (the
   client hides the button). The session ends with "White resigns. Black wins the game."; the room keeps its
   free seat, a joiner is seated, `startGame` sets the ended session to IN_PROGRESS and the clock runs, while
   every move and clock press of both players is dropped as late, because the result was already announced.
   Required: a resignation needs a running game, and a join needs a room that is still waiting.
-- [ ] **6. P3 — A seat that is given back keeps its disconnect mark (new with `6b661ed`).** When the close
+- [x] **6. P3 — A seat that is given back keeps its disconnect mark (new with `6b661ed`).** When the close
   callback of the lost joiner runs between the seating and the failed join confirmation, `disconnectedAt` of
   the seat stays set after `joinRoom` has given the seat back. The next joiner plays normally, but
   `GameRoom.isConnected` is false for them: after the game a rematch offer is answered "A rematch is no longer
   available - your opponent left the game." Needs that exact interleaving. Required: clear the mark with the
   seat.
-- [ ] **7. P3 — A draw is agreed before both players have made a move.** FIDE 5.2.3 allows the agreement only
+- [x] **7. P3 — A draw is agreed before both players have made a move.** FIDE 5.2.3 allows the agreement only
   when both players have made at least one move. The app agrees a draw on the first move (offer, Accept), and
   `docs/fide-deviations.md` does not list this. Decision: enforce it, or record it as a deviation.
-- [ ] **8. P3 — The move made with a draw offer is missing from the game record when the offer is accepted.**
+- [x] **8. P3 — The move made with a draw offer is missing from the game record when the offer is accepted.**
   White plays e2-e4, offers a draw and Black accepts before the clock press: both boards show the pawn on e4,
   the session board and the PGN do not have the move (the PGN also gives `*` as the result of this drawn
   game). Decision: apply the completed move when the draw is agreed.
-- [ ] **9. P3 — One connection can take every room.** `handleCreateGame` does not look at whether the
+- [x] **9. P3 — One connection can take every room.** `handleCreateGame` does not look at whether the
   connection already has a game: every `createGame` adds a room, and a room left behind this way is removed
   only when it expires (30 minutes), also after its connection has closed. 1,000 messages from one scripted
   client reach `OTB_MAX_GAMES`; until those rooms expire everybody else is answered "The server is at
@@ -572,6 +572,59 @@ Findings 2, 5, 7, 8 and 9 are on `main` as well; finding 1 is on `main` for a ha
   window until the next message. The clock itself shows that it runs. (3) Since `3fa512a` every reconnect
   turns the board to the player's own colour, so a manual Flip board by White is undone by a reconnect (for
   Black it was so before).
+
+### Fixes for the final review pass — 2026-11-18
+
+The release is postponed for these: all nine findings are fixed, each with Java tests and a browser test of
+its journey (finding 6: Java only, see there).
+
+- [x] **A seat has one connection (finding 1).** `resumeSeat` takes the previous socket of the seat out of the
+  game and tells it (`sessionReplaced`: "This game is now open in another window. This window no longer takes
+  part."); the client freezes that window and stops its automatic reconnect, the saved session stays with the
+  other window. No game action is accepted from a connection without a seat, and `DrawOfferManager` lets only
+  the two players answer an offer. The window opened last holds the seat.
+- [x] **A player's absence counts from the start of the game (finding 2).** `markAbsent` starts the notice and the
+  abandonment deadline; timers belong to one absence (socket and time stamp), so those of a drop before the
+  game are void. `joinRoom` marks a creator who is not connected as absent from the start of the game. After
+  `resync` a reconnecting player is sent `opponentDisconnected` again with the time that is left (not inside
+  the grace, where the pending notice arrives anyway, and not during an arbiter pause, where the player's
+  own Revert or Ready prompt keeps the window).
+- [x] **A turn records at most 500 board events (finding 3).** `GameSession.MAX_BOARD_EVENTS_PER_TURN`. A
+  further event is not recorded and not forwarded, the sender reads "Too many piece movements in one move.
+  Further movements are not recorded.", and it counts against the connection. The clock press is still ruled
+  on. The limit was chosen over reworking the arbiter: it bounds every ruling, not only the one per event. The
+  long-turn tests of the cloud review now use 400 events, and their comment says what the code does.
+- [x] **An answering offer agrees the draw in a pause too (finding 4).** The counter offer is looked at before
+  the pause in `offerDrawWrongTime` and `offerDrawCorrectTime`. Policy A-009.
+- [x] **A resignation needs a running game (finding 5).** `resign` before the start is refused ("The game has not
+  started."); only a room that still waits can be joined; `startGame` works once.
+- [x] **The disconnect mark goes with the seat (finding 6).** Pinned in Java with the close callback running
+  inside the failed send. No browser test: a page cannot make its socket close exactly while it is being
+  seated, and the journey a browser can take (join, play, rematch) is the ordinary one that is covered.
+- [x] **A draw is agreed only after both players have made a move (finding 7, FIDE 5.2.3).** A move on the board
+  counts although its clock press is outstanding. Before that Accept and an answering offer are refused with
+  "A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."; the offer stays on
+  the table. Twelve Java tests and nine browser tests that agreed a draw on the first move now play a2-a3
+  and a7-a6 first (`DrawTestSupport`, `ServerDrawTestSupport`, `bothPlayersMove`).
+- [x] **The offered move and the result are in the record (finding 8).** When a draw is agreed, the completed
+  move the offerer has on the board is performed first - after a rejected claim only the move that is owed.
+  The PGN ends with `1-0`, `0-1` or `1/2-1/2` once the game is decided.
+- [x] **A connection has one game (finding 9).** `createGame` gives up the room in which the connection still
+  waits alone, and is refused in a running game ("You are already playing a game.").
+- [x] Decisions taken while fixing, for review: the limit of 500 instead of an incremental arbiter (3); an
+  answering offer that comes too early is refused, not registered as an offer of its own (7); the PGN result
+  token (8); `createGame` refused during a running game (9); no absence notice during an arbiter pause (2).
+- [x] Tests: `TestFinalPassRegressions` (13), `TestFinalPassServerRegressions` (21 methods, 30 cases),
+  `final-pass.spec.ts` (12).
+- [x] `RuleFuzzer` forgot nothing of an open touch-move ruling across a rematch; since a draw can be agreed
+  during a restoration pause, it carried the ruling of the old game into the new one (2 of 20,000 games).
+  The model now drops it at the rematch.
+- [x] Verification on macOS with all fixes: `mvn -q package` runs 395 Java tests, 0 failures, 4 skipped
+  (Windows-only launcher tests). `CI=1 npx playwright test --retries=0`: 200 passed, 1 skipped (Windows-only),
+  in 5.9 minutes. `RuleFuzzer`: 20,000 games, 0 findings. `TouchMoveOracle`: 33,793 cases, 0 differences.
+  Not run: the Windows-only launcher tests.
+- [ ] Not changed: the three notes at the end of the review above (double final clock update, no message when
+  the clock restarts after a wrong clock press, Flip board undone by a reconnect).
 
 ### Review baseline verification
 

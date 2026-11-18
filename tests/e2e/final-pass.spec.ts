@@ -292,6 +292,68 @@ test('a creator who creates another game gives up the first one', async ({ brows
   await expect(arbiter(joiner)).toContainText('Your turn');
 });
 
+// ----- no draw before both players have moved; the offered move and the result in the record -----
+
+const TOO_EARLY = 'A draw can be agreed only after both players have made at least one move (FIDE 5.2.3).';
+
+async function shownPgn(page: Page): Promise<string> {
+  await page.locator('#exportPgnBtn').click();
+  await expect(page.locator('#pgnDialog')).toBeVisible();
+  const pgn = (await page.locator('#pgnText').inputValue()).trim();
+  await page.locator('#exportPgnBtn').click();
+  return pgn;
+}
+
+test('a draw offered on the first move cannot be agreed until both players have made a move', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  // White makes the first move and offers a draw with it: only White has made a move.
+  await dragPiece(white, 'e2', 'e4');
+  await white.locator('#offerDrawBtn').click();
+  await expect(offerPanel(black)).toBeVisible();
+
+  await black.locator('#acceptDrawBtn').click();
+  await expect(arbiter(black)).toHaveText(TOO_EARLY);
+  await black.locator('#offerDrawBtn').click();
+  await expect(arbiter(black)).toHaveText(TOO_EARLY);
+  for (const page of [white, black]) {
+    await expect(resultPanel(page)).toBeHidden();
+  }
+  // The offer stays on the table and is not answered by an offer of Black's.
+  await expect(offerPanel(black)).toBeVisible();
+  await expect(offerPanel(white)).toBeHidden();
+
+  // White completes the move. Black makes the first move and offers with it: now both have moved.
+  await pressClock(white);
+  await expect(arbiter(black)).toContainText('Your turn');
+  await dragPiece(black, 'e7', 'e5');
+  await black.locator('#offerDrawBtn').click();
+  await expect(arbiter(black)).toHaveText('Draw offer sent.');
+  await expect(offerPanel(white)).toBeVisible();
+  await white.locator('#acceptDrawBtn').click();
+
+  for (const page of [white, black]) {
+    await expectGameResult(page, SCORE_DRAW);
+    await expect(page.locator('#gameResultReason')).toHaveText('The game is drawn by agreement.');
+    // Black's move was made on the board and belongs to the game, although the clock was not pressed.
+    expect(await shownPgn(page)).toBe('1. e4 e5 1/2-1/2');
+    await expectPiece(page, 'e5', 'BLACK_PAWN');
+  }
+});
+
+test('the PGN ends with the result of the game', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  await playOneMoveEach(white, black);
+  expect(await shownPgn(white)).toBe('1. e4 e5 *');
+
+  await white.locator('#resignBtn').click();
+  for (const page of [white, black]) {
+    await expectGameResult(page, '0-1');
+    expect(await shownPgn(page)).toBe('1. e4 e5 0-1');
+  }
+});
+
 // ----- an offer that answers an offer, during a pause -----
 
 test.describe('on a server of its own', () => {

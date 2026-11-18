@@ -536,6 +536,9 @@ class TestCloudReviewServerRegressions {
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black);
+    board = ServerDrawTestSupport.bothPlayersMove(server, rooms().get(id), white.socket, black.socket);
+    white.messages.clear();
+    black.messages.clear();
 
     // White makes the move, offers the draw with it and has not pressed the clock yet.
     drag(white, "WHITE_PAWN", "e2", "e4");

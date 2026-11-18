@@ -176,6 +176,7 @@ class TestReviewServerRegressions {
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black);
+    ServerDrawTestSupport.bothPlayersMove(server, rooms().get(id), white.socket, black.socket);
     server.onMessage(white.socket, "{\"type\":\"offerDraw\"}");
     final var expected = black.last("drawOffered");
     final var returningWhite = reconnect(white, id, "gameCreated");
@@ -282,6 +283,7 @@ class TestReviewServerRegressions {
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black);
+    ServerDrawTestSupport.bothPlayersMove(server, rooms().get(id), white.socket, black.socket);
     server.onMessage(white.socket, "{\"type\":\"offerDraw\"}");
     server.onMessage(black.socket, "{\"type\":\"acceptDraw\"}");
     assertEquals(1, white.count("gameEnded"));
