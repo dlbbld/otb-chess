@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.1.6 — Touch-Move and Release Guards](CHANGELOG.md#016--touch-move-and-release-guards--2026-09-22)
+See [0.2.0 — Game Lifecycle and Draw Guards](CHANGELOG.md#020--game-lifecycle-and-draw-guards--2026-11-18)
 for this release.
 
 ## Documentation

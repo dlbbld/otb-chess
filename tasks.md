@@ -3,6 +3,23 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.2.0 — Game Lifecycle and Draw Guards
+
+- [x] Scope: everything on `latest-ai-model-review` since `0.1.6` - the model review of `0.1.6`, its
+  follow-up passes, the cloud review, the rematch and expiry races, and the final pass with its three
+  notes (sections below). `0.2.0` instead of `0.1.7`: the release changes behaviour (a draw only after
+  both players have moved, one connection per seat, one game per connection), not only bugs.
+- [x] Prepare version `0.2.0`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Game Lifecycle and
+  Draw Guards** for the PR title and its opening heading, title the GitHub release `0.2.0`, and begin
+  its notes with the release name.
+- [x] Verification on macOS at the release commit: full Java suite, and `version.spec.ts` against the
+  rebuilt jar (`/api/version`, lobby and board show `v0.2.0`). The full browser suite, `RuleFuzzer` and
+  `TouchMoveOracle` passed at `f224714`; the release commit changes metadata only.
+- [ ] Not done before the merge, at the owner's instruction to cut the release: the manual test through
+  `start.bat` on Windows. The Windows-only launcher tests last ran on the Windows machine at `3fa512a`;
+  the launcher has not changed since.
+
 ## Latest AI model review — 2026-11-17
 
 - [x] Review release `0.1.6` at `a92ac68` on `latest-ai-model-review` for substantial
