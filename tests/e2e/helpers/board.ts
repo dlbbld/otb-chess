@@ -110,3 +110,16 @@ export async function expectPiece(page: Page, square: Square, piece: string): Pr
 export async function expectEmpty(page: Page, square: Square): Promise<void> {
   await expect(pieceLocator(page, square)).toHaveCount(0);
 }
+
+/**
+ * Plays a2-a3 and a7-a6 with the clock presses in a game at the initial position. A draw can be agreed only
+ * after both players have made a move (FIDE 5.2.3); the a-pawns are out of the way of what the tests do next.
+ */
+export async function bothPlayersMove(white: Page, black: Page): Promise<void> {
+  await dragPiece(white, 'a2', 'a3');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await dragPiece(black, 'a7', 'a6');
+  await pressClock(black);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+}

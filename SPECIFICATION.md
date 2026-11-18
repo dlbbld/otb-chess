@@ -111,6 +111,7 @@ While the creator is alone in the room -- the game has been created but nobody h
   - Achieved by toggling the class `clock-on-left-view` on `.game-layout` when the board is flipped.
 - **Game messages (info panel)** sit in the upper spacer of the right column, **directly above the clock**, hugging the clock's top edge.
 - **Action buttons** (Offer Draw, Resign, Request Piece, Claim Threefold Position, Claim Threefold Move, Claim 50-Move Position, Claim 50-Move Move, Display PGN, Flip Board) live beneath the board.
+- **Flip Board** is the player's own view and stays as the player set it when the connection is lost and comes back on the same page. A page loaded anew, and a rematch (the colours swap), start with the player's own colour at the bottom.
 
 The board must always remain visible. There is no popup overlay for the game result -- the result is shown inline (e.g. `1-0`, `0-1`, `1/2-1/2`) with reason text in the info panel.
 
@@ -163,12 +164,14 @@ The two LCDs and the rocker keep the same relative placement so that "the LCD ne
 - **Paused** (visual PAUSE overlay) whenever the clock is stopped between turns.
 - **No player-initiated pause.**
 - **Flag fall:** the LCD shows `0:00` (final clock update is sent before the `gameEnded` message so the client doesn't display a stale `0:01`).
+- **Final clock values:** every ending sends the final `clockUpdate` exactly once, directly before `gameEnded`. The action that decides the game (an accepted move, a mate on the board) sends no clock update of its own.
 
 ### Clock-press semantics
 
 - A press of the player's **own** lever on their **own turn** triggers full move evaluation (see "Two-Layer Evaluation at Clock Press").
 - **Pressing the clock without having made a move** (board unchanged at the press) is considered and penalised **as an illegal move** per FIDE 7.5.3: standard penalty time to the opponent, counts toward the illegal-move limit (default 2 → the second such press loses the game). There is nothing to restore, so the message asks the player to make a move and their clock keeps running.
 - A press of the **opponent's** lever registers only while the opponent's clock is running (their lever up) and escalates per [A-006](docs/fide-deviations.md#a-006--wrong-clock-press-pressing-the-opponents-clock-escalation): pause + admonishment, pause + warning, loss on the third press. With the opponent's lever already down (or one's own lever pressed out of turn) the press is a physical no-op — silence, like the real clock.
+- When the arbiter restarts the clock after that pause, the restart is announced (`clockRestarted`): the offender reads *"Clock restarted. Game continues."* in place of the admonishment, after the second press with the warning repeated; the opponent's info window changes from *"…your clock will restart shortly."* to *"…Your clock has restarted."* The opponent's arbiter window is changed only if the arbiter had answered them *"The game is paused. Please wait until the clock restarts."* during the pause — an instruction standing there otherwise (for example a touch-move ruling) stays.
 
 ---
 
@@ -269,14 +272,23 @@ If the player **first touches their own king on its starting square and then tou
 - **Earlier binding touch wins:** the rule only replaces the king touch's own obligation. If, before touching the king, the player touched an own piece that can move or an opponent piece that can be captured, that earlier touch stays binding (FIDE 4.3) and no castling commitment arises -- castling is then a touch-move violation. This includes a touch made during an earlier illegal move in the same turn (see [Persistence across interventions](#persistence-across-interventions)). Example: after 1. g3 e5 2. Bg2 d5 3. Nf3 Nc6, White plays `Nb1-b3`, presses the clock (illegal move), puts the knight back and castles short: rejected, the knight on b1 must move.
 - **Completed move:** this obligation cannot replace a legal move already completed by release. For example,
   releasing Black's king from e8 on f8 commits Kf8; touching or moving the h8 rook afterwards cannot require castling.
+- **Started castling:** the same holds for a king released on its castling square. `Ke1-g1` commits White to kingside
+  castling (FIDE 4.7); touching or moving the a1 rook afterwards cannot turn this into "castle queenside". The arbiter
+  asks for `Rh1-f1`, and that is then accepted. See [A-010](docs/fide-deviations.md#a-010--a-release-and-a-touch-are-judged-in-the-order-they-happened).
+- **Rook touched first:** by FIDE 4.4.2 castling with that rook is not available on this move. A king then put on the
+  castling square commits to nothing: at the clock press the ruling is the touch-move violation naming the rook, not
+  "castling has been started", and it is not counted as an illegal move. The same applies to any other earlier touch
+  that the castling would break.
 
 #### Violation message (CASTLING)
 
-> _"Because you touched the king and the rook, and castling is legal, please perform the castling move."_
+The message names the touched rook and the side, so that it is unambiguous when both castlings are possible. Example for the a1 rook:
+
+> _"Because you touched the king and the rook on a1, and queenside castling is legal, please perform the queenside castling move."_
 
 The opponent is told:
 
-> _"Your opponent touched the king and the rook, and castling is legal. They are requested to restore the position and perform the castling move."_
+> _"Your opponent touched the king and the rook on a1, and queenside castling is legal. They are requested to restore the position and perform the queenside castling move."_
 
 ### Persistence across interventions
 
@@ -371,7 +383,7 @@ When the king's release on its castled square commits the player to a castling t
 
 If the same incomplete physical position follows an earlier king-then-rook touch sequence, the earlier FIDE 4.4.a commitment supplies the reason instead:
 
-> _"Because you touched the king and the rook, and castling is legal, please perform the castling move."_
+> _"Because you touched the king and the rook on h1, and kingside castling is legal, please perform the kingside castling move."_
 
 The king is not moved back -- it stays on the castled square because that's where it belongs in the committed move. The player is told exactly which rook move completes the castling. If the physical board already equals that required intermediate position (king on g1, rook still on h1), no **Revert** button is shown: there is nothing to restore, the player's clock resumes, and the player must complete castling by moving the rook and pressing the clock. If the player has also moved another piece after the king release, **Revert** restores the board to the required intermediate position.
 
@@ -670,12 +682,32 @@ The offerer currently receives no separate notification of invalidation -- their
 
 If the player offers a draw together with a clock-press but their move is invalid (illegal, touch-move, released-piece), the draw offer is **silently dropped**. It does not count as a repeated offer.
 
+Only this new offer is dropped. An offer that is already pending stays: the opponent's is not the player's to cancel, and an earlier one of their own is on the opponent's screen and cannot be withdrawn (FIDE 9.1.2.1).
+
+#### Counter offer
+
+An offer made while the opponent's offer **can still be accepted** is the acceptance of that offer: the game is drawn by agreement, with the usual personalised messages (the player who pressed second "accepted"). This covers both players pressing *Offer draw* at about the same time, and a rejected draw claim (which counts as an offer, FIDE 9.5) made while the opponent's offer is on the table. Policy [A-009](docs/fide-deviations.md#a-009--counter-offer-and-who-may-answer-a-draw-offer).
+
+If the opponent's offer can **no longer** be accepted (the player touched a piece or made the move, see *Loss of right to accept*), the new offer takes its place, and the panel that still showed the old offer is closed on the new offerer's side (`drawOfferExpired`).
+
+The same holds while the arbiter has stopped the clocks (a restoration, the pause after a wrong clock press): a draw can be agreed at any time, by *Accept* and equally by an answering offer; only an offer with nothing to answer is not considered during a pause.
+
+#### When a draw can be agreed (FIDE 5.2.3)
+
+A game is drawn upon agreement *"provided both players have made at least one move"*. A move made on the board counts although its clock press is still outstanding - that is exactly the moment at which an offer is to be made (9.1.2.1). Before that, *Accept* and an answering offer are refused with *"A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."* The offer itself is made and stays on the table. In practice: White's first move with an offer cannot be accepted (Black has not moved); Black's first move with an offer can.
+
+#### The game record of an agreed draw
+
+The move the offering player made on the board before offering belongs to the game, whether or not the clock was pressed before the opponent accepted: it is performed when the draw is agreed, so the record ends with it. After a rejected draw claim this is the move the claimer owes (and has put on the board) - never a different one. The PGN export ends with the result of the game (`1-0`, `0-1`, `1/2-1/2`) once it is decided, and with `*` while it runs.
+
 #### Accepting or rejecting
 
 Both outcomes are **personalised per player** so it is always clear who did what:
 
 - **Accepted** -> the result panel keeps `½-½` and _"The game is drawn by agreement."_ (the canonical result). On top, the arbiter message names the actor: _"You accepted the draw offer."_ to the accepter, _"Your opponent accepted the draw offer."_ to the offerer.
 - **Rejected** (the game continues) -> _"You rejected the draw offer."_ to the rejecter, _"Your opponent rejected the draw offer."_ to the offerer.
+
+Only the player the offer was made to can answer it. A reject or accept from the offering player -- possible only through a button pressed at the same instant or a modified client -- changes nothing: _"You cannot reject your own draw offer."_ / _"You cannot accept your own draw offer."_
 
 ---
 
@@ -771,7 +803,13 @@ Tracked in **Spec-driven implementation follow-ups** below.
 
 ### Outbound (server -> client)
 
-`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown).
+`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawOfferExpired` (to a player whose own offer replaced an outdated offer of the opponent: close the panel), `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown), `sessionReplaced` (to a window whose seat was taken over by another window of the same player, see *One connection per seat*), `clockRestarted` (the pause after a wrong clock press is over; only the arbiter message changes, with `style: "error"` when it repeats the warning).
+
+#### Guards on what a connection may do
+
+- **One game per connection.** A `createGame` from a connection that still waits alone in a room gives that room up (the old code is then *not found*); from a connection that sits in a running game it is refused (*"You are already playing a game."*). Without this one connection could take every room up to `OTB_MAX_GAMES`, each parked until it expires.
+- **A resignation needs a running game.** `resign` before an opponent has joined is refused (*"The game has not started."*); the creator leaves a waiting room with `abort`. A room can be joined only while its session still waits for players, and a session is started once.
+- **A turn records at most 500 board events** (`GameSession.MAX_BOARD_EVENTS_PER_TURN`). The arbiter weighs every event of a turn again when ruling, so the cost of a ruling grows with the square of the turn's length; no hand comes near that number. A further event is not recorded and not forwarded, the sender is told *"Too many piece movements in one move. Further movements are not recorded."*, and it counts against the connection's violation budget. The clock press is still ruled on from what was recorded and the position on the board; the next turn starts at zero.
 
 #### Abandonment (player leaves the game)
 
@@ -780,13 +818,19 @@ When a socket drops during a RUNNING game and the player does not resume, two ti
 1. **`OTB_DISCONNECT_GRACE_MS`** (default 12 s): the opponent is informed — `opponentDisconnected` with `abandonInMs`. The client shows a live **countdown** (*"Your opponent has disconnected. The game will be ended in «N»s."*) and a **Claim victory** button.
 2. **`OTB_ABANDON_MS`** (default 60 s): the game is **adjudicated as abandoned**, as chess servers do — the leaver loses (`gameEnded`, type `ABANDONMENT`, *"«Side» left the game. «Side» wins the game."*), **unless** the remaining player could not checkmate by any series of legal moves (same helpmate adjudication as resignation/flag fall, FIDE 5.1.2-style), in which case it is a **draw** with the insufficient-material / no-potential-mate reason. A resume within the window defuses both timers (the opponent then receives `opponentReconnected`, clearing the countdown); a game already decided meanwhile (e.g. the leaver's flag fell first) is left as it ended.
 
+**Absent when the game starts**: a creator whose socket dropped while waiting for the opponent can still be joined - the game starts, and the creator can resume it. Their absence then counts **from the start of the game**, not from the drop: the joiner gets the notice after the grace and the abandonment is adjudicated after the full window. (Timers of a drop that preceded the game are void: they could end the game seconds after its start, or - once spent - never.)
+
+**Reconnecting while the opponent is away**: the reconnecting player's own countdown is cleared by the reconnect, so the server sends `opponentDisconnected` again after `resync`, with the time that is left. Inside the grace nothing is sent (the pending notice reaches the new socket); during an arbiter pause the player's own prompt (Revert, Ready) keeps the window.
+
 **Claim victory** (`claimVictory`): the remaining player may end the game immediately instead of waiting out the countdown — the SAME adjudication is applied at once (so it may also resolve as a draw). The server accepts the claim only when the opponent's seat has been disconnected for at least the grace period and has not resumed; otherwise the claim is rejected with an error.
 
 **No reconnect after the adjudication**: a `resume` into an ENDED game is refused (`resumeFailed`, *"This game has already ended."*). This matters exactly for the leaver, whose closed tab never received `gameEnded` and therefore still holds the seat token — the refusal also makes their client clear the stale saved session (and with it the lobby's "Return to game" banner). Reconnects into RUNNING games are unaffected.
 
+**One connection per seat**: a `resume` attaches the new socket to the seat. If the previous socket of that seat is still open - the same player opened the game in a second window - it leaves the game: it receives `sessionReplaced` (*"This game is now open in another window. This window no longer takes part."*), the client freezes that window (board and every button disabled, no automatic reconnect; the saved session stays, it belongs to the other window), and the server answers anything it still sends with *"You are not in a game."* The window opened last holds the seat. No game action is accepted from a connection that holds no seat, and a draw offer can be accepted or rejected only by the player it was made to - never for "no side".
+
 #### Rematch (Lichess-style)
 
-After a game has ENDED normally (any result — not an aborted challenge), both result panels show a **Rematch** button. `rematchOffer` from one player marks the offer on the room and acks the offerer (`rematchOfferSent` — button frozen as "Rematch offered"); the opponent receives `rematchOffered` and their button starts **blinking**. When the opponent presses their button too (the same `rematchOffer` message — the server resolves offer-then-accept, race-safe per room), the rematch starts: `rematchStarted` goes to each player with their NEW side, a fresh per-seat reconnect token, board, `havingMove`, and `timeControlLabel`. The rematch reuses the room and game id: **same time control and settings, same starting position (original FEN for custom games), colours swapped**. It counts as a new game in the usage log (create + join). A `rematchOffer` before the game has ended is rejected with an error. **No rematch after an abandonment**: the opponent is gone, so the client hides the Rematch button for `ABANDONMENT` endings and the server refuses such offers ("A rematch is not available - your opponent left the game.").
+After a game has ENDED normally (any result — not an aborted challenge), both result panels show a **Rematch** button. `rematchOffer` from one player marks the offer on the room and acks the offerer (`rematchOfferSent` — button frozen as "Rematch offered"); the opponent receives `rematchOffered` and their button starts **blinking**. When the opponent presses their button too (the same `rematchOffer` message — the server resolves offer-then-accept, race-safe per room), the rematch starts: `rematchStarted` goes to each player with their NEW side, their existing reconnect token, board, `havingMove`, and `timeControlLabel`. The token follows its player across the colour swap, so losing that message during a connection drop does not prevent resuming the new game. `resync` includes the current side and token; the client saves that identity and restores the active game UI. The rematch reuses the room and game id: **same time control and settings, same starting position (original FEN for custom games), colours swapped**. It counts as a new game in the usage log (create + join). A `rematchOffer` before the game has ended is rejected with an error. **No rematch after an abandonment**: the opponent is gone, so the client hides the Rematch button for `ABANDONMENT` endings and the server refuses such offers ("A rematch is not available - your opponent left the game.").
 
 For `move_accepted`, the `move` block carries `from`, `to`, `piece`. **Castling moves** additionally carry `castling: KING_SIDE | QUEEN_SIDE`; their `from`/`to` are resolved to the king's actual squares (the `MoveSpecification` from/to of a castling move are `Square.NONE`, which would otherwise crash on `getName()`).
 

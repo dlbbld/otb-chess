@@ -9,7 +9,7 @@ import {
   clickRestore,
   SCORE_DRAW,
 } from './helpers/app';
-import { dragPiece, removePiece, pressClock, expectPiece, expectEmpty } from './helpers/board';
+import { bothPlayersMove, dragPiece, removePiece, pressClock, expectPiece, expectEmpty } from './helpers/board';
 
 let game: TwoPlayerGame;
 
@@ -198,6 +198,7 @@ test('kingside castling is accepted', async ({ browser }) => {
 test('a draw offer accepted by the opponent ends the game as a draw', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   // FIDE: offer a draw after making your move, before pressing the clock.
   await dragPiece(white, 'e2', 'e4');

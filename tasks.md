@@ -3,6 +3,686 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.2.0 — Game Lifecycle and Draw Guards
+
+- [x] Scope: everything on `latest-ai-model-review` since `0.1.6` - the model review of `0.1.6`, its
+  follow-up passes, the cloud review, the rematch and expiry races, and the final pass with its three
+  notes (sections below). `0.2.0` instead of `0.1.7`: the release changes behaviour (a draw only after
+  both players have moved, one connection per seat, one game per connection), not only bugs.
+- [x] Prepare version `0.2.0`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Game Lifecycle and
+  Draw Guards** for the PR title and its opening heading, title the GitHub release `0.2.0`, and begin
+  its notes with the release name.
+- [x] Verification on macOS at the release commit: full Java suite, and `version.spec.ts` against the
+  rebuilt jar (`/api/version`, lobby and board show `v0.2.0`). The full browser suite, `RuleFuzzer` and
+  `TouchMoveOracle` passed at `f224714`; the release commit changes metadata only.
+- [ ] Not done before the merge, at the owner's instruction to cut the release: the manual test through
+  `start.bat` on Windows. The Windows-only launcher tests last ran on the Windows machine at `3fa512a`;
+  the launcher has not changed since.
+
+## Latest AI model review — 2026-11-17
+
+- [x] Review release `0.1.6` at `a92ac68` on `latest-ai-model-review` for substantial
+  bugs and missing regression coverage. Inspect game/session/arbiter logic, board and
+  lobby UI, WebSocket handling, reconnection, clocks, room lifecycle, tests, and
+  deployment configuration. Use a separate worktree at `../otb-chess-model-review`.
+  The review identified the five release-worthy defects below; all five are now fixed
+  on the review branch. Findings and line references describe the reviewed snapshot.
+
+### Confirmed findings
+
+- [x] **P1 — Expired time can be revived by increment.** `GameSession.pressClockButton`
+  accepts a move without first deciding flag fall. `ClockManager.switchClock`
+  ticks the remaining time down to zero and then adds increment unconditionally.
+  Flag fall is otherwise polled once per second, creating a window in any increment
+  game where a late move saves a player who has run out of time. A direct Java probe
+  observed zero remaining time, `MOVE_ACCEPTED`, then 2000 ms and no flag fall.
+  A live WebSocket reproduction used a 100 ms initial clock, waited 180 ms, and
+  received the same accepted move and 2000 ms. The short initial clock compresses
+  the reproduction of the same expiry boundary in normal games.
+  Relevant code is `GameSession.java` lines 250–289 and `ClockManager.java` lines 55–69.
+  Required coverage should exercise presses immediately before and after expiry,
+  with increment, through the session and both live boards.
+
+- [x] **P1 — Refresh during manual restoration can strand both players.** With
+  auto-resume disabled, play e2–e5, press the clock, click Revert, and refresh White
+  while both players have Ready to continue buttons. Both Ready buttons disappear,
+  the clock remains stopped, and White's clock press says to wait until both players
+  are ready. Reproduced through real browser clicks and page reload. The server's
+  resync includes the broad IN_PROGRESS state but omits restoration/readiness state.
+  The resync handler clears the returning player's controls, and opponentReconnected
+  clears the other player's controls. Relevant code is `GameWebSocketServer.java`
+  lines 1325–1355 and `static/js/game.js` lines 336–370 and 797–801.
+  Required coverage should reload each seat during restoration, each readiness
+  phase, and an unpressed move, and verify a playable, consistent state on both boards.
+
+- [x] **P1 — Checkmate during a wrong-clock pause corrupts game state.** Start from
+  `7k/8/5KQ1/8/8/8/8/8 w - - 0 1`. Black presses White's clock, triggering the
+  admonishment pause, and White plays Qg7# during that pause. The board remains
+  enabled. `evaluateForAutoEnd` applies the mating move and then calls switchClock
+  on a stopped clock, throwing before endGame runs. Reproduced in Java and in the
+  browser. Java showed a checkmated board with Black to move, IN_PROGRESS, and a
+  null result. Both browsers had no result panel, and White saw the generic internal
+  error. Relevant code is `GameSession.java` lines 294–355, especially 342–353.
+  Required coverage should exercise automatic endings during every supported pause
+  and ensure move, clock, result and both clients transition consistently.
+
+- [x] **P1 — Finished results can be overwritten by later actions.** With White's
+  draw offer pending, White resigns and Black then accepts the offer. The server
+  replaces Black's win with a draw. A subsequent Black resignation replaces that
+  with White's win. Java reproduced all three results. The live WebSocket path
+  broadcast RESIGNATION with Black winning followed by DRAW_AGREEMENT. In ordinary
+  clients, actions already sent before receipt of the ending can arrive in this order.
+  `acceptDraw` and `resign` lack a finished-state guard, and `endGame` overwrites its
+  result unconditionally. Relevant code is `GameSession.java` lines 529–541, 746–764,
+  and 1021–1025. Required coverage should verify result immutability under delayed,
+  repeated and competing terminal messages, including both clients' score and reason.
+
+- [x] **P2 — Finished rooms permanently consume server capacity.** The room cap
+  counts every entry in gameRooms, while cleanup removes only WAITING_FOR_PLAYERS
+  rooms. Completed and abandoned games persist after both sockets close. At the
+  default cap, 1000 retained completed rooms prevent all new games until restart.
+  A server-handler probe with OTB_MAX_GAMES=2 and OTB_ROOM_TTL_MS=1 created, joined,
+  ended and disconnected two games, explicitly ran cleanup, and observed two ENDED
+  rooms and a capacity error on the third creation. Relevant code is
+  `GameWebSocketServer.java` lines 267–270 and 1501–1510. Required coverage should
+  verify capacity recovery after an ended-room retention period while preserving
+  the supported rematch window and active rooms.
+
+### Fixes and regression coverage
+
+- [x] Adjudicate expiry before accepting a clock press; the clock itself refuses to add
+  increment after expiry. Undo a speculative acceptance if expiry occurs during evaluation,
+  preserving the original position and the released-piece safety checks.
+- [x] Replay restoration/readiness controls to both seats on reconnect, preserving already
+  acknowledged readiness. Retain the physical board separately from the committed chess
+  position so refreshing an unpressed or invalid move cannot silently reset one board.
+- [x] Finalize automatic endings without switching a paused clock. Ending a game clears
+  recovery state and pending offers; delayed actions preserve the first result and metadata.
+- [x] Reap finished, disconnected rooms after `OTB_ENDED_ROOM_TTL_MS` (default 30 minutes),
+  periodically and before capacity checks. Keep active rooms and connected rematch players.
+  Document the retention setting in `SETUP.md`.
+- [x] Add Java regressions in `TestReviewRegressions` and `TestReviewServerRegressions`:
+  expired/live increments, paused mate, immutable endings, reconnect readiness and physical
+  position, retention duration, active/connected protection and capacity reclamation.
+- [x] Add browser regressions in `review-regressions.spec.ts` and `room-retention.spec.ts`:
+  both seats refreshing before Revert, before Ready and after one Ready acknowledgement;
+  unpressed move refresh; paused mate; late terminal messages; expiry between ticker checks;
+  and a capped isolated server that retains rematches and then admits a new game after cleanup.
+- [x] `mvn -q package` passes all 257 Java tests on native Windows, including existing
+  invariant and launcher coverage plus the new regression tests.
+- [x] `CI=1 npx playwright test --retries=0` passes all 144 browser tests in 7.3 minutes
+  on native Windows/Chromium against the rebuilt jar. Full coverage is required because
+  these fixes touch shared clocks, game endings, recovery and room lifecycle. All 11 new
+  browser regressions pass; no retries or skipped tests were needed.
+
+### Follow-up review of the fixes — 2026-11-17
+
+- [x] Review the fix commit (`262b666`) on macOS. The five fixes hold; `mvn -q package` and the
+  full browser suite passed unchanged. The review found one regression and two remaining gaps,
+  all fixed below.
+- [x] **Regression — a clock press during the auto-resume delay locked the board.** The guard
+  that keeps the delayed resume silent after the game ended also silenced it when a clock press
+  had restarted the clock first. A press that did not end the turn (e.g. pressing without a
+  move) then left the player with a running clock and a disabled board until a page refresh.
+  The session now reports a resume caused by a clock press, and the server announces it at
+  once, before the arbiter's answer; the delayed resume stays silent only when nothing is left
+  to resume.
+- [x] **Gap — expired time could still be escaped or reversed.** Only the clock press and draw
+  acceptance adjudicated expiry first. In the up-to-one-second gap before the periodic check, a
+  valid draw claim still drew for a player whose time had run out, and a resignation or a
+  penalty action (wrong-time offer, wrong clock press) lost the game for the player whose
+  opponent had already flagged. Every player action that can decide the game now adjudicates
+  flag fall first.
+- [x] **Gap — the result was announced more than once.** Draw by agreement sent `gameEnded`
+  twice, and every late action re-sent it, overwriting a rematch offer on both boards. The
+  result is now announced once per game, and gameplay actions arriving after it are dropped
+  without a reply. Rematch, PGN export and reconnect messages are unaffected.
+- [x] Java regressions added to `TestReviewRegressions` and `TestReviewServerRegressions`;
+  browser regressions added to `review-regressions.spec.ts` (early clock press, claim after
+  expiry, resignation after the opponent's expiry, single result announcement with late
+  actions during a rematch offer). The four browser regressions fail against `262b666`.
+- [x] `mvn -q package` passes all 267 Java tests on macOS (4 Windows-only launcher tests
+  skipped). `CI=1 npx playwright test --retries=0` passes 147 browser tests in 3.4 minutes
+  (1 Windows-only launcher test skipped). Full coverage was required because the changes touch
+  clocks, game endings, restoration and message dispatch.
+- [x] Pending draw offer missing after recipient refresh (present before `262b666`): fixed
+  in the Windows follow-up below. Reconnect now restores the offer and its original explanation.
+
+### Windows follow-up and remaining draw-offer fix — 2026-11-17
+
+- [x] Fast-forward the review branch to Claude's `42ba578`, retaining all three follow-up fixes.
+- [x] Restore pending draw offers after the recipient refreshes or reconnects. Store the
+  original recipient message, including rejected-claim explanations; replay only to the
+  recipient after resync. Clear stale client panels before replay. Do not register a new offer
+  or reset touch/release invalidation, so reconnect cannot restore a lost right to accept.
+- [x] Add three Java regressions and five browser regressions covering both recipient colours,
+  acceptance, rejection followed by another refresh, converted-claim wording, and invalidated
+  offers. All three Java regressions and all five browser regressions fail against `42ba578`
+  without the fix and pass with it.
+- [x] `mvn -q package`: all 270 Java tests pass on native Windows with no skips, including
+  all six `TestWindowsLauncher` cases. The focused browser run passes all five new regressions
+  and `tests/e2e/launcher.spec.ts`, which runs the real Windows launcher twice with isolated
+  remotes and dedicated ports.
+- [x] `CI=1 npx playwright test --retries=0`: all 153 browser tests pass on native
+  Windows/Chromium in 8.3 minutes, with no skips or retries, against the rebuilt jar. Full
+  coverage includes Claude's four follow-up regressions and the Windows launcher, because
+  reconnect state, offers and the earlier shared game-flow fixes need integration coverage.
+- Remaining unchecked historical items concern manual release acceptance, production deployment,
+  and the public-service privacy notice. Automated Windows coverage does not mark those done.
+
+### Second review pass — 2026-11-17
+
+- [x] Review `d877341` again, concentrating on interactions between session transitions and
+  server dispatch: overlapping pauses, restoration, penalties, simultaneous Ready/join requests,
+  draw claims/offers, reconnect/rematch lifecycle, starting positions and board event handling.
+  Cross-check the documented arbiter policies and intentional FIDE deviations. Four substantial
+  defects and one lower-priority starting-position edge case are confirmed below. All five
+  are now fixed on the review branch; the findings describe the reviewed snapshot.
+
+- [x] **P1 — Simultaneous Ready confirmations can lock the moving player's board.**
+  `GameWebSocketServer.handleReadyToContinue` calls the synchronized `playerReady`, then sends
+  its reply outside that transition's lock. Two concurrent confirmations can therefore deliver
+  `gameResumed` followed by stale `waitingForOpponentReady` to White. The latter handler disables
+  White's board while White's clock is running and neither player has a Ready button.
+  A concurrent Java handler probe reproduced this on round 2. A real WebSocket probe replayed
+  the normal opponent-piece intervention -> Revert -> manual Ready journey and reproduced it
+  on round 3. Relevant code: `GameWebSocketServer.java` 1210–1227 and `static/js/game.js` 492–494.
+  Serialize the transition and its outbound messages, or make responses reject stale state.
+  Required coverage: deterministic concurrent Java confirmations and both live boards remaining
+  playable after simultaneous Ready, with no stale waiting message after resume.
+
+- [x] **P1 — An obsolete wrong-clock timer overrides a later pause or turn.** Black presses
+  White's clock; during the five-second admonishment pause White moves Black's e7 pawn to e6
+  and clicks Revert with manual readiness enabled. When the old timer fires, White's clock
+  restarts although both Ready buttons remain visible and neither player is ready. If both
+  players become ready and White completes e4 before that callback, it instead switches the
+  running clock back to White even though Black has the move. Both state failures were
+  reproduced in Java; the waiting-Ready failure was also reproduced through real browser clicks
+  using the production five-second pause. `GameSession.resumeAfterWrongClockPress` (894–902)
+  only checks game state and its old side marker, not intervening restoration or turn changes.
+  Required coverage: overlapping pauses and intervening turns; obsolete callbacks must neither
+  charge time while waiting for Ready nor restart the wrong side's clock.
+
+- [x] **P1 — Offering a draw during restoration can lose the game for the same illegal move
+  twice.** From the initial position, play e2–e5 and press the clock. While Revert is displayed,
+  click Offer draw. `offerDrawCorrectTime` re-evaluates the unchanged illegal position without
+  checking the restoration/Ready flags, increments the illegal-move counter again and awards
+  Black a win for White's "2nd illegal move". Confirmed in Java and on both live browser boards
+  with the default two-illegal-move limit. Relevant code: `GameSession.java` 477–491. Clock
+  presses already have the missing recovery-state guards. Required coverage: offers throughout
+  restoration/readiness must not re-adjudicate the pending move or add another penalty.
+
+- [x] **P1 — Concurrent joiners can both acquire the same seat.** The room-full check and
+  seat/token assignment in `handleJoinGame` are not atomic. Two join requests to the same code
+  can both receive `gameJoined` as Black with different tokens, and `gameStarted` is broadcast
+  twice. One connection is overwritten as the room's Black player, leaving an admitted player
+  without a usable seat. Confirmed by concurrent Java handlers on their first attempt and by
+  real simultaneous WebSocket joins on round 4. Relevant code: `GameWebSocketServer.java`
+  405–429. Required coverage: reserve the remaining seat and start the game atomically; exactly
+  one joiner succeeds, the other gets a full-room response, and the first seat/token survives.
+
+- [x] **P2 — Terminal starting FENs start an active game instead of producing a result.**
+  Creating and joining `7k/6Q1/5K2/8/8/8/8/8 b - - 0 1` starts Black's clock and displays no
+  result although Black is already checkmated and has no legal move. Confirmed through both
+  browsers. `GameSession.startGame` (174–178) unconditionally starts the clock; automatic
+  endings are checked only after subsequent board/move events. Reject terminal starting
+  positions clearly, or adjudicate them before starting play. Required coverage: checkmate,
+  stalemate and dead starting positions on both boards. Lower priority than the four above.
+
+- [x] Verification: `SecondPassProbe.java` exercises overlapping pauses, wrong-side restart and
+  the repeated illegal-move penalty; `JoinRaceProbe.java` exercises concurrent admission and
+  readiness. Five targeted Playwright browser/live-WebSocket probes confirm the findings on
+  native Windows/Chromium. Scripts, config and logs are under ignored `target/review/` in the
+  review worktree (`second-pass.spec.ts`, `second-pass.config.ts`, `second-pass-browser.log`,
+  `join-race.log`, `ready-race.log`, `live-join-race.log`, `live-ready-race.log`). These are bug
+  reproductions, not passing regression coverage for fixes. The unchanged application retains
+  the preceding 270-Java/153-browser passing baseline; those full suites were not repeated for
+  this documentation-only review because the targeted probes expose paths that baseline misses.
+
+### Second-pass fixes and regression coverage — 2026-11-17
+
+- [x] Serialize Ready transitions and their replies under the room lock. Ignore duplicate or
+  late confirmations once readiness is complete, so no waiting reply can disable a live board.
+- [x] Cancel wrong-clock pauses when an intervention or turn supersedes them. Associate each
+  delayed callback with its session and pause ID, and refuse to resume during restoration,
+  readiness or another running turn. An obsolete callback cannot consume a newer pause.
+- [x] Reject draw offers throughout restoration, manual readiness and the automatic resume
+  delay with a specific explanation. Do not evaluate the pending move again, register an offer,
+  consume escalation counts or add another penalty.
+- [x] Reserve the remaining seat, issue its token and announce game start under one room lock.
+  Exactly one concurrent joiner is admitted; the other receives the full-room response.
+- [x] Reject already-terminal starting FENs before creating a room or starting any clock.
+  Share validation between the lobby endpoint and WebSocket creation, covering checkmate,
+  stalemate, insufficient material and the automatic 75-move draw. Valid playable FENs remain
+  supported, including positions one move before mate.
+- [x] Add 12 Java regression cases in `TestSecondPassRegressions` and
+  `TestSecondPassServerRegressions`. Latches force the vulnerable Ready/join interleavings;
+  session tests pin recovery guards, penalty counts, timer identity and the running side.
+- [x] Add 10 browser regressions in `second-pass.spec.ts` and `second-pass-pauses.spec.ts`:
+  simultaneous Ready and join requests from real pages, winning-seat reconnect, both boards
+  remaining playable, repeated offers throughout recovery, and terminal FEN rejection through
+  both entry points. Two isolated packaged servers use the production five-second wrong-clock
+  pause to replay overlapping restoration and next-turn journeys without touching port 8080.
+- [x] `mvn -q package`: all 282 Java tests pass on native Windows with no failures or skips,
+  including the Windows launcher tests. All 10 new browser cases pass in the focused run.
+- [x] `CI=1 npx playwright test --retries=0`: all 163 browser tests pass on native
+  Windows/Chromium in 9.2 minutes, with no failures, skips or retries, against the rebuilt jar.
+  Full coverage includes the Windows launcher and earlier review regressions; shared game
+  flow, admission, clock callbacks and recovery require coverage beyond the focused cases.
+
+### Review of the second-pass fixes — 2026-11-17
+
+- [x] Review `d877341`, `3974c2b` and `ccd48cf` on macOS. The five second-pass fixes and the
+  draw-offer replay after reconnect are correct for their targets; the Java suite and 162
+  browser tests pass unchanged (the Windows-only launcher tests are skipped here). Three gaps of
+  the same classes remained and are fixed below.
+- [x] **A Revert message was accepted from anyone at any time.** `handleRestorePosition` checked
+  neither the sender nor whether a restoration was pending. Not reachable through the UI, but a
+  modified client could send it during the opponent's normal turn: the half-made move was reset
+  and, with manual Ready, the game waited for both Ready confirmations while the mover's clock
+  kept running. `GameSession.completeRestoration` now reports whether a restoration was pending
+  and changes nothing otherwise; the server accepts Revert only from the player who has to
+  restore. A repeated Revert can no longer withdraw the opponent's Ready confirmation either.
+- [x] **Draw claims were still processed during a pause.** Offers were blocked during
+  restoration, manual Ready and the automatic resume delay, claims were not. Through the UI:
+  move an opponent piece, then claim on the board while Revert is showing - the claim was
+  rejected, the opponent got two minutes and a draw offer during the pause. A claim with a move
+  also restarted the claimer's clock while the game was paused. Claims in these pauses are now
+  not considered: no penalty, no converted offer, no step on any claim ladder, and the one
+  claim of the move stays available.
+- [x] **Abort racing a join.** The abort's check and the room removal were not one step with
+  the join's seat reservation: the creator could be told "Game aborted" while the joiner was
+  put into a started game whose room was gone. Abort, join and the expiry of never-joined rooms
+  now share the room lock, and a join re-checks that the room is still registered.
+- [x] Add 11 Java cases in `TestThirdPassRegressions` and `TestThirdPassServerRegressions`
+  (claims in all three pause phases, Revert from either player in normal play, Revert only by
+  the restoring player and only once, forced abort/join interleaving) and 4 browser cases in
+  `third-pass.spec.ts`. The Revert and claim browser cases fail on `ccd48cf`; the abort/join
+  browser case checks that both pages agree on one outcome, the forced interleaving is in Java.
+- [x] Verification on macOS: `mvn -o -q package` runs 292 Java tests with no failures (4
+  Windows-only launcher tests skipped; counted from a freshly emptied report directory - an
+  earlier figure of 293 included one stale report). `CI=1 npx playwright test --retries=0` ran 167 tests:
+  165 passed, 1 skipped (Windows-only launcher), and the new abort/join case failed on a wrong
+  expectation in the test itself (a refused abort leaves its refusal in the creator's message
+  window). After correcting that expectation the four new cases passed 10 times each; the full
+  browser suite was not repeated for that test-only edit.
+
+### Third review pass — 2026-11-17
+
+- [x] Own pass over `44bcc34`, aimed at interactions between the rules rather than single
+  handlers. Method: `RuleFuzzer` (two simulated clients driving the real server with random
+  moves, half-made moves, touches, clock presses, offers, claims, Revert/Ready, refreshes and
+  timer firings, with state/board/instruction checks after every action) and `TouchMoveOracle`
+  (touch-move rulings compared with the text of FIDE 4.3). Both are opt-in tools under
+  `src/test`, outside the regular suite; see their class comments for how to run them.
+- [x] What holds: over 20,000 random games no handler failed, no clock ran during a pause or
+  stayed stopped, the player on move was never locked out, both boards and the server always
+  showed the same position outside the case below, an untouched legal move was always accepted
+  in every FIDE-conform order of execution (capture by removal first, en passant, castling,
+  promotion in three orders), honest play always got a move accepted again, and a touch-move
+  ruling was always satisfiable by moving the named piece. 33,793 touch-move cases match FIDE
+  4.3 without a single difference.
+- [x] Six inconsistencies were confirmed (fixed, see "Fixes for the third review pass" below). Each was first found by the fuzzer,
+  reduced by hand and replayed through the real pages with ordinary clicks and drags (FEN for
+  the castling cases: `r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1`). None produces a
+  wrong game result on its own; all of them make the arbiter contradict itself or lose a draw
+  offer. This pass records findings only; application code is unchanged.
+
+- [x] **P1 — Contradictory castling orders: the king's release and a later rook touch pull to
+  different sides.** White plays Ke1-g1, puts the king back on e1, moves Ra1-b1 and presses
+  the clock. Arbiter: "Castling has been started ... you must complete the castling move by
+  moving the rook from h1 to f1." After Revert, White castles kingside exactly as told:
+  "Because you touched the king and the rook, and castling is legal, please perform the
+  castling move." The same answer comes again for a fresh kingside castling from the start
+  position; only queenside castling is accepted, which the arbiter never names. The released
+  king (FIDE 4.7.1: only castling on that side remains) and the king-then-rook touch record
+  (4.4.1, A-008) are evaluated independently: `findReleasedPieceViolation` reports the
+  kingside lock first, the touch-move layer then demands the side of the first touched rook.
+  Required: one ruling for the turn - the earlier commitment decides - and a message that names
+  the side and the rook.
+- [x] **P1 — "You must complete castling" after the rook was touched first.** White clicks the
+  rook on a1, plays Ke1-c1 and presses the clock: "Castling has been started ... complete the
+  castling move by moving the rook from a1 to d1." White does: "Touch-move violation: You
+  first touched the rook on a1 ... but moved another piece ... move the rook from a1." By FIDE
+  4.4.2 castling on that side was never available, so the first instruction is wrong, and the
+  second message says the rook was not moved although it was. The released-piece lock ignores
+  an earlier touch obligation; the fuzzer shows the same with an opponent piece touched first.
+- [x] **P1 — "Your move is final. Press the clock to continue." when the clock press is then
+  rejected.** Two ways: (a) White clicks the g2 pawn, plays h2-h3, then drags a Black pawn.
+  After Revert both the restore and the resume message say the move is final; pressing the
+  clock gives "Touch-move violation: You first touched the pawn on g2". (b) White plays Ke1-g1,
+  moves the king on to f1 and presses the clock; after Revert the same "final" message appears
+  although the rook still has to move, and the clock press repeats "Castling has been
+  started". `restorationFromReleasedPiece` is set for every release that is legal in isolation
+  (`findReleasedPieceCommitmentPosition` knows no touch obligation) and for an incomplete
+  castling, and the server words the message from that flag alone. The fuzzer meets this in
+  about one game in eleven. Required: say "final" only when a clock press on the restored
+  position would be accepted.
+- [x] **P1 — A counter offer replaces the pending draw offer instead of agreeing the draw.**
+  White offers a draw; Black, with the offer on screen, presses Offer draw too. No draw. The
+  single offer slot now holds Black's offer, Black's panel still shows White's: Accept answers
+  "You cannot accept your own draw offer." Plausible in real play when both press at about the
+  same time. Required: an offer made while the opponent's acceptable offer is pending is an
+  acceptance.
+- [x] **P1 — A player can reject, and thereby withdraw, their own draw offer.**
+  `DrawOfferManager.rejectDraw` does not look at who rejects. In the case above Black presses
+  Reject on the stale panel: Black's own offer is cancelled, White is told "Your opponent
+  rejected the draw offer" and White's Accept panel disappears. Same result without a counter
+  offer: Black offers during White's move, White plays e2-e4 (the old panel stays, by design),
+  offers a draw with the move and then dismisses the old panel with Reject - White's fresh
+  offer is gone and Black loses the Accept button with a false message. FIDE 9.1.2.1: an offer
+  cannot be withdrawn. Required: only the recipient can reject; a panel whose offer was
+  replaced must be closed or its buttons must act on nothing.
+- [x] **P3 — A page refresh inside the 1.5 s automatic resume delay re-enables the board.**
+  `resync` enables the board of the player on move and `sendRecoveryState` knows restoration
+  and Ready but not the resume delay, while the server drops board events until the clock
+  restarts: pieces moved in that window are neither recorded as touches nor shown to the
+  opponent. Needs a refresh at exactly that moment; no wrong result seen.
+
+### Fixes for the third review pass — 2026-11-17
+
+- [x] **One ruling per turn for a release and a touch (findings 1 and 2).** `ArbiterEngine.findReleaseRuling`
+  applies FIDE 4.7 and 4.3/4.4 in the order the player acted: a release binds only if it honours the touch
+  obligation in force at that moment, and once a release binds, later touches change nothing. King released on
+  g1, then the a1 rook moved: the arbiter asks for `Rh1-f1` and accepts it. Rook a1 touched first, then
+  `Ke1-c1`: touch-move ruling naming the rook from the first clock press on, not counted as an illegal move.
+  The castling touch-move message now names the rook and the side. Policy A-010.
+- [x] **"Your move is final" only when the clock press is accepted (finding 3).** New
+  `GameSession.isRestoredMoveFinal`; the server words the restore and resume messages from it. A started
+  castling and a move that broke touch-move are restored with the ordinary wording; the latter is restored to
+  the start of the turn, because it was never a move to go back to.
+- [x] **Counter offer agrees the draw (finding 4).** An offer made while the opponent's offer can still be
+  accepted is its acceptance - also the offer implied by a rejected draw claim. Policy A-009.
+- [x] **Only the recipient can answer an offer (finding 5).** `DrawOfferManager.rejectDraw` refuses the offering
+  side. When a player's own offer replaces an opponent's offer that could no longer be accepted, the server
+  sends `drawOfferExpired` and the client closes the outdated panel.
+- [x] **Refresh inside the automatic resume delay (finding 6).** The reconnecting player is sent the pause state,
+  so the board stays locked until `gameResumed`. Resume, the delayed resume and the clock press are one room
+  transaction each, so that notice cannot arrive after the message that ends the pause.
+- [x] **Seventh inconsistency, found by the fuzzer once the others were out of the way:** a draw offer made
+  together with an invalid move cancelled the offer that was already pending - the player's own earlier one
+  (a withdrawal, FIDE 9.1.2.1) or the opponent's - while the panel stayed on the other screen and Accept
+  answered "No draw offer is active". Now only the new offer is not registered.
+- [x] Tests: `TestFourthPassRegressions` (16), `TestFourthPassServerRegressions` (7), `fourth-pass.spec.ts` (8;
+  7 fail on `e29927a`, the eighth is a positive control). `RuleFuzzer`: 20,000 games with every check enabled,
+  0 findings (before the fixes: about one game in eleven). `TouchMoveOracle`: 33,793 cases, 0 differences.
+- [x] Verification on macOS: Java 315 run, 0 failures, 4 skipped (Windows-only launcher tests); Playwright
+  174 passed, 1 skipped (Windows-only); the new and the third-pass browser tests repeated five times each.
+- [ ] Not changed, noted for a decision: after a rejected draw claim with a move, a different move released
+  and then disturbed is still restored to the released position (wording is now correct, the Revert after the
+  next clock press brings the turn start back). Not reproduced as a player-visible contradiction.
+
+### Cloud review of the review branch — 2026-11-17
+
+- [x] A multi-agent cloud review of `latest-ai-model-review` against `main` at `dcd23e0` returned nine findings:
+  six introduced by the branch, three already on `main`. Each was confirmed in the code before it was changed.
+- [x] **No restore request on a finished game (finding 1).** A move owed after a rejected draw claim survived a
+  flag fall found by the clock press itself; the server then sent `restoreRequired` on the ended game and
+  paused its session again. `endGame` now clears the owed move, `enterWaitingForRestoration` ignores an ended
+  game, and the server sends no restore instructions once the game is over.
+- [x] **A socket that closes during a send no longer costs the other player the result (finding 2).** A socket
+  can close between the open check and the send, and Java-WebSocket then throws. `GameRoom.send` skips such a
+  socket; every server send goes through it. Before, the announce-once flag was set, the exception skipped
+  `gameEnded` for both players, and every later action of the remaining player was dropped as late.
+- [x] **A room left full without a game expires (finding 3).** The reaper no longer exempts full rooms: the room
+  lock already keeps it from seeing a join in progress, so a full unstarted room is a failed join or rematch.
+  Both players are told and unmapped. A joiner whose socket closes while being seated gives the seat back.
+- [x] **Overlapping expiry sweeps (finding 4).** The sweep also runs on every `createGame`. Only the sweep that
+  removes the room cleans up after it, and it removes only that room's mapping - a second sweep used to send
+  "Game expired" again and could unmap the creator from a game created meanwhile.
+- [x] **One replay per ruling (finding 5).** `ArbiterEngine.findFinalMoveCommitment` replayed the turn twice for
+  every release prefix, so the cost of one board event grew with the cube of the turn's length (800 events
+  without a committing release: over a minute of held session lock). `ReleaseReplay` carries the ruling
+  forward in one pass. Same rulings as before on 21,188 randomised checks against the previous code.
+- [x] **One final clock update (finding 6).** `sendGameEnded` owns the final clock update; the ticker no longer
+  sends a second, identical one before a flag-fall result.
+- [x] **Abandonment does not outrank a fallen flag (finding 7, on `main`).** `GameSession.abandon` checks the
+  clocks first, like every other action that can decide the game. "Claim victory" pressed after the claimer's
+  own time ran out, and the abandonment deadline, now end the game on time and announce that.
+- [x] **Nothing is adjudicated during the pause after a wrong clock press (finding 8, on `main`).** Draw claims
+  and offers are refused with "The game is paused. Please wait until the clock restarts." - no penalty time,
+  no converted offer, no restarted clock, no step on a ladder. Policy A-006.
+- [x] **An offer answering an offer made with a move agrees the draw (finding 9, on `main`).** While the
+  opponent's offer can still be accepted, the "opponent has already made a move" refusal no longer applies.
+  Policy A-009.
+- [x] Tests: `TestCloudReviewRegressions` (11), `TestCloudReviewServerRegressions` (16), `cloud-review.spec.ts`
+  (9). On `dcd23e0` 19 of the 27 Java tests and 6 of the 9 browser tests fail. The others are positive
+  controls and, in the browser, the nearest player journey for the races it cannot force (findings 2, 3
+  and 4); those races are pinned by the Java tests.
+  `RuleFuzzer`: 3,000 games, 0 findings.
+- [x] Verification on macOS: `mvn -q package` runs 342 Java tests, 0 failures, 4 skipped (Windows-only launcher
+  tests). `CI=1 npx playwright test --retries=0`: 183 passed, 1 skipped (Windows-only), in 4.6 minutes.
+  `TouchMoveOracle`: 33,793 cases, 0 differences.
+
+### Concurrent endings and rematch recovery — 2026-11-18
+
+- [x] Independently review `6b661ed` and reproduce four remaining P1 defects before changing code:
+  a previous game's flag-fall callback disables a rematch; a resume validated before a rematch
+  overwrites the opponent's swapped seat; losing `rematchStarted` loses the only usable reconnect
+  token; and a third opponent-piece violation after expiry awards a win instead of a timeout draw
+  against a lone king. The unchanged baseline passed 343 Java and 184 browser tests on Windows.
+- [x] Bind result announcements to the exact game that produced them, checking under the room's
+  rematch lock before stopping its ticker or claiming its announcement flag. Cover delayed old
+  callbacks and identical result values from different games.
+- [x] Validate resume tokens and game state inside the room lock, so a rematch cannot change the
+  token's owner/colour between validation and attachment.
+- [x] Preserve each player's reconnect identity across rematches, including a lost start message;
+  restore the current colour, saved session and live UI from resync. Cover both colours, refresh
+  after recovery and continued play on both boards.
+- [x] Adjudicate flag fall before mid-play misconduct and announce it even when no board state
+  accompanies the event. Cover the third-opponent-piece journey with a lone-king draw, the result
+  on both boards and absence of restoration after expiry.
+- [x] Add ten Java regressions in `TestRematchEndingRegressions`,
+  `TestRematchReconnectRegressions`, `TestMidplayExpiryRegressions` and
+  `TestMidplayExpiryServerRegressions`. All ten fail on `6b661ed` and pass with the fixes.
+  `mvn -q package` passes all 353 Java tests on native Windows, with no failures or skips.
+- [x] Add five browser cases in `rematch-concurrency.spec.ts` and `midplay-expiry.spec.ts`:
+  lost rematch starts for both colours, a pre-rematch resume delivered after the swap, three
+  rounds of competing endings/rematches followed by reconnect and real moves, and the literal
+  two-warnings/Revert/Ready/expiry journey. The two lost-start cases, delayed resume and expiry
+  case fail on `6b661ed` and pass with the fixes; the concurrent lifecycle case is a passing
+  control, with the exact server interleaving forced in Java. The expiry case prepares the drag
+  first and releases after expiry, checking that the third event precedes the result so the
+  periodic ticker cannot mask the defect.
+- [x] Run the full suites against the rebuilt jar on native Windows: `mvn -q package` passes
+  all 353 Java tests; `CI=1 npx playwright test --retries=0` passes all 189 browser tests in
+  16.3 minutes. No failures, skips or retries. Shared clocks, session transitions and reconnect
+  state require the full suites. Independent review of the integrated changes found no further
+  regressions in these fixes.
+- [x] Commit and push all four fixes with their Java/browser regression coverage on
+  `latest-ai-model-review`. The fixes are on the review branch, not on `main`.
+
+### Final review pass before the release — 2026-11-18
+
+- [x] Reviewed `6b661ed` (the fixes for the cloud review) and `3fa512a` (concurrent endings and rematch
+  recovery) line by line, together with the code they touch: room expiry, joining, abandonment, the pause
+  after a wrong clock press, the arbiter replay, result announcements, reconnect tokens. Both commits do what
+  is recorded above, with two reservations for `6b661ed` (findings 3 and 6 below). No wrong ruling found.
+- [x] Verification on macOS at `3fa512a`: `mvn -q package` runs 352 Java tests, 0 failures, 4 skipped
+  (Windows-only launcher tests). `CI=1 npx playwright test --retries=0`: 188 passed, 1 skipped (Windows-only),
+  in 5.6 minutes. `RuleFuzzer`: 20,000 games, 0 findings. `TouchMoveOracle`: 33,793 cases, 0 differences.
+- [x] The arbiter rewrite of `6b661ed` (`ReleaseReplay`) compared with the engine of `dcd23e0` on 100,000 random
+  turns: 2,982,694 rulings (final move, release lock, binding obligation, released-piece violation, clock
+  press), 27,470 of the turns with a rule-window reset, 0 differences.
+- [x] The tests of `6b661ed` that depend on a 50 ms clock, repeated 8 times under full CPU load: 0 failures.
+- [x] Not run: the Windows-only launcher tests.
+
+Findings. All nine are fixed (next section). Each was reproduced against the server, the first two also in the browser.
+Findings 2, 5, 7, 8 and 9 are on `main` as well; finding 1 is on `main` for a hand-made message.
+
+- [x] **1. P1 — A connection that no longer holds a seat still acts in the game: with the game open in two
+  tabs a player agrees a draw alone.** A resume attaches the new socket to the seat, but the old socket stays
+  open and keeps its entry in `playerGameMap` (`resumeSeat`). Its messages are handled with `Side.NONE`, and
+  `DrawOfferManager.canAccept`, `acceptDraw` and `rejectDraw` only compare with the offering side. Replayed in
+  the browser: Black opens the running game in a second tab (the lobby's Return to game, a duplicated tab, the
+  bare `/game.html`); the old tab still looks alive, with enabled buttons and a standing clock. Black offers a
+  draw in the new tab and presses Offer draw in the old one: "The game is drawn by agreement.", and White, who
+  answered nothing, reads "Your opponent accepted the draw offer."
+  Further: `rejectDraw` from the old tab removes the pending offer and tells nobody - the panel stays on the
+  opponent's screen and Accept then answers "No draw offer is active."; Resign, and Offer draw with no offer
+  pending, answer "We are sorry — the arbiter lost his concentration ..." (`Side.NONE` has no opposite side).
+  On `main` the draw needs a hand-made `acceptDraw`; the counter offer of `dcd23e0` put it on a button.
+  Required: a seat has one connection - a resume takes the old socket out of the game and tells it so, and no
+  game action is accepted from a connection without a seat.
+- [x] **2. P2 — A game starts against a player who is not there, and the abandonment deadline counts from the
+  socket drop instead of from the start of the game.** The creator's socket drops while waiting for the opponent
+  (tab closed, or the phone browser in the background while the code is being sent). `onClose` starts both
+  timers although no game is running, and `joinRoom` seats the joiner without looking at the creator's
+  connection. Replayed in the browser on the test server (grace 1.5 s, abandonment 6 s):
+  (a) The joiner arrives 2.5 s after the drop: "Game started", no countdown (the notice went out at 1.5 s, to
+  nobody), and less than 4 s into the game "Your opponent left the game. You win." The returning creator gets
+  "This game has already ended." With the production values (12 s, 60 s) the creator loses 60 s after the
+  drop, however short the game was: 2 s if the opponent joined after 58 s.
+  (b) The joiner arrives 7.5 s after the drop: both timers are spent. No notice, no countdown, no Claim victory;
+  the absent player's clock runs. The game ends only when that clock runs out or the present player resigns.
+  A creator who returns finds the game running and the time gone.
+  Related: a player who reconnects while the opponent is away is not told again. Since `3fa512a` the reconnect
+  also stops the countdown (Claim victory was cleared before), so nothing on the screen says that the opponent
+  is gone until the deadline ends the game.
+  Required: a player who is absent when the game starts is treated as having left at that moment - notice,
+  countdown, Claim victory and the abandonment deadline count from the start of the game; a player who
+  reconnects is told when the opponent is away.
+- [x] **3. P3 — The cost of one board event still grows with the square of the turn's length (finding 5 of the
+  cloud review is only partly fixed).** `ReleaseReplay` replays the turn once per event, but every release in
+  it that is part of a legal move still asks `TouchMoveEvaluator.findObligation`, which reads the whole turn
+  so far. Measured with the pattern of the regression test (knight touched, pawn moved back and forth): 800
+  events take 1.0 s in total (3 ms for the last ones), 1,600 events 6.4 s (10 ms), 3,200 events 44 s (39 ms
+  each, under the session lock). The comment in `aLongUncommittedTurnIsRecordedPromptlyAndStillRuledOnCorrectly`
+  ("must not grow with the square") says more than the code does. No player reaches such a turn by hand; a
+  scripted client on the public server can keep a worker thread busy for as long as it likes. Required: bound
+  the work - carry the replay and the obligation from event to event, or limit the board events of one turn.
+- [x] **4. P3 — During a pause, answering the opponent's offer with Offer draw is refused, while Accept agrees
+  the draw.** `offerDrawWrongTime` and `offerDrawCorrectTime` check the pause before `agreeDrawByCounterOffer`.
+  Black offers a draw and then presses White's clock; White presses Offer draw: "The game is paused. Please
+  wait until the clock restarts." White presses Accept: drawn. The same in a restoration pause. Contradicts
+  A-009 and the comment in `GameWebSocketServer.offerDraw` ("whatever else is true of the moment"). Required:
+  an offer that answers an acceptable offer agrees the draw in a pause as well.
+- [x] **5. P3 — `resign` is accepted in a room whose game has not started.** Only with a hand-made message (the
+  client hides the button). The session ends with "White resigns. Black wins the game."; the room keeps its
+  free seat, a joiner is seated, `startGame` sets the ended session to IN_PROGRESS and the clock runs, while
+  every move and clock press of both players is dropped as late, because the result was already announced.
+  Required: a resignation needs a running game, and a join needs a room that is still waiting.
+- [x] **6. P3 — A seat that is given back keeps its disconnect mark (new with `6b661ed`).** When the close
+  callback of the lost joiner runs between the seating and the failed join confirmation, `disconnectedAt` of
+  the seat stays set after `joinRoom` has given the seat back. The next joiner plays normally, but
+  `GameRoom.isConnected` is false for them: after the game a rematch offer is answered "A rematch is no longer
+  available - your opponent left the game." Needs that exact interleaving. Required: clear the mark with the
+  seat.
+- [x] **7. P3 — A draw is agreed before both players have made a move.** FIDE 5.2.3 allows the agreement only
+  when both players have made at least one move. The app agrees a draw on the first move (offer, Accept), and
+  `docs/fide-deviations.md` does not list this. Decision: enforce it, or record it as a deviation.
+- [x] **8. P3 — The move made with a draw offer is missing from the game record when the offer is accepted.**
+  White plays e2-e4, offers a draw and Black accepts before the clock press: both boards show the pawn on e4,
+  the session board and the PGN do not have the move (the PGN also gives `*` as the result of this drawn
+  game). Decision: apply the completed move when the draw is agreed.
+- [x] **9. P3 — One connection can take every room.** `handleCreateGame` does not look at whether the
+  connection already has a game: every `createGame` adds a room, and a room left behind this way is removed
+  only when it expires (30 minutes), also after its connection has closed. 1,000 messages from one scripted
+  client reach `OTB_MAX_GAMES`; until those rooms expire everybody else is answered "The server is at
+  capacity. Please try again shortly." Running games are not affected. Required: a connection that creates a
+  game gives up the waiting room it had.
+- [x] Noted, no change proposed at first; all three fixed afterwards (see "The three notes" below). (1) When the game ends with an accepted move, two identical final clock
+  updates are still sent before the result (clock press and automatic ending; the ticker path of finding 6
+  of the cloud review is fixed). Harmless. (2) After the pause that follows a wrong clock press no message
+  announces the restart: "The game is paused. Please wait until the clock restarts." stays in the arbiter
+  window until the next message. The clock itself shows that it runs. (3) Since `3fa512a` every reconnect
+  turns the board to the player's own colour, so a manual Flip board by White is undone by a reconnect (for
+  Black it was so before).
+
+### Fixes for the final review pass — 2026-11-18
+
+The release is postponed for these: all nine findings are fixed, each with Java tests and a browser test of
+its journey (finding 6: Java only, see there).
+
+- [x] **A seat has one connection (finding 1).** `resumeSeat` takes the previous socket of the seat out of the
+  game and tells it (`sessionReplaced`: "This game is now open in another window. This window no longer takes
+  part."); the client freezes that window and stops its automatic reconnect, the saved session stays with the
+  other window. No game action is accepted from a connection without a seat, and `DrawOfferManager` lets only
+  the two players answer an offer. The window opened last holds the seat.
+- [x] **A player's absence counts from the start of the game (finding 2).** `markAbsent` starts the notice and the
+  abandonment deadline; timers belong to one absence (socket and time stamp), so those of a drop before the
+  game are void. `joinRoom` marks a creator who is not connected as absent from the start of the game. After
+  `resync` a reconnecting player is sent `opponentDisconnected` again with the time that is left (not inside
+  the grace, where the pending notice arrives anyway, and not during an arbiter pause, where the player's
+  own Revert or Ready prompt keeps the window).
+- [x] **A turn records at most 500 board events (finding 3).** `GameSession.MAX_BOARD_EVENTS_PER_TURN`. A
+  further event is not recorded and not forwarded, the sender reads "Too many piece movements in one move.
+  Further movements are not recorded.", and it counts against the connection. The clock press is still ruled
+  on. The limit was chosen over reworking the arbiter: it bounds every ruling, not only the one per event. The
+  long-turn tests of the cloud review now use 400 events, and their comment says what the code does.
+- [x] **An answering offer agrees the draw in a pause too (finding 4).** The counter offer is looked at before
+  the pause in `offerDrawWrongTime` and `offerDrawCorrectTime`. Policy A-009.
+- [x] **A resignation needs a running game (finding 5).** `resign` before the start is refused ("The game has not
+  started."); only a room that still waits can be joined; `startGame` works once.
+- [x] **The disconnect mark goes with the seat (finding 6).** Pinned in Java with the close callback running
+  inside the failed send. No browser test: a page cannot make its socket close exactly while it is being
+  seated, and the journey a browser can take (join, play, rematch) is the ordinary one that is covered.
+- [x] **A draw is agreed only after both players have made a move (finding 7, FIDE 5.2.3).** A move on the board
+  counts although its clock press is outstanding. Before that Accept and an answering offer are refused with
+  "A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."; the offer stays on
+  the table. Twelve Java tests and nine browser tests that agreed a draw on the first move now play a2-a3
+  and a7-a6 first (`DrawTestSupport`, `ServerDrawTestSupport`, `bothPlayersMove`).
+- [x] **The offered move and the result are in the record (finding 8).** When a draw is agreed, the completed
+  move the offerer has on the board is performed first - after a rejected claim only the move that is owed.
+  The PGN ends with `1-0`, `0-1` or `1/2-1/2` once the game is decided.
+- [x] **A connection has one game (finding 9).** `createGame` gives up the room in which the connection still
+  waits alone, and is refused in a running game ("You are already playing a game.").
+- [x] Decisions taken while fixing, for review: the limit of 500 instead of an incremental arbiter (3); an
+  answering offer that comes too early is refused, not registered as an offer of its own (7); the PGN result
+  token (8); `createGame` refused during a running game (9); no absence notice during an arbiter pause (2).
+- [x] Tests: `TestFinalPassRegressions` (13), `TestFinalPassServerRegressions` (21 methods, 30 cases),
+  `final-pass.spec.ts` (12).
+- [x] `RuleFuzzer` forgot nothing of an open touch-move ruling across a rematch; since a draw can be agreed
+  during a restoration pause, it carried the ruling of the old game into the new one (2 of 20,000 games).
+  The model now drops it at the rematch.
+- [x] Verification on macOS with all fixes: `mvn -q package` runs 395 Java tests, 0 failures, 4 skipped
+  (Windows-only launcher tests). `CI=1 npx playwright test --retries=0`: 200 passed, 1 skipped (Windows-only),
+  in 5.9 minutes. `RuleFuzzer`: 20,000 games, 0 findings. `TouchMoveOracle`: 33,793 cases, 0 differences.
+  Not run: the Windows-only launcher tests.
+- [x] Not changed at first: the three notes at the end of the review above (double final clock update, no message
+  when the clock restarts after a wrong clock press, Flip board undone by a reconnect). Fixed afterwards, see
+  the next section.
+
+### The three notes of the final review pass — 2026-11-18
+
+- [x] **The final clock values go out once (note 1).** `sendClockUpdate` sends nothing for a game that has ended;
+  the announcement of the result sends the final values (`sendClockValues`), directly before `gameEnded`. Before,
+  a mate on the board and a game-ending clock press sent the same values twice.
+- [x] **The restart after a wrong clock press is announced (note 2).** New message `clockRestarted`. The offender
+  reads "Clock restarted. Game continues." in place of the admonishment, after the second press with the warning
+  repeated (error style). The opponent's info window changes to "Your opponent pressed your clock. Your clock has
+  restarted." The opponent's arbiter window is changed only if the arbiter had answered them "The game is
+  paused. Please wait until the clock restarts." during the pause (`GameSession.consumeToldToWaitForClock`), so
+  that a touch-move ruling standing there is not overwritten. A pause taken over by a restoration is not
+  announced here; the restoration announces its own resume.
+- [x] **Flip board survives a reconnect (note 3).** The client remembers that the player turned the board
+  (`boardTurnedByPlayer`); `resync` keeps the board as the player has it. A new colour (rematch, also one missed
+  while away) and a page loaded anew start from the own colour. Client only: no Java test.
+- [x] Tests: `TestFinalPassRegressions` (+4), `TestFinalPassServerRegressions` (+6 methods, 9 cases),
+  `final-pass.spec.ts` (+5). The clock-update test and three browser tests were run against the old code and
+  fail there.
+- [x] Verification on macOS: `mvn -q package` runs 408 Java tests, 0 failures, 4 skipped (Windows-only launcher
+  tests). `CI=1 npx playwright test --retries=0`: 205 passed, 1 skipped (Windows-only). `RuleFuzzer`: 20,000
+  games, 0 findings. `TouchMoveOracle`: 33,793 cases, 0 differences. Not run: the Windows-only launcher tests.
+
+### Review baseline verification
+
+- [x] `mvn -q package` on native Windows passed 245 Java tests, with zero failures,
+  errors or skips. Existing coverage includes many gameplay regressions, but the
+  five combined journeys above need dedicated regression tests when fixed.
+- [x] Run focused review probes against unmodified application code. Local scripts
+  and browser screenshots are retained under the ignored `target/review/` directory
+  in the review worktree. `ReviewProbe.java` covers clock expiry, result overwrites
+  and paused checkmate. `ReviewServerProbe.java` covers finished-room cleanup.
+  `browser.cjs` covers the manual-ready refresh and paused-checkmate journeys.
+  `wire.cjs` exercises expired time and result overwrite through the live server.
+- [x] `CI=1 npx playwright test` passed all 133 existing browser tests in 7.2 minutes.
+  Full coverage establishes the baseline across all reviewed game flows. The
+  focused probes reproduced gaps that this passing baseline does not cover. Runtime
+  validation is local Windows/Chromium. macOS launchd, Docker and the public proxy
+  deployment received source/configuration review only.
+
 ## 0.1.6 — Touch-Move and Release Guards
 
 - [x] Keep an earlier binding touch over the king-and-rook castling commitment, including a touch
@@ -16,15 +696,16 @@ release's tasks until it ships.
 - [x] State the king exposure instead of predicting it, and move the library's reason wording into
   `messages/illegal-move-reasons.properties`.
 - [x] Merge released `main` (0.1.5) into `claude/fixing` and reconcile both released-piece designs.
-- [x] Prepare version `0.1.6`, the dated changelog and README link. Use **0.1.6 — Touch-Move and
-  Release Guards** unchanged for the PR title, changelog version name, and GitHub release title.
+- [x] Prepare version `0.1.6`, the dated changelog and README link. Use **Touch-Move and Release
+  Guards** for the PR title and its opening heading; use **0.1.6 — Touch-Move and Release Guards**
+  in the changelog, title the GitHub release `0.1.6`, and begin its notes with the release name.
 - [x] Fill the gaps in the release and deployment documentation found while following it: version
   pins, changelog anchor, launcher branch, a branch older than the last release, and deployment's
   update half. Deploy-operator access (ACL + `NOPASSWD` grant, `delete_child` gotcha) and the
   public-path verification came from the deployment session.
 - [ ] Manually verify the pushed release candidate through `start.bat`, including the three
   reported journeys and the visible `v0.1.6`.
-- [ ] Merge the PR, then tag and publish `0.1.6`.
+- [x] Merge PR #17, then tag and publish `0.1.6` (merge commit `a92ac68`, 2026-09-22).
 - [ ] Deploy `0.1.6` (supersedes the pending `0.1.5` deployment; production is on `0.1.4`), then
   verify live health, version, and a two-player flow.
 
@@ -50,8 +731,10 @@ release's tasks until it ships.
   each newly pushed snapshot while local edits and the local checkout remain intact. No game
   logic changed, so the focused launcher coverage suffices for this follow-up.
 - [x] Prepare version `0.1.5`, the dated changelog and README link, and a repeatable release
-  procedure. Use **0.1.5 — Released Move Finality Guard** unchanged for the PR title, changelog
-  version name, and GitHub release title. The release-preparation build passed all 219 Java tests;
+  procedure. Use **Released Move Finality Guard** for the PR title and its opening heading; use
+  **0.1.5 — Released Move Finality Guard** in the changelog, title the GitHub release `0.1.5`, and
+  begin its notes with the release name.
+  The release-preparation build passed all 219 Java tests;
   the two focused release/launcher Playwright tests passed; and the packaged jar reports `0.1.5`.
 - [x] Manually verify the pushed release candidate through `start.bat`, including the reported
   Kf8/Revert journey and the visible `v0.1.5` (approved 2026-09-22).
@@ -59,6 +742,12 @@ release's tasks until it ships.
 - [ ] Deploy `0.1.5`, then verify live health, version, and a two-player flow.
 
 ## Publish the server (beta)
+
+- [x] Restore the release naming convention: a release PR targets `main`, uses the descriptive name
+  only as its title, and begins its body with that heading. Releases `0.1.3` through `0.1.6` use the
+  version only as their GitHub title, while each descriptive name appears as the first heading in
+  the release notes. Normalize release PRs #12 through #17 to that PR convention, and update
+  `RELEASING.md` and the agent instructions so future releases keep this split.
 
 Architecture (reviewed): iMac running native `launchd` services → Cloudflare Tunnel
 (`cloudflared`, no inbound ports — fits the guest network) → Caddy single public origin
@@ -151,7 +840,20 @@ deferred privacy notice remains open.
   the next release is prepared; identify this test branch by the launcher's branch/commit banner.
   The Java launcher test now checks failure when only the former testing branch is available;
   the browser test serves successive `claude/fixing` commits from an isolated Git remote.
-- [ ] Manually test `claude/fixing` on the ThinkPad before preparing and merging its release PR.
+- [x] Take the served branch out of `start.bat`: it resolves `OTB_TEST_BRANCH`, else the first
+  argument, else the default `claude/fixing`, so a release no longer edits the launcher and an old
+  testing branch can be deleted. `RELEASING.md` step 6 now sets the branch instead of editing files.
+  The Java launcher test covers the default, both override forms and the failure guarantees, plus a
+  branch-resolution contract check that runs on every platform; the browser test drives the real
+  launcher twice against an overridden branch.
+- [x] Make `latest-ai-model-review` the launcher's default testing branch: `claude/fixing` was
+  fast-forwarded into it and deleted, so `start.bat`, its contract test and the documentation now
+  name the new default.
+- [ ] Manually test `latest-ai-model-review` on the ThinkPad before preparing and merging its
+  release PR.
+- [x] Run the Windows-only launcher coverage (`TestWindowsLauncher` and `tests/e2e/launcher.spec.ts`)
+  on Windows before merging: completed 2026-11-17 on the Windows workspace with all six Java
+  launcher cases and the real-launcher browser test passing, no skips. See the Windows follow-up.
 
 - [x] **Castling accepted despite an earlier touch-move obligation.** After 1. g3 e5 2. Bg2 d5
   3. Nf3 Nc6, White played `Nb1-b3` (illegal), put the knight back and castled short; the castling

@@ -523,8 +523,8 @@ class TestArbiterEngine {
 
     assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, response.type());
     assertEquals(MessageKey.ARBITER_TOUCH_MOVE_CASTLING_PLAYER, response.playerMessageKey());
-    assertEquals("Because you touched the king and the rook, and castling is legal,"
-        + " please perform the castling move.", response.message());
+    assertEquals("Because you touched the king and the rook on h1, and kingside castling is legal,"
+        + " please perform the kingside castling move.", response.message());
     assertTrue(response.restorePosition().isPresent());
     assertEquals(afterKingOnly, response.restorePosition().get());
   }

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
+import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
@@ -139,7 +140,11 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
       case CASTLING -> {
         playerKey = MessageKey.ARBITER_TOUCH_MOVE_CASTLING_PLAYER;
         opponentKey = MessageKey.ARBITER_TOUCH_MOVE_CASTLING_OPPONENT;
-        args = List.of();
+        // Name the rook and the side: with both castlings possible "the castling move" would leave
+        // open which one is owed.
+        final CastlingMove castlingMove = obligation.castlingMove();
+        args = List.of(castlingMove.rookFromSquare(obligation.piece().getSide()).getName(),
+            castlingMove == CastlingMove.KING_SIDE ? "kingside" : "queenside");
       }
       case SPECIFIC_CAPTURE -> {
         if (obligation.opponentTouchedFirst()) {

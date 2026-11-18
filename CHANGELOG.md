@@ -2,6 +2,90 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.2.0 — Game Lifecycle and Draw Guards — 2026-11-18
+
+This release is the result of several review passes over the whole game: how a game starts, ends,
+is paused, reconnected and replayed, and how draw offers and touch-move rulings are decided. Each
+fix has Java tests and a browser test of its journey.
+
+### Fixed
+
+**Endings and results**
+
+- A player whose time has run out can no longer be saved by a late move with increment, a draw
+  claim, a draw offer or an abandonment claim. Every action that can decide the game looks at the
+  clocks first.
+- A result is final. A late resignation or draw acceptance no longer replaces it, the result is
+  announced once, and a result of the previous game cannot end a rematch.
+- A mate played during a pause ends the game instead of leaving it without a result.
+- The final clock values are sent once, directly before the result.
+
+**Reconnect, seats and rematch**
+
+- A seat has one connection. A game opened in a second window takes the seat; the first window is
+  taken out of the game and says so. Before, the old window could still act - a player could agree
+  a draw alone.
+- A refresh during a restoration, before or after *Ready to continue*, no longer strands both
+  players. A pending draw offer, the pause state and the physical board come back after a reconnect.
+- A player's absence counts from the start of the game. A creator who dropped before the opponent
+  joined is not adjudicated seconds into the game, the joiner is told and can claim the win, and a
+  player who reconnects while the opponent is away is told again with the time left.
+- A reconnect keeps the player's seat across a rematch, also when the start of the rematch was
+  missed, and keeps a board turned with *Flip Board*.
+
+**Pauses**
+
+- Simultaneous *Ready to continue* presses, an obsolete wrong-clock timer and a clock press inside
+  the automatic resume delay no longer lock a board or restart the wrong clock.
+- During any pause draw claims and draw offers are not adjudicated: no penalty time, no step on an
+  escalation ladder.
+- The restart of the clock after a wrong clock press is announced on both boards.
+
+**Draw offers**
+
+- An offer made while the opponent's offer can still be accepted is its acceptance, also during a
+  pause and for the offer implied by a rejected draw claim (A-009).
+- Only the player the offer was made to can answer it. An offer made with an invalid move no longer
+  cancels the offer that was pending.
+- The move made together with an accepted draw offer is in the game record, and the PGN ends with
+  the result.
+
+**Touch-move and released piece**
+
+- One ruling per turn: a release and a touch are judged in the order the player acted (FIDE 4.7,
+  4.3, 4.4; A-010). "Your move is final" is said only when the clock press will be accepted.
+- A flag fall comes before a misconduct ruling made at the same moment.
+
+**Rooms and server**
+
+- Finished and half-started rooms are reclaimed, so the server no longer fills up; a connection
+  has one game and gives up its waiting room when it creates another.
+- A starting position that is already decided is refused. Two players joining at once get one seat.
+- A socket that closes during a send no longer costs the other player the result.
+- A turn records at most 500 piece movements. The cost of a ruling no longer grows with the cube
+  of the turn's length.
+- A resignation needs a running game.
+
+### Changed
+
+- **A draw can be agreed only after both players have made at least one move (FIDE 5.2.3).** Before
+  that, *Accept* and an answering offer are refused with a message and the offer stays open.
+- Creating a game while playing a running one is refused.
+
+### Added
+
+- `RuleFuzzer` and `TouchMoveOracle`, two opt-in test tools: random games against a model of the
+  client, and every touch sequence of a set of positions against an independent reading of the
+  rules. Both run clean on this release (20,000 games; 33,793 cases).
+- `OTB_ENDED_ROOM_TTL_MS`: how long a finished room is kept for a rematch (default 30 minutes).
+- The manual-testing launcher takes its branch from `OTB_TEST_BRANCH` or its first argument.
+
+### Rules interpretation
+
+- [`docs/fide-deviations.md`](docs/fide-deviations.md): A-006 extended (nothing is adjudicated
+  during the pause after a wrong clock press; the restart is announced), A-009 (an offer answering
+  an offer), A-010 (order of release and touch).
+
 ## 0.1.6 — Touch-Move and Release Guards — 2026-09-22
 
 This release fixes three arbiter faults found in play, and adds two fail-closed checks that stop
@@ -66,8 +150,9 @@ castling after an arbiter recovery.
 
 - `start.bat` fetches the latest pushed `codex/further-hardening` commit and serves it from the
   stable worktree. A failed fetch stops startup, and local uncommitted edits remain isolated.
-- The release procedure is now documented in `RELEASING.md`, including the rule that the canonical
-  release title is used unchanged for the PR, changelog version name, and GitHub release.
+- The release procedure is now documented in `RELEASING.md`, including the naming split between
+  the PR title (`NAME`), changelog (`VERSION — NAME`), GitHub release title (`VERSION`), and the
+  PR-body and release-notes headings (`NAME`).
 
 The gameplay fix passed all 217 Java tests and all 127 Playwright tests. The launcher follow-up
 passed two focused Windows Java cases plus a Playwright test that launched successive pushed

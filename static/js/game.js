@@ -4,6 +4,8 @@ class Game {
     this.board = null;
     this.ws = new GameWebSocket();
     this.side = null; // 'white' or 'black'
+    // Whether the player turned the board with Flip board (the opponent's colour is at the bottom).
+    this.boardTurnedByPlayer = false;
     this.gameId = null;
     this.isMyTurn = false;
     // FIDE 9.2 / 9.3: at most one draw claim per move. Set when the server reports a
@@ -334,20 +336,41 @@ class Game {
     // Reconnect: the server resent the authoritative state after our socket dropped and re-attached.
     // Rebuild the board/clock/turn from it so the game continues instead of staying frozen.
     this.ws.on('resync', (data) => {
+      // A socket reconnect can reuse this page. Clear stale offers before the server
+      // replays the current offer (if any) after the authoritative snapshot.
+      document.getElementById('drawOfferPanel').style.display = 'none';
+      const changedSeat = this.side !== data.side;
       this.gameId = data.gameId;
       this.side = data.side;
-      if (this.side === 'black' && !this.board.flipped) {
+      // The board shows the player's colour at the bottom unless the player turned it (Flip board):
+      // a reconnect on this page keeps the board as the player has it. A new colour (a rematch
+      // missed while away) starts from the own side again.
+      if (changedSeat) this.boardTurnedByPlayer = false;
+      if (((this.side === 'black') !== this.boardTurnedByPlayer) !== this.board.flipped) {
         this.board.flip();
       }
       this.board.setPosition(data.board);
       this.board.renderAll();
+      this.board.clearHighlights();
       this.updateClockLabels();
       this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
 
+      // gameEnded cleared storage, and the socket may have dropped before rematchStarted.
+      // Persist the recovered seat so a later refresh returns to this game too.
+      if (data.token) {
+        Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: this.isCreator });
+      }
+
       const started = data.state !== 'WAITING_FOR_PLAYERS';
       if (started) {
         this.gameActive = data.state !== 'ENDED';
+        if (this.gameActive) {
+          this.clearResultPanel();
+          this.stopDisconnectCountdown();
+          this.clearOpponentInfo();
+          if (changedSeat) this.resetClaimUiForNewTurn();
+        }
         document.getElementById('resignBtn').style.display = '';
         this.clearArbiterButtons();
         this.isMyTurn = data.havingMove === this.side;
@@ -373,6 +396,23 @@ class Game {
     // so a refresh won't loop trying to resume a dead game, and offer a path back to the lobby.
     this.ws.on('resumeFailed', (data) => {
       this.showGameUnavailable(data.message || 'This game is no longer available.');
+    });
+
+    // The same player opened this game in another window, which now holds the seat. This window
+    // is out of the game: freeze it and say so, instead of leaving a board that looks alive while
+    // the server takes nothing from it. The saved session stays - it belongs to the other window.
+    this.ws.on('sessionReplaced', (data) => {
+      this.ws.shouldReconnect = false;
+      this.gameActive = false;
+      this.stopDisconnectCountdown();
+      document.querySelectorAll('.game-layout button').forEach((btn) => { btn.disabled = true; });
+      document.getElementById('drawOfferPanel').style.display = 'none';
+      if (this.board) this.board.setEnabled(false);
+      const clockEl = document.getElementById('chessClock');
+      if (clockEl) clockEl.classList.remove('paused');
+      this.clearOpponentInfo();
+      this.clearArbiterButtons();
+      this.showArbiterMessage(data.message || 'This game is now open in another window.', 'info');
     });
 
     // Tried to join a game with no free seat (not found, already full, or already ended). Same
@@ -476,6 +516,7 @@ class Game {
     });
 
     this.ws.on('waitingForReady', (data) => {
+      this.board.setEnabled(false);
       this.showArbiterMessage(data.message, 'info');
       this.clearArbiterButtons();
       this.showArbiterButton('Ready to continue', () => {
@@ -486,6 +527,7 @@ class Game {
     });
 
     this.ws.on('waitingForOpponentReady', (data) => {
+      this.board.setEnabled(false);
       this.showArbiterMessage(data.message, 'info');
     });
 
@@ -523,6 +565,12 @@ class Game {
       this.showArbiterMessage(data.message, 'error');
     });
 
+    // The pause after a wrong clock press is over. Only the message changes: buttons and the
+    // turn are as they were, and the clock itself comes with the clock update that follows.
+    this.ws.on('clockRestarted', (data) => {
+      this.showArbiterMessage(data.message, data.style || null);
+    });
+
     this.ws.on('wrongTimeDrawOffer', (data) => {
       this.showArbiterMessage(data.message, 'info');
     });
@@ -558,6 +606,12 @@ class Game {
     // offer visible until the player tries to act on it or completes the move.
     this.ws.on('drawOfferInvalidated', (data) => {
       // Intentionally no visible update here.
+    });
+
+    // Our own offer replaced an offer of the opponent that was still shown although we could no
+    // longer accept it: the panel no longer stands for anything.
+    this.ws.on('drawOfferExpired', () => {
+      document.getElementById('drawOfferPanel').style.display = 'none';
     });
 
     this.ws.on('drawRejected', (data) => {
@@ -740,6 +794,7 @@ class Game {
       this.gameId = data.gameId;
       this.side = data.side;
       // The seats swapped: orient the board absolutely for the NEW colour (flip() only toggles).
+      this.boardTurnedByPlayer = false;
       if ((this.side === 'black') !== this.board.flipped) {
         this.board.flip();
       }
@@ -756,15 +811,11 @@ class Game {
       this.resetClaimUiForNewTurn();
       this.clearOpponentInfo();
 
-      // Fresh reconnect session for the new seat (the old token died with the seat swap).
+      // The reconnect token stays with its player; persist the newly assigned colour.
       Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: this.isCreator });
 
       // Result panel (and its rematch state) belongs to the finished game — reset for this one.
-      document.getElementById('gameResultPanel').style.display = 'none';
-      const rematchBtn = document.getElementById('rematchBtn');
-      rematchBtn.disabled = false;
-      rematchBtn.textContent = 'Rematch';
-      rematchBtn.classList.remove('rematch-blink');
+      this.clearResultPanel();
       document.getElementById('drawOfferPanel').style.display = 'none';
       document.getElementById('resignBtn').style.display = '';
       this.updateButtons();
@@ -810,6 +861,14 @@ class Game {
         this.appendDevConsole(data.devDetail);
       }
     });
+  }
+
+  clearResultPanel() {
+    document.getElementById('gameResultPanel').style.display = 'none';
+    const rematchBtn = document.getElementById('rematchBtn');
+    rematchBtn.disabled = false;
+    rematchBtn.textContent = 'Rematch';
+    rematchBtn.classList.remove('rematch-blink');
   }
 
   // === Developer console ===
@@ -923,6 +982,7 @@ class Game {
 
     document.getElementById('flipBoardBtn').addEventListener('click', () => {
       this.board.flip();
+      this.boardTurnedByPlayer = !this.boardTurnedByPlayer;
       // After a flip the floating piece's screen position is stale; clearing it
       // keeps the visual coherent. Next opponent DRAG_HOVER will not respawn it
       // (DRAG_START is what spawns), but on the dragger's next square change a

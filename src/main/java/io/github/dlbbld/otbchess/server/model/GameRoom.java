@@ -7,8 +7,10 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.java_websocket.WebSocket;
+import org.java_websocket.exceptions.WebsocketNotConnectedException;
 
 import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
@@ -20,6 +22,12 @@ public class GameRoom {
 
   private final String gameId;
   private GameSession session;
+  private BitboardPosition physicalPosition;
+  // Presentation text for the current offer, including an explanation from a rejected claim.
+  // DrawOfferManager remains authoritative about whether the offer exists and can be accepted.
+  private String drawOfferMessage = "Your opponent offers a draw.";
+  // Both players have been sent the result of the current session.
+  private boolean gameEndAnnounced;
   private final TimeControl timeControl;
   // Kept for rematches: a rematch rebuilds the session with the SAME settings.
   private final int maxIllegalMoves;
@@ -31,8 +39,8 @@ public class GameRoom {
   private WebSocket blackPlayer;
   private ScheduledFuture<?> clockTickFuture;
 
-  // Per-side secret reconnect tokens. A player whose socket drops re-attaches by presenting its
-  // token (not the guessable join code), so a third party who knows the join code can't hijack a seat.
+  // Secret reconnect tokens follow the players when rematches swap their seats. A dropped socket
+  // can resume even if it never received the rematch start message with its new colour.
   private String whiteToken;
   private String blackToken;
 
@@ -65,6 +73,7 @@ public class GameRoom {
       Board startingBoard) {
     this.gameId = gameId;
     this.session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
+    this.physicalPosition = startingBoard.getBitboardPosition();
     this.timeControl = timeControl;
     this.maxIllegalMoves = maxIllegalMoves;
     this.autoResumeAfterRestore = autoResumeAfterRestore;
@@ -81,6 +90,35 @@ public class GameRoom {
 
   public GameSession getSession() {
     return session;
+  }
+
+  public synchronized BitboardPosition getPhysicalPosition() {
+    return physicalPosition;
+  }
+
+  public synchronized void setPhysicalPosition(BitboardPosition position) {
+    physicalPosition = position;
+  }
+
+  public synchronized String getDrawOfferMessage() {
+    return drawOfferMessage;
+  }
+
+  public synchronized void setDrawOfferMessage(String message) {
+    drawOfferMessage = message;
+  }
+
+  /** @return true for the first call per game, i.e. when the caller is the one to announce the result. */
+  public synchronized boolean markGameEndAnnounced() {
+    if (gameEndAnnounced) {
+      return false;
+    }
+    gameEndAnnounced = true;
+    return true;
+  }
+
+  public synchronized boolean isGameEndAnnounced() {
+    return gameEndAnnounced;
   }
 
   public TimeControl getTimeControl() {
@@ -138,6 +176,14 @@ public class GameRoom {
     }
   }
 
+  public String getToken(Side side) {
+    return switch (side) {
+      case WHITE -> whiteToken;
+      case BLACK -> blackToken;
+      default -> null;
+    };
+  }
+
   /** @return the side that owns this reconnect token, or {@link Side#NONE} if it matches neither. */
   public Side sideForToken(String token) {
     if (token == null) {
@@ -162,18 +208,31 @@ public class GameRoom {
   }
 
   public void sendToBoth(String message) {
-    if (whitePlayer != null && whitePlayer.isOpen()) {
-      whitePlayer.send(message);
-    }
-    if (blackPlayer != null && blackPlayer.isOpen()) {
-      blackPlayer.send(message);
-    }
+    sendToSide(Side.WHITE, message);
+    sendToSide(Side.BLACK, message);
   }
 
   public void sendToSide(Side side, String message) {
-    final WebSocket socket = getSocket(side);
-    if (socket != null && socket.isOpen()) {
+    send(getSocket(side), message);
+  }
+
+  /**
+   * Sends to a socket if it is open. A socket can close between the open check and the send; the send then throws.
+   * That must not fail the caller: the message was for a player who is gone, and whatever the caller does next - above
+   * all the other player's copy of a result - still has to happen. The close itself is handled by the server's close
+   * callback like any other disconnect.
+   *
+   * @return whether the message was handed to the socket
+   */
+  public static boolean send(WebSocket socket, String message) {
+    if (socket == null || !socket.isOpen()) {
+      return false;
+    }
+    try {
       socket.send(message);
+      return true;
+    } catch (final WebsocketNotConnectedException e) {
+      return false;
     }
   }
 
@@ -225,19 +284,23 @@ public class GameRoom {
 
   /**
    * Starts a rematch: the players swap colours (seats), and a fresh session begins from the SAME starting position
-   * (the original FEN for custom games) with the SAME time control and settings. The reconnect tokens are invalidated
-   * — the caller must issue fresh per-seat tokens and start the game/clock, mirroring the join flow.
+   * (the original FEN for custom games) with the SAME time control and settings. Reconnect tokens swap with their
+   * owners, so a lost rematch-start message cannot strand a player without a valid token. The caller starts the clock.
    */
   public void startRematch() {
     final WebSocket previousWhite = whitePlayer;
     whitePlayer = blackPlayer;
     blackPlayer = previousWhite;
-    whiteToken = null;
-    blackToken = null;
+    final String previousWhiteToken = whiteToken;
+    whiteToken = blackToken;
+    blackToken = previousWhiteToken;
     whiteDisconnectedAtMs = null;
     blackDisconnectedAtMs = null;
     rematchOfferedBy = Side.NONE;
     session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore,
         new Board(session.getBoard().getInitialFen()));
+    physicalPosition = session.getBoard().getBitboardPosition();
+    gameEndAnnounced = false;
+    drawOfferMessage = "Your opponent offers a draw.";
   }
 }

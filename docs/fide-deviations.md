@@ -168,9 +168,11 @@ As with A-003, **the count accumulates across different moves** and never resets
 
 **Our policy** (same three-step ladder as A-003/A-005, counted per player across the whole game):
 
-1. First press: the arbiter **pauses the game** — offender: *"Please do not press your opponent's clock. The game is paused and will continue shortly."*; the opponent sees what happened passively (info window). After the admonishment pause (`OTB_WRONG_CLOCK_PAUSE_MS`, default 5 s) the interrupted clock restarts.
-2. Second press: same pause plus the warning — the next press loses the game.
+1. First press: the arbiter **pauses the game** — offender: *"Please do not press your opponent's clock. The game is paused and will continue shortly."*; the opponent sees what happened passively (info window). After the admonishment pause (`OTB_WRONG_CLOCK_PAUSE_MS`, default 5 s) the interrupted clock restarts, and both players are told: the offender reads *"Clock restarted. Game continues."*, the opponent's info window says *"Your opponent pressed your clock. Your clock has restarted."*
+2. Second press: same pause plus the warning — the next press loses the game. The warning is repeated in the restart message.
 3. Third press: **loss of the game** (`WRONG_CLOCK_PRESS_GAME_LOST`). Offender: told they were warned and lose; opponent: *"Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game."*
+
+While the admonishment pause lasts nothing is adjudicated, as in a restoration pause: a draw claim or a draw offer by either player is answered with *"The game is paused. Please wait until the clock restarts."* — no penalty time, no offer for the opponent, no step on a claim or offer ladder, and the one claim of the move is not used up.
 
 **Where in code**: [`GameSession.pressOpponentClock`](../src/main/java/io/github/dlbbld/otbchess/game/GameSession.java) (search "WRONG_CLOCK_PRESS_LIMIT"); the server schedules the clock restart after the pause.
 
@@ -206,3 +208,35 @@ As with A-003, **the count accumulates across different moves** and never resets
 **Rationale**: once the king's release on b1 has no effect of its own, what remains is the touch record — king first, then rook — with castling legal, which is exactly 4.4.1. Moving a piece includes touching it, and the specification already counts a drag as a touch for the king-then-rook rule. The literal reading of 7.5.1 (only 4.3: any king move, castling included) would need an exception no article mentions. Castling queenside is what the player was trying to do, so the stricter reading costs them nothing they intended.
 
 **Where in code**: the 4.7 check is [`ArbiterEngine.isReleasePartOfLegalMove`](../src/main/java/io/github/dlbbld/otbchess/arbiter/ArbiterEngine.java) (a release binds only when the whole board matches the legal move); the castling obligation is [`TouchMoveEvaluator.findCastlingObligation`](../src/main/java/io/github/dlbbld/otbchess/touchmove/TouchMoveEvaluator.java). Pinned by `TestGameSessionFlow.beginnerCastlingWithKingOnB1IsIllegalMoveThenQueensideCastlingIsRequired` and the matching `rules-extra.spec.ts` journey.
+
+---
+
+### A-009 — Counter offer, and who may answer a draw offer
+
+**FIDE**: Article 9.1.2.1 — an offer "cannot be withdrawn and remains valid until the opponent accepts it, rejects it orally, rejects it by touching a piece with the intention of moving or capturing it, or the game is concluded in some other way." The Laws do not say what happens when the opponent answers an offer with an offer of their own.
+
+**Our policy**:
+
+1. An offer made while the opponent's offer can still be accepted **is the acceptance** of that offer. The game is drawn by agreement. This holds at any moment at which Accept would work - also while the arbiter has stopped the clocks (a restoration, the pause after a wrong clock press), when a new offer of one's own is otherwise not considered. This includes the offer implied by a rejected draw claim (FIDE 9.5), and the answer to an offer the opponent made together with a move whose clock press is still outstanding.
+2. Only the player the offer was made to can accept or reject it. The offering player can do neither, whatever button reaches the server.
+3. A new offer that comes with an invalid move is not registered and leaves any pending offer alone.
+
+**Rationale**: at a board, "I offer a draw" answered by "I offer a draw" is an agreement; no arbiter would let the second sentence cancel the first. The earlier behaviour kept one offer slot and overwrote it, so that each player waited for the other, the second player's panel accepted nothing ("You cannot accept your own draw offer"), and its Reject button withdrew the player's own offer while the opponent was told it had been rejected. An offer that can no longer be accepted (A-002) is different: there the second player has declined by moving, and their offer is a new one.
+
+**Where in code**: `GameSession.answerOfferWithOffer`, `DrawOfferManager.canAccept` / `rejectDraw`. Pinned by `TestFourthPassRegressions`, `TestFourthPassServerRegressions` and `fourth-pass.spec.ts`; the offer-with-a-move case by `TestCloudReviewServerRegressions` and `cloud-review.spec.ts`.
+
+---
+
+### A-010 — A release and a touch are judged in the order they happened
+
+**FIDE**: Article 4.3 (the first touched piece that can be moved or captured must be), 4.4.1 / 4.4.2 (king and rook), 4.7 (a piece released as a legal move or part of one cannot be moved to another square). The Laws state each rule on its own and do not rank them.
+
+**Our policy**: the two rules are applied in the order in which the player acted.
+
+1. A release binds under 4.7 only if it **honours the touch-move obligation already in force**. A pawn move made after another piece was touched, or a king put on c1 after the a1 rook was touched (4.4.2), commits to nothing: the touched piece still has to be moved, and the arbiter says so from the first ruling on. Such a king placement is answered with the touch-move ruling, not counted as an illegal move — the same leniency as for any started castling.
+2. Once a release binds, **later touches change nothing**. A king released on g1 means kingside castling even if the a1 rook is touched or moved afterwards.
+3. "Your move is final. Press the clock." is said only when the restored position is the completed move, so that the clock press is accepted. A started castling is restored without it.
+
+**Rationale**: evaluated independently, the two rules could give opposite orders within one turn — "complete the castling by moving the rook from h1 to f1", then, when the player did exactly that, "please perform the castling move" meaning the other side. Whatever the ruling, the player must be able to follow it.
+
+**Where in code**: `ArbiterEngine.findReleaseRuling` / `findBindingObligation`, `GameSession.isRestoredMoveFinal`. Pinned by `TestFourthPassRegressions` and `fourth-pass.spec.ts`; `RuleFuzzer` checks on random games that every instruction of the arbiter is accepted when followed.

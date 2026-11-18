@@ -3,21 +3,22 @@
 Use a development branch and pull request for every release. Never commit or push release work
 directly to `main`.
 
-## Canonical release title
+## Release naming
 
-Choose one title in this exact form:
+Choose the version and descriptive name once. Use them in these exact forms:
 
-> `VERSION — NAME`
+- pull-request target: `main`;
+- pull-request title: `NAME` only, without the version;
+- first heading in the pull-request body: `## NAME`;
+- changelog heading: `VERSION — NAME — DATE`;
+- GitHub release title: `VERSION`;
+- first heading in the GitHub release notes: `## NAME`.
 
-Example: `0.1.5 — Released Move Finality Guard`.
+For example, the PR title is `Released Move Finality Guard`, its body begins with
+`## Released Move Finality Guard`, the changelog heading includes
+`0.1.5 — Released Move Finality Guard`, and the GitHub release title is `0.1.5`.
 
-Use that title unchanged as:
-
-- the pull-request title;
-- the version name in the changelog heading (followed by the release date);
-- the GitHub release title.
-
-The Maven project version and Git tag contain only `VERSION`, for example `0.1.5`.
+The Maven project version and Git tag also contain only `VERSION`.
 
 ## Prepare the release branch
 
@@ -26,7 +27,7 @@ The Maven project version and Git tag contain only `VERSION`, for example `0.1.5
    resolves the conflicts, and re-runs both suites before the release preparation below.
 2. Set the Maven project version in `pom.xml`. That is the only place to edit: the app reads its
    own version from `version.properties`, which Maven filters from the project version.
-3. Add a dated changelog entry headed with the canonical release title, and point the README's
+3. Add a dated changelog entry headed `VERSION — NAME — DATE`, and point the README's
    current-release link to it. The anchor drops the dots and the em dash, and doubles the
    separators, for example `CHANGELOG.md#016--touch-move-and-release-guards--2026-09-22`. Check
    that the link resolves.
@@ -36,21 +37,26 @@ The Maven project version and Git tag contain only `VERSION`, for example `0.1.5
    `tests/e2e/version.spec.ts`, whose test name carries the version too. `git grep` the previous
    version to catch any other pin. Verify `/api/version` and the visible version on both the lobby
    and board pages.
-6. Point the manual-testing launcher at the release branch: the branch name is hardcoded in
-   `start.bat` and in `tests/e2e/launcher.spec.ts`, so both change with every release branch.
+6. No launcher edit is needed: `start.bat` serves whatever branch `OTB_TEST_BRANCH` names, falling
+   back to its first argument and then to the default `latest-ai-model-review`. When the release
+   branch is not the default, run it as `start.bat <release-branch>` (or set `OTB_TEST_BRANCH`) in
+   step 1 of the manual test below.
 7. Run the full Java suite. Run the full Playwright suite for gameplay, shared state, or common UI
    changes; focused Playwright coverage is sufficient for isolated release metadata after the
    affected behavior has already passed the full suite.
 8. Rebuild the packaged jar and verify it reports the prepared version.
-9. Commit and push the release branch, then open or update the PR using the canonical release title.
+9. Commit and push the release branch, then open or update the PR against `main`. Set its title to
+   `NAME` only, without the version, and begin its body with `## NAME`.
 
 ## Manual test and publish
 
-1. Run `start.bat` to fetch the pushed release branch into the stable worktree. Verify the version
-   and the changed user journey manually before merging.
+1. Run `start.bat <release-branch>` to fetch the pushed release branch into the stable worktree
+   (plain `start.bat` serves the default branch). Verify the version and the changed user journey
+   manually before merging.
 2. Merge the PR into `main` only after automated and manual verification pass.
-3. Create the `VERSION` tag from the merge commit and publish a GitHub release whose title is the
-   canonical release title. Use the matching changelog entry as the release notes.
+3. Create the `VERSION` tag from the merge commit and publish a GitHub release titled `VERSION`.
+   Use the matching changelog entry as the release notes, beginning with `## NAME` rather than
+   repeating the version in that heading.
 4. Deployment is separate from source publication: the host keeps serving the previous build until
    it is updated. Move the production checkout (`/Users/chess-server/Claude/otb-chess` on the iMac)
    to the new tag, rebuild, and restart the app daemon using

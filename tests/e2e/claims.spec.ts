@@ -10,7 +10,7 @@ import {
   claimFiftyMoveWithMove,
   claimThreefoldWithMove,
 } from './helpers/app';
-import { dragPiece, pressClock, expectPiece } from './helpers/board';
+import { bothPlayersMove, dragPiece, pressClock, expectPiece } from './helpers/board';
 
 let game: TwoPlayerGame;
 
@@ -336,6 +336,7 @@ test('rejected on-board 50-move claim announces the claim and the offer to the o
 test('the draw offer converted from a rejected claim can be accepted and draws the game', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   // White's claim is rejected on the merits and forwarded to Black as a draw offer (FIDE 9.5).
   await claimThreefoldOnBoard(white);

@@ -32,7 +32,7 @@ class TestOtbChessServer {
   @Test
   void testAppVersionComesFromFilteredResourceNotFallback() {
     final String version = OtbChessServer.appVersion();
-    assertEquals("0.1.6", version);
+    assertEquals("0.2.0", version);
     assertNotEquals("development", version);
     assertFalse(version.contains("${"), "version.properties was not Maven-filtered: " + version);
     assertTrue(version.matches("\\d+\\.\\d+.*"), "unexpected version format: " + version);

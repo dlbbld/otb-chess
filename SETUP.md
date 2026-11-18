@@ -233,7 +233,7 @@ every file under the grantee's own ownership and does not need `delete_child` ag
   ```bash
   cd /Users/chess-server/Claude/otb-chess
   git fetch origin --tags
-  git checkout --detach 0.1.6   # the tag being deployed
+  git checkout --detach 0.2.0   # the tag being deployed
   mvn -DskipTests package
   sudo launchctl kickstart -k system/io.github.dlbbld.otbchess.app
   ```
@@ -257,5 +257,9 @@ every file under the grantee's own ownership and does not need `delete_child` ag
 - Logs: `~/Library/Logs/otb-chess/{app,caddy,cloudflared,usage}.log`
 - Tunnel config + creds: `~/.cloudflared/config.yml`, `~/.cloudflared/<TUNNEL_ID>.json`, `cert.pem`
 - App env: `OTB_BIND_HOST`, `OTB_HTTP_PORT`, `OTB_WS_PORT`, `OTB_CADDY_LISTEN`, `OTB_MAX_GAMES`,
-  `OTB_ROOM_TTL_MS`, `OTB_MAX_MSG_CHARS`, `OTB_MAX_VIOLATIONS`, `OTB_WS_ALLOWED_ORIGINS`,
+  `OTB_ROOM_TTL_MS`, `OTB_ENDED_ROOM_TTL_MS`, `OTB_MAX_MSG_CHARS`, `OTB_MAX_VIOLATIONS`, `OTB_WS_ALLOWED_ORIGINS`,
   `OTB_USAGE_LOG`, `OTB_USAGE_RETENTION_DAYS`, `OTB_DISCONNECT_GRACE_MS`
+- Finished rooms are retained for at least 30 minutes after the result
+  (`OTB_ENDED_ROOM_TTL_MS`, milliseconds). After that, a room is reclaimed only when
+  both players are disconnected. Cleanup runs periodically and before new game creation;
+  active games and connected players' rematches are retained.

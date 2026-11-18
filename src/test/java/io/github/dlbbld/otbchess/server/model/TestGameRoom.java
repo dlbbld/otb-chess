@@ -42,7 +42,7 @@ class TestGameRoom {
   }
 
   @Test
-  void testStartRematchSwapsSeatsAndResetsSessionAndTokens() {
+  void testStartRematchSwapsSeatsAndTokensAndResetsSession() {
     final GameRoom room = new GameRoom("TESTGAME", TEST_TIME);
     final WebSocket originalWhite = fakeSocket();
     final WebSocket originalBlack = fakeSocket();
@@ -61,9 +61,9 @@ class TestGameRoom {
     // Colours swapped: the former Black now sits on the White seat and vice versa.
     assertSame(originalBlack, room.getWhitePlayer());
     assertSame(originalWhite, room.getBlackPlayer());
-    // The old reconnect tokens died with the seat swap (the caller issues fresh ones).
-    assertEquals(Side.NONE, room.sideForToken("white-token"));
-    assertEquals(Side.NONE, room.sideForToken("black-token"));
+    // Tokens stay with their owners even when the new colour announcement cannot reach them.
+    assertEquals(Side.BLACK, room.sideForToken("white-token"));
+    assertEquals(Side.WHITE, room.sideForToken("black-token"));
     // Handshake state reset; a brand-new session with the SAME time control awaits startGame().
     assertEquals(Side.NONE, room.getRematchOfferedBy());
     assertNotSame(endedSession, room.getSession());

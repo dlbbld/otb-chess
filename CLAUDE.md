@@ -42,14 +42,17 @@ Long e2e runtimes are explicitly acceptable when the change has behavioral risk,
   packaged jar: rebuild (`npm run build:server` or `npm run e2e`) after Java changes; static
   files (HTML/JS/CSS) are read from disk and need no rebuild. If e2e results look stale, check
   for a leftover java process listening on 18080 and stop it.
-- `start.bat` fetches and serves the latest pushed `claude/fixing` commit from the
-  `..\otb-chess-stable` worktree for manual testing before PR merge. A failed fetch stops startup;
-  uncommitted edits never reach it. `start-dev.bat` runs the working tree as-is.
+- `start.bat` fetches and serves the latest pushed commit of the testing branch from the
+  `..\otb-chess-stable` worktree for manual testing before PR merge. The branch comes from the
+  `OTB_TEST_BRANCH` environment variable, else the first argument, else the default
+  `latest-ai-model-review`; release preparation sets it instead of editing the launcher. A failed
+  fetch stops startup; uncommitted edits never reach it. `start-dev.bat` runs the working tree as-is.
 - Do not work in this working tree at the same time as another agent; sequential use only.
 - `tasks.md` is the live-planning source of truth: record completed work there (check items in
   place, don't delete).
-- Follow `RELEASING.md` for releases. Choose one canonical `VERSION — NAME` title and use it
-  unchanged for the PR title, changelog version name, and GitHub release title.
+- Follow `RELEASING.md` for releases. Target the PR at `main`, title it with `NAME` only, and begin
+  its body with `## NAME`. Use `VERSION — NAME — DATE` for the changelog heading, title the GitHub
+  release with `VERSION` only, and begin its notes with `## NAME`.
 
 ## Commit messages
 

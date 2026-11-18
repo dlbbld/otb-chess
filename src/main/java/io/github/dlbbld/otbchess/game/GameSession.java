@@ -3,6 +3,7 @@
 package io.github.dlbbld.otbchess.game;
 
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -53,6 +54,7 @@ public class GameSession {
 
   private GameState state;
   private GameResult result;
+  private long endedAtMs;
 
   // For the personalised end-of-game messages: the side that performed the terminating action
   // (resigned, flagged, or accepted a draw); the client phrases the message in the second person
@@ -110,6 +112,9 @@ public class GameSession {
   private boolean blackReady;
   private boolean waitingForRestoration;
   private boolean restorationResumePending;
+  // A clock press of the side to move ended the automatic restoration pause itself. The server
+  // announces that resume, because the delayed resume then finds nothing left to do.
+  private boolean resumedByClockPress;
   private BitboardPosition restorationTargetPosition;
   // True when the current restoration was caused by a released-piece (FIDE 4.7) violation. While set,
   // completeRestoration() preserves the released-piece rule window so the committed move stays final
@@ -168,6 +173,9 @@ public class GameSession {
    * Starts the game. Both players are connected.
    */
   public synchronized void startGame() {
+    if (state != GameState.WAITING_FOR_PLAYERS) {
+      throw new IllegalStateException("A game can be started once only, state is " + state);
+    }
     this.state = GameState.IN_PROGRESS;
     // The clock starts on whichever side is to move in the starting position,
     // not blindly on White, so a FEN with Black to move correctly clocks Black.
@@ -186,11 +194,20 @@ public class GameSession {
     if (side != board.getSideToMove()) {
       return Optional.empty();
     }
+    // A board event can itself decide the game through the misconduct ladder. Expiry must
+    // win that race just as it does for a clock press, claim, offer or resignation.
+    if (checkFlagFall().isPresent()) {
+      return Optional.empty();
+    }
+    if (isTurnEventLimitReached()) {
+      return Optional.empty(); // not recorded; the server tells the sender
+    }
 
     // Check mid-play validation
     Optional<ArbiterResponse> midPlayResponse = MidPlayValidator.validate(event, side, positionBeforeTurn,
         removedSquaresThisTurn);
     if (midPlayResponse.isPresent()) {
+      wrongClockPressPausedFor = null; // This intervention supersedes the old admonishment pause.
       final Optional<BitboardPosition> committedReleasePosition = finalMoveCommitment != null
           ? Optional.of(finalMoveCommitment.position())
           : arbiter.findReleasedPieceCommitmentPosition(board, currentSequence);
@@ -238,6 +255,18 @@ public class GameSession {
     return Optional.empty();
   }
 
+  /**
+   * The arbiter weighs every event of a turn again when ruling on it, so the cost of a ruling grows with the square
+   * of the turn's length. No player comes near this number of piece movements in one turn (a long fumble has a few
+   * dozen); the limit keeps a scripted client from keeping the server busy with a single endless turn.
+   */
+  public static final int MAX_BOARD_EVENTS_PER_TURN = 500;
+
+  /** @return whether this turn holds as many board events as are recorded; further ones are refused. */
+  public synchronized boolean isTurnEventLimitReached() {
+    return currentSequence.getEvents().size() >= MAX_BOARD_EVENTS_PER_TURN;
+  }
+
   // ===== Clock press =====
 
   /**
@@ -261,11 +290,15 @@ public class GameSession {
     if (waitingForReady) {
       return ArbiterResponse.incompleteMove("The game is paused. Please wait until both players are ready.");
     }
-    if (restorationResumePending) {
-      resumeAfterRestorationDelay();
+    if (restorationResumePending && resumeAfterRestorationDelay()) {
+      resumedByClockPress = true;
     }
     if (clock.getRunningFor() == Side.NONE) {
+      noteToldToWaitForClock(side);
       return ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts.");
+    }
+    if (checkFlagFall().isPresent()) {
+      return ArbiterResponse.incompleteMove("Your time has expired.");
     }
 
     // Special case: must execute specified move (after rejected draw claim)
@@ -298,6 +331,9 @@ public class GameSession {
     if (side != board.getSideToMove()) {
       return Optional.empty();
     }
+    if (waitingForRestoration || waitingForReady || restorationResumePending || checkFlagFall().isPresent()) {
+      return Optional.empty();
+    }
     // Skip during the patient-loop recovery from a rejected draw claim — that path requires the
     // mustExecuteMove flow at clock press, not auto-end.
     if (mustExecuteMove != null) {
@@ -324,8 +360,8 @@ public class GameSession {
 
     // Touch-move check (also pure read). If the matched move would violate touch-move, leave
     // detection to the clock press so the existing arbiter feedback flow handles it.
-    final java.util.Optional<io.github.dlbbld.otbchess.touchmove.TouchMoveObligation> obligation = io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator
-        .findObligation(currentSequence, board);
+    final java.util.Optional<io.github.dlbbld.otbchess.touchmove.TouchMoveObligation> obligation = arbiter
+        .findBindingObligation(board, currentSequence);
     if (finalMoveCommitment == null && obligation.isPresent()
         && !io.github.dlbbld.otbchess.touchmove.TouchMoveEvaluator.satisfiesObligation(obligation.get(), matchedMove)) {
       return Optional.empty();
@@ -348,7 +384,6 @@ public class GameSession {
     }
 
     // Game-ending move: keep the move performed and finalize state.
-    clock.switchClock();
     drawOfferManager.clearOffer();
     endGame(ending.get());
     startNewTurn();
@@ -360,11 +395,14 @@ public class GameSession {
     response.restorePosition().ifPresent(target -> RestoreTargetInvariant.verify(board, target));
     switch (response.type()) {
       case MOVE_ACCEPTED -> {
-        // Perform the move on the internal board
+        // Validate the committed move before changing the clock. If time expired during
+        // evaluation, undo it so flag fall is adjudicated against the original board.
         applyCommittedMove(response.acceptedMove().get().moveSpecification());
-
-        // Switch the clock
-        clock.switchClock();
+        if (!clock.switchClock()) {
+          board.unmove();
+          checkFlagFall();
+          return ArbiterResponse.incompleteMove("Your time has expired.");
+        }
 
         // Clear draw offer unless we're keeping it (draw was just offered with this move)
         if (!keepDrawOffer) {
@@ -426,9 +464,13 @@ public class GameSession {
           .filter(lm -> lm.moveSpecification().equals(executedMove)).findFirst()
           .orElseThrow(() -> new IllegalStateException("Specified move is not in the legal move set"));
       applyCommittedMove(executedMove);
+      if (!clock.switchClock()) {
+        board.unmove();
+        checkFlagFall();
+        return ArbiterResponse.incompleteMove("Your time has expired.");
+      }
       mustExecuteMove = null;
       mustExecuteMoveSan = null;
-      clock.switchClock();
 
       final Optional<GameResult> ending = checkAutomaticEndings();
       if (ending.isPresent()) {
@@ -459,8 +501,27 @@ public class GameSession {
    * appropriate intervention type if the move is invalid (in which case the offer is dropped without penalty).
    */
   public synchronized ArbiterResponse offerDrawCorrectTime(Side side, BitboardPosition afterPosition) {
+    checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
+    }
+
+    // An offer that answers the opponent's acceptable offer is its acceptance, and a draw can be
+    // agreed at any time - also while the arbiter has stopped the clocks, exactly like Accept.
+    switch (answerOfferWithOffer(side)) {
+      case AGREED -> {
+        return ArbiterResponse.incompleteMove(DRAW_AGREEMENT_DESCRIPTION);
+      }
+      case TOO_EARLY -> {
+        return ArbiterResponse.incompleteMove(DRAW_TOO_EARLY);
+      }
+      default -> {
+        // no offer to answer: this is an offer of its own
+      }
+    }
+    final String pauseMessage = pauseMessage(side, "offering a draw");
+    if (pauseMessage != null) {
+      return ArbiterResponse.incompleteMove(pauseMessage);
     }
 
     // Validate the move first (no side effects on the move state — evaluateClockPress is
@@ -468,9 +529,10 @@ public class GameSession {
     final ArbiterResponse moveResponse = evaluateMove(afterPosition);
 
     if (moveResponse.type() != ArbiterResponseType.MOVE_ACCEPTED) {
-      // Move is not valid — drop any pending offer state and apply the standard intervention
-      // (illegal-move counter, restoration target, etc.) via handleArbiterResponse.
-      drawOfferManager.dropOfferDueToInvalidMove(side);
+      // Move is not valid — this offer is not registered, and the standard intervention applies
+      // (illegal-move counter, restoration target, etc.) via handleArbiterResponse. An offer that
+      // is already pending stays: the opponent's is not this player's to cancel, and an earlier
+      // one of their own cannot be withdrawn (FIDE 9.1.2.1) while it is on the opponent's screen.
       return handleArbiterResponse(moveResponse, side, false);
     }
 
@@ -498,8 +560,25 @@ public class GameSession {
    * @return the arbiter message (may be null if no penalty), and whether game is lost
    */
   public synchronized DrawOfferManager.DrawOfferResult offerDrawWrongTime(Side side) {
+    checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       return DrawOfferManager.DrawOfferResult.repeated("The game is not in progress.");
+    }
+
+    switch (answerOfferWithOffer(side)) {
+      case AGREED -> {
+        return DrawOfferManager.DrawOfferResult.drawAgreed();
+      }
+      case TOO_EARLY -> {
+        return DrawOfferManager.DrawOfferResult.repeated(DRAW_TOO_EARLY);
+      }
+      default -> {
+        // no offer to answer: this is an offer of its own
+      }
+    }
+    final String pauseMessage = pauseMessage(side, "offering a draw");
+    if (pauseMessage != null) {
+      return DrawOfferManager.DrawOfferResult.repeated(pauseMessage);
     }
 
     final boolean offererHasMove = side == board.getSideToMove();
@@ -510,6 +589,94 @@ public class GameSession {
           sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
     }
     return result;
+  }
+
+  /** What became of an offer that was made while the opponent's offer was on the table. */
+  private enum CounterOffer {
+    /** There was no offer of the opponent that could be accepted: the new offer stands for itself. */
+    NO_OFFER_TO_ANSWER,
+    /** The draw is agreed and the game has ended. */
+    AGREED,
+    /** The offer could be accepted, but not yet: FIDE 5.2.3. Nothing changed. */
+    TOO_EARLY
+  }
+
+  /**
+   * Both players want a draw: an offer made while the opponent's offer can still be accepted is the acceptance of
+   * that offer. Registering it as a new offer instead would replace the pending one and leave each player waiting
+   * for the other. An offer that can no longer be accepted (the recipient touched a piece or made the move) is not
+   * agreed this way; the new offer then simply takes its place.
+   */
+  private CounterOffer answerOfferWithOffer(Side side) {
+    if (!drawOfferManager.canAccept(side)) {
+      return CounterOffer.NO_OFFER_TO_ANSWER;
+    }
+    if (!haveBothPlayersMadeAMove()) {
+      return CounterOffer.TOO_EARLY;
+    }
+    agreeDraw(side);
+    return CounterOffer.AGREED;
+  }
+
+  /**
+   * FIDE 5.2.3: a game is drawn upon agreement "provided both players have made at least one move". A move made on
+   * the board counts although its clock press is still outstanding - that is the moment FIDE 9.1.2.1 asks the offer
+   * to be made at.
+   */
+  private boolean haveBothPlayersMadeAMove() {
+    return board.getPerformedMovesAsSan().size() + (finalMoveCommitment == null ? 0 : 1) >= 2;
+  }
+
+  /**
+   * Ends the game as a draw by agreement, accepted by {@code acceptingSide}. A move the offering player has made on
+   * the board and not yet completed with the clock belongs to the game (FIDE 9.1.2.1: the offer is made after the
+   * move and before the clock press): it is performed first, so that the game record ends with it.
+   */
+  private GameResult agreeDraw(Side acceptingSide) {
+    if (finalMoveCommitment != null && drawOfferManager.getOfferingSide() == board.getSideToMove()
+        && (mustExecuteMove == null || mustExecuteMove.equals(finalMoveCommitment.move().moveSpecification()))) {
+      board.move(finalMoveCommitment.move().moveSpecification());
+    }
+    terminationActor = acceptingSide; // the player who accepted the offer (for the personalised message)
+    final GameResult drawResult = new GameResult(GameResultType.DRAW_AGREEMENT, Side.NONE,
+        DRAW_AGREEMENT_DESCRIPTION);
+    endGame(drawResult);
+    return drawResult;
+  }
+
+  /**
+   * @return the refusal for an offer or claim made while the arbiter has stopped the clocks - a restoration pause or
+   *         the admonishment pause after a wrong clock press - or {@code null} when play is on
+   */
+  private String pauseMessage(Side side, String action) {
+    if (waitingForRestoration) {
+      return "The game is paused. Please restore the position before " + action + ".";
+    }
+    if (waitingForReady) {
+      return "The game is paused. Please wait until both players are ready.";
+    }
+    if (restorationResumePending || isWrongClockPressPause()) {
+      noteToldToWaitForClock(side);
+      return "The game is paused. Please wait until the clock restarts.";
+    }
+    return null;
+  }
+
+  /** Remembers who was told to wait for the restart after a wrong clock press: they are told when it comes. */
+  private void noteToldToWaitForClock(Side side) {
+    if (isWrongClockPressPause() && !restorationResumePending) {
+      toldToWaitForClock.add(side);
+    }
+  }
+
+  /** @return and clears whether the side was told, during the admonishment pause, to wait for the clock. */
+  public synchronized boolean consumeToldToWaitForClock(Side side) {
+    return toldToWaitForClock.remove(side);
+  }
+
+  /** The admonishment pause after a wrong clock press: the arbiter restarts the interrupted clock by itself. */
+  private boolean isWrongClockPressPause() {
+    return wrongClockPressPausedFor != null && clock.getRunningFor() == Side.NONE;
   }
 
   /**
@@ -527,19 +694,28 @@ public class GameSession {
    * @return the game result if accepted, empty if rejected. Check {@code getAcceptDrawRejectionMessage}.
    */
   public synchronized Optional<GameResult> acceptDraw(Side side) {
+    if (state != GameState.IN_PROGRESS || checkFlagFall().isPresent()) {
+      lastAcceptDrawRejection = "The game is not in progress.";
+      return Optional.empty();
+    }
     final Optional<String> rejection = drawOfferManager.acceptDraw(side);
     if (rejection.isPresent()) {
       this.lastAcceptDrawRejection = rejection.get();
       return Optional.empty();
     }
+    if (!haveBothPlayersMadeAMove()) {
+      // The offer itself stays on the table; it can be accepted once both players have moved.
+      this.lastAcceptDrawRejection = DRAW_TOO_EARLY;
+      return Optional.empty();
+    }
 
     this.lastAcceptDrawRejection = null;
-    terminationActor = side; // the player who accepted the offer (for the personalised message)
-    final GameResult drawResult = new GameResult(GameResultType.DRAW_AGREEMENT, Side.NONE,
-        "The game is drawn by agreement.");
-    endGame(drawResult);
-    return Optional.of(drawResult);
+    return Optional.of(agreeDraw(side));
   }
+
+  private static final String DRAW_AGREEMENT_DESCRIPTION = "The game is drawn by agreement.";
+  private static final String DRAW_TOO_EARLY = "A draw can be agreed only after both players have made at least"
+      + " one move (FIDE 5.2.3).";
 
   private String lastAcceptDrawRejection;
 
@@ -616,7 +792,9 @@ public class GameSession {
     // FIDE 9.5: a rejected claim is treated as a draw offer to the opponent. We register a
     // correct-time offer (the claimer is on the move) so it follows the standard accept /
     // reject / touch-piece-invalidation flow without going through the wrong-time escalation.
-    if (claimResult.convertsToDrawOffer()) {
+    // The same holds for this implied offer as for a spoken one: if the opponent's offer can still
+    // be accepted, both players want the draw and the game is drawn by agreement.
+    if (claimResult.convertsToDrawOffer() && answerOfferWithOffer(side) != CounterOffer.AGREED) {
       drawOfferManager.offerDrawCorrectTime(side, rejectedClaimDrawOfferMessage(type));
     }
 
@@ -648,8 +826,15 @@ public class GameSession {
   }
 
   private DrawClaimResult rejectClaimBeforeRuleMachinery(Side side) {
+    checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       return DrawClaimResult.error("You cannot claim a draw now.");
+    }
+    // While the arbiter has stopped the clocks nothing is adjudicated: like a draw offer, a claim made
+    // now is not considered at all - no penalty time, no converted offer, no step on a claim ladder.
+    final String pauseMessage = pauseMessage(side, "claiming a draw");
+    if (pauseMessage != null) {
+      return DrawClaimResult.paused(pauseMessage);
     }
     if (side != board.getSideToMove()) {
       // FIDE 9.2 / 9.3: a draw claim can only be made by the player whose turn it is. (Offering a
@@ -742,8 +927,17 @@ public class GameSession {
    * <p>
    * On a draw the player-facing message splits the two cases the adjudicator folds together: a material shortage versus
    * a position unwinnable despite sufficient material (see {@link #drawReason(Side)}).
+   *
+   * @return the result of the game, or {@code null} when the game has not started
    */
   public synchronized GameResult resign(Side side) {
+    checkFlagFall();
+    if (state == GameState.ENDED) {
+      return result;
+    }
+    if (state != GameState.IN_PROGRESS) {
+      return null; // no opponent has joined yet: there is no game to resign
+    }
     final Side opponent = side.getOppositeSide();
 
     if (Adjudicator.adjudicateResignationQuick(board, side) == AdjudicationResult.DRAW) {
@@ -813,6 +1007,12 @@ public class GameSession {
   private final Map<Side, Integer> wrongClockPressCounts = new EnumMap<>(Side.class);
   // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
   private Side wrongClockPressPausedFor;
+  private long wrongClockPauseId;
+  // Who was answered "wait until the clock restarts" during the current admonishment pause.
+  private final Set<Side> toldToWaitForClock = EnumSet.noneOf(Side.class);
+  /** What both players read when the arbiter restarts the clock, after a restoration and after this pause alike. */
+  public static final String CLOCK_RESTARTED = "Clock restarted. Game continues.";
+  private static final String WRONG_CLOCK_WARNING = " Warning: the next press of your opponent's clock loses the game.";
 
   /**
    * Outcome of a press of the opponent's clock lever.
@@ -823,8 +1023,17 @@ public class GameSession {
    * @param message      arbiter message for the offender ({@code null} for a no-op)
    * @param opponentInfo passive info for the opponent ({@code null} for a no-op and for the game-ending press, which
    *                     speaks through {@code gameEnded} instead)
+   * @param pauseId identifies this pause for its delayed callback; zero when no resume is scheduled
+   * @param warned              true for the second offense: the next one loses the game
+   * @param restartMessage      what the offender reads when the clock restarts ({@code null} without a pause)
+   * @param opponentRestartInfo the opponent's passive info once the clock has restarted ({@code null} without a pause)
    */
-  public record WrongClockPressOutcome(boolean offense, boolean gameLost, String message, String opponentInfo) {
+  public record WrongClockPressOutcome(boolean offense, boolean gameLost, String message, String opponentInfo,
+      long pauseId, boolean warned, String restartMessage, String opponentRestartInfo) {
+
+    private static WrongClockPressOutcome withoutPause(boolean offense, boolean gameLost) {
+      return new WrongClockPressOutcome(offense, gameLost, null, null, 0, false, null, null);
+    }
   }
 
   /**
@@ -832,29 +1041,34 @@ public class GameSession {
    * running (their lever up) — otherwise the lever is already down and nothing happens, exactly like a real clock.
    */
   public synchronized WrongClockPressOutcome pressOpponentClock(Side side) {
+    checkFlagFall();
     final Side opponent = side.getOppositeSide();
     if (state != GameState.IN_PROGRESS || clock.getRunningFor() != opponent) {
-      return new WrongClockPressOutcome(false, false, null, null);
+      return WrongClockPressOutcome.withoutPause(false, false);
     }
     final int count = wrongClockPressCounts.merge(side, 1, Integer::sum);
     if (count >= WRONG_CLOCK_PRESS_LIMIT) {
       terminationActor = side;
       endGame(new GameResult(GameResultType.WRONG_CLOCK_PRESS_GAME_LOST, opponent,
           sideName(side) + " loses the game by repeatedly pressing the opponent's clock."));
-      return new WrongClockPressOutcome(true, true, null, null);
+      return WrongClockPressOutcome.withoutPause(true, true);
     }
     clock.stopClock();
     wrongClockPressPausedFor = opponent;
+    wrongClockPauseId++;
+    toldToWaitForClock.clear();
     if (count == WRONG_CLOCK_PRESS_LIMIT - 1) {
+      final String warned = "Your opponent pressed your clock and has been warned: the next press loses them the game.";
       return new WrongClockPressOutcome(true, false,
           "Please do not press your opponent's clock. The game is paused and will continue shortly."
-              + " Warning: the next press of your opponent's clock loses the game.",
-          "Your opponent pressed your clock and has been warned: the next press loses them the game."
-              + " The game is paused; your clock will restart shortly.");
+              + WRONG_CLOCK_WARNING,
+          warned + " The game is paused; your clock will restart shortly.", wrongClockPauseId, true,
+          CLOCK_RESTARTED + WRONG_CLOCK_WARNING, warned + " Your clock has restarted.");
     }
     return new WrongClockPressOutcome(true, false,
         "Please do not press your opponent's clock. The game is paused and will continue shortly.",
-        "Your opponent pressed your clock. The game is paused; your clock will restart shortly.");
+        "Your opponent pressed your clock. The game is paused; your clock will restart shortly.", wrongClockPauseId,
+        false, CLOCK_RESTARTED, "Your opponent pressed your clock. Your clock has restarted.");
   }
 
   /**
@@ -864,7 +1078,17 @@ public class GameSession {
    * @return the side whose clock was restarted, or {@code null} when nothing happened
    */
   public synchronized Side resumeAfterWrongClockPress() {
-    if (state != GameState.IN_PROGRESS || wrongClockPressPausedFor == null) {
+    return resumeAfterWrongClockPress(wrongClockPauseId);
+  }
+
+  /** Resume only the pause this callback was scheduled for; never consume a newer pause. */
+  public synchronized Side resumeAfterWrongClockPress(long pauseId) {
+    if (pauseId != wrongClockPauseId) {
+      return null;
+    }
+    if (state != GameState.IN_PROGRESS || wrongClockPressPausedFor == null
+        || waitingForRestoration || waitingForReady || restorationResumePending
+        || wrongClockPressPausedFor != board.getSideToMove() || clock.getRunningFor() != Side.NONE) {
       wrongClockPressPausedFor = null;
       return null;
     }
@@ -881,9 +1105,15 @@ public class GameSession {
    * servers do: the leaver loses — unless the remaining player could not checkmate by any series of legal moves
    * (helpmate test via {@link Adjudicator}, QUICK variant like {@link #resign(Side)}), in which case it is a draw.
    *
-   * @return the game result, or {@code null} when there is nothing to adjudicate (game not running)
+   * <p>
+   * A clock that has run out but has not been adjudicated yet comes first, like for every other action that can decide
+   * the game: the game then ends on time inside this call and nothing is left to adjudicate here.
+   *
+   * @return the game result, or {@code null} when there is nothing to adjudicate (game not running, or decided by
+   *         the flag fall this call found - see {@link #getResult()})
    */
   public synchronized GameResult abandon(Side side) {
+    checkFlagFall();
     if (state != GameState.IN_PROGRESS) {
       // Never started (reaper territory) or already decided (e.g. flag fell while they were gone).
       return null;
@@ -908,7 +1138,9 @@ public class GameSession {
   // ===== Flag fall =====
 
   /**
-   * Checks for flag fall. Should be called periodically.
+   * Checks for flag fall. Called periodically, and first thing by every player action that can decide the game:
+   * the periodic check leaves up to a second in which an expired clock has not been adjudicated yet, and an action
+   * arriving in that gap must not outrank the flag fall.
    *
    * <p>
    * FIDE 6.9: a player who runs out of time loses unless the opponent could not checkmate by any series of legal moves,
@@ -1004,6 +1236,7 @@ public class GameSession {
   }
 
   private void startNewTurn() {
+    this.wrongClockPressPausedFor = null;
     this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
@@ -1019,8 +1252,21 @@ public class GameSession {
   }
 
   private void endGame(GameResult gameResult) {
+    if (state == GameState.ENDED) {
+      return;
+    }
     this.state = GameState.ENDED;
     this.result = gameResult;
+    this.endedAtMs = System.currentTimeMillis();
+    this.wrongClockPressPausedFor = null;
+    this.waitingForReady = false;
+    this.waitingForRestoration = false;
+    this.restorationResumePending = false;
+    // A move owed after a rejected draw claim is no longer owed: nothing may ask for it, or for a
+    // restoration towards it, once the game is over.
+    this.mustExecuteMove = null;
+    this.mustExecuteMoveSan = null;
+    drawOfferManager.clearOffer();
     this.clock.stopClock();
   }
 
@@ -1053,6 +1299,7 @@ public class GameSession {
    * A completed legal move is retained separately in finalMoveCommitment, so unrelated interventions cannot erase it.
    */
   public synchronized void enterWaitingForReady() {
+    this.wrongClockPressPausedFor = null;
     this.waitingForReady = true;
     this.whiteReady = false;
     this.blackReady = false;
@@ -1068,7 +1315,11 @@ public class GameSession {
   }
 
   public synchronized void enterWaitingForRestoration(BitboardPosition restorationTargetPosition) {
+    if (state == GameState.ENDED) {
+      return; // endGame cleared every pause; a finished game must not be paused again
+    }
     RestoreTargetInvariant.verify(board, restorationTargetPosition);
+    this.wrongClockPressPausedFor = null;
     this.waitingForRestoration = true;
     this.restorationResumePending = false;
     this.waitingForReady = false;
@@ -1083,8 +1334,14 @@ public class GameSession {
 
   /**
    * Marks the restore flow complete and either waits for ready confirmation or resumes later.
+   *
+   * @return whether a restoration was pending; false leaves the game untouched, so a request that arrives when no
+   *         restoration is asked for (a repeated click, a message from a modified client) cannot pause a running game
    */
-  public synchronized void completeRestoration() {
+  public synchronized boolean completeRestoration() {
+    if (state != GameState.IN_PROGRESS || !waitingForRestoration) {
+      return false;
+    }
     this.waitingForRestoration = false;
     // Preserve the FIDE 4.7 released-piece commitment when THIS restoration was caused by a
     // released-piece violation: the committed move must stay final across revert cycles until the
@@ -1102,16 +1359,29 @@ public class GameSession {
       this.restorationResumePending = false;
       this.waitingForReady = true;
     }
+    return true;
   }
 
   /**
    * Restarts the clock after an automatic restoration pause.
+   *
+   * @return whether this call restarted the clock; false when the pause is over already (the game ended, another
+   *         intervention took over, or a clock press resumed the game first)
    */
-  public synchronized void resumeAfterRestorationDelay() {
+  public synchronized boolean resumeAfterRestorationDelay() {
     if (state == GameState.IN_PROGRESS && restorationResumePending && !waitingForReady && !waitingForRestoration) {
       restorationResumePending = false;
       clock.startClock(board.getSideToMove());
+      return true;
     }
+    return false;
+  }
+
+  /** @return and clears whether a clock press ended the automatic restoration pause since the last call. */
+  public synchronized boolean consumeResumedByClockPress() {
+    final boolean resumed = resumedByClockPress;
+    resumedByClockPress = false;
+    return resumed;
   }
 
   /**
@@ -1188,10 +1458,41 @@ public class GameSession {
     return restorationFromReleasedPiece;
   }
 
+  /**
+   * @return whether the position the board is restored to is the player's completed move, so that a clock press on it
+   *         is accepted. Narrower than {@link #isRestorationFromReleasedPiece()}: a king released on its castling
+   *         square is a commitment too, but the rook still has to be moved, and a move owed after a rejected draw
+   *         claim is not replaced by another released move. Only this method may word a message as "your move is
+   *         final".
+   */
+  public synchronized boolean isRestoredMoveFinal() {
+    if (!restorationFromReleasedPiece) {
+      return false;
+    }
+    if (mustExecuteMove != null) {
+      return positionBeforeTurn.afterMove(mustExecuteMove, board.getSideToMove()).equals(restorationTargetPosition);
+    }
+    return finalMoveCommitment != null && finalMoveCommitment.position().equals(restorationTargetPosition);
+  }
+
   // ===== PGN export =====
 
+  /**
+   * The moves of the game in PGN movetext. The library ends a game it does not see decided on the board with the
+   * "unknown" marker {@code *}; once this game has a result, the marker is replaced by it.
+   */
   public synchronized String exportPgn() {
-    return PgnCreate.toPgnString(board);
+    final String pgn = PgnCreate.toPgnString(board);
+    final int marker = pgn.lastIndexOf('*');
+    if (state != GameState.ENDED || result == null || marker < 0) {
+      return pgn;
+    }
+    final String token = switch (result.winner()) {
+      case WHITE -> "1-0";
+      case BLACK -> "0-1";
+      default -> "1/2-1/2";
+    };
+    return pgn.substring(0, marker) + token + pgn.substring(marker + 1);
   }
 
   // ===== Getters =====
@@ -1202,6 +1503,14 @@ public class GameSession {
 
   public synchronized GameResult getResult() {
     return result;
+  }
+
+  public synchronized long getEndedAtMs() {
+    return endedAtMs;
+  }
+
+  public synchronized boolean isReady(Side side) {
+    return side == Side.WHITE ? whiteReady : blackReady;
   }
 
   /** The side that resigned, flagged, or accepted a draw (for the personalised end-of-game message). */

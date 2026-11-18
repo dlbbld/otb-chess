@@ -49,7 +49,7 @@ for (const attemptReplacementCastle of [false, true]) {
         await dragPiece(black, 'h8', 'f8');
         await pressClock(black);
         await expect(black.locator('#arbiterMessage')).toContainText('put the king back on f8');
-        await expect(black.locator('#arbiterMessage')).not.toContainText('please perform the castling move');
+        await expect(black.locator('#arbiterMessage')).not.toContainText('castling move');
         await expect(white.locator('#opponentInfoPanel')).toContainText('f8');
         await expect(white.locator('#arbiterMessage')).not.toContainText('Your turn');
         await clickRestore(black);

@@ -406,7 +406,7 @@ class TestGameSessionFlow {
         .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.D1, Piece.WHITE_KING).build();
     final ArbiterResponse touchMove = session.pressClockButton(Side.WHITE, afterKd1);
     assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, touchMove.type());
-    assertTrue(touchMove.message().contains("please perform the castling move"), touchMove.message());
+    assertTrue(touchMove.message().contains("please perform the queenside castling move"), touchMove.message());
 
     session.enterWaitingForRestoration(touchMove.restorePosition().orElse(beforeTurn));
     assertTrue(session.isRestoredPosition(beforeTurn));
