@@ -472,6 +472,26 @@ To match the experience of a real board, certain game-ending moves end the game 
    - **Auto-resume mode (default):** the clock resumes immediately; the player just plays.
    - **Manual mode:** both players see _"Are you ready to continue?"_ with a **Ready to continue** button. Both must click before the clock restarts.
 
+### Circles on the board
+
+With a ruling on a clock press the arbiter points at the squares it speaks of, by circles drawn on **both** boards in the style of Lichess (a ring just inside the square's edge, over the piece). Only the clear cases are marked.
+
+- **Green — the piece that must be moved or captured** (touch-move violation):
+  - own piece: the first touched piece that can move — not the pieces touched after it, and not a piece touched before it that has no legal move;
+  - opponent piece: the first touched opponent piece that can be captured;
+  - an own piece together with the opponent piece it can capture: both;
+  - king and rook touched for castling: both.
+- **Red — the illegal move**: its start and end square, when the board shows exactly one move — one own piece that left its square and stands on another one while nothing else changed (a pawn may stand on the last rank as the piece it was promoted to), or a castling attempt (the king's start square and the square the king was put on). An illegal position with several displaced pieces, and the clock pressed without a move, are not marked.
+
+How long they stay:
+
+- Green stays through the restoration, because the obligation does: until the move is accepted.
+- Red stays while the illegal move is on the board: until the position is restored. The illegal move that loses the game stays marked.
+- A new ruling on a clock press replaces the circles of the previous one. A press that is not ruled on (not the player's turn, a pause) and a press without a move leave them.
+- A rematch starts without circles. A page that reconnects is sent the current ones.
+
+The server decides the circles (`GameSession.getBoardMarks`, from `ArbiterResponse.boardMarks`) and sends every change once to both players as `boardMarks`; the client only draws them (`ChessBoard.setMarks`).
+
 ### Touch-move violation vs. illegal move
 
 - **Touch-move violation** -> no penalty, does not count toward the illegal move rule.
@@ -803,7 +823,7 @@ Tracked in **Spec-driven implementation follow-ups** below.
 
 ### Outbound (server -> client)
 
-`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawOfferExpired` (to a player whose own offer replaced an outdated offer of the opponent: close the panel), `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown), `sessionReplaced` (to a window whose seat was taken over by another window of the same player, see *One connection per seat*), `clockRestarted` (the pause after a wrong clock press is over; only the arbiter message changes, with `style: "error"` when it repeats the warning).
+`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawOfferExpired` (to a player whose own offer replaced an outdated offer of the opponent: close the panel), `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown), `sessionReplaced` (to a window whose seat was taken over by another window of the same player, see *One connection per seat*), `clockRestarted` (the pause after a wrong clock press is over; only the arbiter message changes, with `style: "error"` when it repeats the warning), `boardMarks` (`marks`: list of `{square, color}` with `color` `green` or `red`; the complete set of circles on the board, an empty list removes them — see *Circles on the board*).
 
 #### Guards on what a connection may do
 

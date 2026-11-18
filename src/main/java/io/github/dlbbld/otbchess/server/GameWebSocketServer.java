@@ -6,6 +6,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.SecureRandom;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
@@ -32,6 +34,7 @@ import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
+import io.github.dlbbld.otbchess.arbiter.BoardMark;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
@@ -743,6 +746,7 @@ public class GameWebSocketServer extends WebSocketServer {
       final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, autoEndPosition);
       if (autoEndResponse.isPresent()) {
         sendArbiterResponse(room, side, autoEndResponse.get());
+        sendBoardMarksIfChanged(room);
         sendClockUpdate(room);
       }
       checkGameEnded(room);
@@ -780,6 +784,7 @@ public class GameWebSocketServer extends WebSocketServer {
     sendArbiterResponse(room, side, response);
 
     sendOpponentArbiterNotification(room, side, response);
+    sendBoardMarksIfChanged(room);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       sendClockUpdate(room);
@@ -1374,6 +1379,7 @@ public class GameWebSocketServer extends WebSocketServer {
           : "Position restored. Are you ready to continue?");
       room.sendToBoth(GSON.toJson(msg));
     }
+    sendBoardMarksIfChanged(room);
 
     if (room.getSession().isAutoResumeAfterRestore()) {
       clockExecutor.schedule(() -> resumeAfterRestorationDelay(room), 1500, TimeUnit.MILLISECONDS);
@@ -1544,6 +1550,28 @@ public class GameWebSocketServer extends WebSocketServer {
     }
   }
 
+  /**
+   * Sends both boards the squares the arbiter points at, when they changed: after a ruling on a clock press, after
+   * the restoration that takes an illegal move off the board, and when an accepted move ends the turn.
+   */
+  private void sendBoardMarksIfChanged(GameRoom room) {
+    room.takeChangedBoardMarks().ifPresent(marks -> room.sendToBoth(GSON.toJson(boardMarksMessage(marks))));
+  }
+
+  private static JsonObject boardMarksMessage(List<BoardMark> marks) {
+    final JsonArray squares = new JsonArray();
+    for (final BoardMark mark : marks) {
+      final JsonObject square = new JsonObject();
+      square.addProperty("square", mark.square().getName());
+      square.addProperty("color", mark.color().name().toLowerCase());
+      squares.add(square);
+    }
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "boardMarks");
+    msg.add("marks", squares);
+    return msg;
+  }
+
   private void sendRestoreInstructions(GameRoom room, Side side) {
     sendRestoreInstructions(room, side, "Please restore the position to the beginning of the move.", "info");
   }
@@ -1692,6 +1720,11 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     send(conn, msg);
 
+    // The circles of the arbiter's last ruling are part of what the board shows: a page that comes
+    // back has none, so it is sent the current ones.
+    if (!session.getBoardMarks().isEmpty()) {
+      room.sendToSide(side, GSON.toJson(boardMarksMessage(session.getBoardMarks())));
+    }
     sendRecoveryState(room, side, true);
     sendRecoveryState(room, side.getOppositeSide(), false);
 

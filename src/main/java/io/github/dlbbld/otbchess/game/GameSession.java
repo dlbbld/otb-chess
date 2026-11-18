@@ -5,6 +5,7 @@ package io.github.dlbbld.otbchess.game;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -19,6 +20,7 @@ import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.ashlarchess.pgn.PgnCreate;
 import io.github.dlbbld.otbchess.arbiter.ArbiterEngine;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
+import io.github.dlbbld.otbchess.arbiter.BoardMark;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse.IllegalMoveDetail;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.arbiter.MidPlayValidator;
@@ -277,6 +279,25 @@ public class GameSession {
    * @return the arbiter response
    */
   public synchronized ArbiterResponse pressClockButton(Side side, BitboardPosition afterPosition) {
+    final ArbiterResponse response = ruleOnClockPress(side, afterPosition);
+    switch (response.type()) {
+      // A ruling on the move replaces what the arbiter pointed at before - also with nothing.
+      case TOUCH_MOVE_VIOLATION, RELEASED_PIECE_VIOLATION -> boardMarks = response.boardMarks();
+      case ILLEGAL_MOVE, ILLEGAL_MOVE_GAME_LOST -> {
+        // A press without a move (FIDE 7.5.3) changed nothing on the board: what was pointed at stays.
+        if (!response.illegalMoveDetail().map(detail -> detail.noMoveMade()).orElse(false)) {
+          boardMarks = response.boardMarks();
+        }
+      }
+      // An accepted move has started a new turn, which cleared the marks; a press that is not ruled on
+      // (not the player's turn, a pause) leaves them as they are.
+      default -> {
+      }
+    }
+    return response;
+  }
+
+  private ArbiterResponse ruleOnClockPress(Side side, BitboardPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
@@ -1008,6 +1029,8 @@ public class GameSession {
   // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
   private Side wrongClockPressPausedFor;
   private long wrongClockPauseId;
+  // The squares the arbiter points at since its last ruling on a clock press (circles on both boards).
+  private List<BoardMark> boardMarks = List.of();
   // Who was answered "wait until the clock restarts" during the current admonishment pause.
   private final Set<Side> toldToWaitForClock = EnumSet.noneOf(Side.class);
   /** What both players read when the arbiter restarts the clock, after a restoration and after this pause alike. */
@@ -1236,6 +1259,7 @@ public class GameSession {
   }
 
   private void startNewTurn() {
+    this.boardMarks = List.of();
     this.wrongClockPressPausedFor = null;
     this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
@@ -1343,6 +1367,9 @@ public class GameSession {
       return false;
     }
     this.waitingForRestoration = false;
+    // The illegal move is off the board again, so its squares are no longer pointed at. A touched piece
+    // stays marked: the obligation holds until the move is made.
+    this.boardMarks = boardMarks.stream().filter(mark -> mark.color() != BoardMark.Color.RED).toList();
     // Preserve the FIDE 4.7 released-piece commitment when THIS restoration was caused by a
     // released-piece violation: the committed move must stay final across revert cycles until the
     // player actually plays it and presses the clock. Illegal/touch-move restorations still reset
@@ -1375,6 +1402,11 @@ public class GameSession {
       return true;
     }
     return false;
+  }
+
+  /** @return the squares the arbiter currently points at, for both boards; empty when there are none */
+  public synchronized List<BoardMark> getBoardMarks() {
+    return boardMarks;
   }
 
   /** @return and clears whether a clock press ended the automatic restoration pause since the last call. */

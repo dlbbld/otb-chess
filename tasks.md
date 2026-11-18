@@ -8,6 +8,21 @@ release's tasks until it ships.
 - [x] Development continues on `further-improvements`, created from the released `main` (`9436251`).
   `start.bat` serves this branch by default; `TestWindowsLauncher`, the README, `RELEASING.md` and the agent
   instructions name it. Not run: the Windows-only launcher tests (they need the Windows machine).
+- [x] **Circles for the arbiter's rulings (2026-11-18).** With a ruling on a clock press, both boards circle the
+  squares it speaks of, in the style of Lichess. Green: the piece a touch obliges the player to move or capture
+  (the first touched own piece that can move; the first touched opponent piece that can be captured; own piece
+  and its capture together; king and rook for castling). Red: start and end square of an illegal move, when the
+  board shows exactly one move or a castling attempt. Green stays until the move is accepted, red until the
+  position is restored; a new ruling replaces them. `ArbiterResponse.boardMarks`, `ArbiterEngine.illegalMoveSquares`,
+  `GameSession.getBoardMarks`, message `boardMarks`, `ChessBoard.setMarks`.
+- [x] Decisions taken, for review: the circles are on both boards; own piece and the piece it must capture are
+  both marked, and so are king and rook for a castling obligation; a castling attempt is marked on the king's
+  squares; a reconnecting page gets the current circles; released-piece rulings and a moved opponent piece are
+  not marked.
+- [x] Tests: `TestBoardMarks` (15), `TestIllegalMoveSquares` (7), `TestBoardMarksServer` (5),
+  `board-marks.spec.ts` (4). Verification on macOS: `mvn -q package` runs 435 Java tests, 0 failures, 4 skipped
+  (Windows-only launcher tests); `CI=1 npx playwright test --retries=0`: 209 passed, 1 skipped (Windows-only);
+  `RuleFuzzer` 20,000 games, 0 findings; `TouchMoveOracle` 33,793 cases, 0 differences.
 
 ## 0.2.0 — Game Lifecycle and Draw Guards
 

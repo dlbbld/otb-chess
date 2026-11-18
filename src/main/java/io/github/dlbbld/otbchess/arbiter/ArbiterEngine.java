@@ -744,15 +744,62 @@ public class ArbiterEngine {
     illegalMoveTracker.recordIllegalMove(sideToMove);
     final Optional<IllegalMoveReason> reason = explainSimpleIllegalMove(board, afterPosition, sequence);
     final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
+    final List<Square> moveSquares = illegalMoveSquares(board, afterPosition, sequence);
     final IllegalMoveDetail detail = new IllegalMoveDetail(reason.map(IllegalMoveReason::playerReason),
         reason.map(IllegalMoveReason::opponentReason), sideToMove, count, illegalMoveTracker.getMaxIllegalMoves(),
-        illegalMoveTracker.isUnlimited(), false);
+        illegalMoveTracker.isUnlimited(), false, moveSquares.isEmpty() ? Square.NONE : moveSquares.get(0),
+        moveSquares.isEmpty() ? Square.NONE : moveSquares.get(1));
 
     if (illegalMoveTracker.isGameLost(sideToMove)) {
       return ArbiterResponse.illegalMoveGameLost(detail);
     }
 
     return ArbiterResponse.illegalMove(detail);
+  }
+
+  /**
+   * Where the illegal move started and ended, for the circles on the board - only when the board shows exactly one
+   * move: a castling attempt (the king's squares), or one own piece that left its square and stands on another one
+   * while nothing else changed. A pawn may stand there as the piece it was promoted to. Several displaced pieces
+   * give no squares: the arbiter does not guess which of them was "the move".
+   *
+   * @return the start and the end square, or an empty list
+   */
+  static List<Square> illegalMoveSquares(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
+    final Side side = board.getSideToMove();
+    final Optional<CastlingAttemptDetector.Attempt> castling = CastlingAttemptDetector.findPhysicalAttempt(board,
+        afterPosition, sequence.getEvents());
+    if (castling.isPresent()) {
+      // The square the king was actually put on, which need not be the castling square.
+      return List.of(castling.get().moveSpecification().castlingMove().kingFromSquare(side),
+          castling.get().kingReleaseSquare());
+    }
+    final BitboardPosition before = board.getBitboardPosition();
+    final List<Square> changed = new ArrayList<>();
+    for (final Square square : Square.values()) {
+      if (square != Square.NONE && before.get(square) != afterPosition.get(square)) {
+        changed.add(square);
+      }
+    }
+    if (changed.size() != 2) {
+      return List.of();
+    }
+    for (final Square from : changed) {
+      final Square to = changed.get(0) == from ? changed.get(1) : changed.get(0);
+      final Piece moved = before.get(from);
+      final Piece arrived = afterPosition.get(to);
+      if (moved == Piece.NONE || moved.getSide() != side || afterPosition.get(from) != Piece.NONE
+          || arrived == Piece.NONE || arrived.getSide() != side) {
+        continue;
+      }
+      final int lastRank = side == Side.WHITE ? 8 : 1;
+      final boolean promoted = moved.getPieceType() == PieceType.PAWN && to.getRank().getNumber() == lastRank
+          && arrived.getPieceType() != PieceType.PAWN && arrived.getPieceType() != PieceType.KING;
+      if (arrived == moved || promoted) {
+        return List.of(from, to);
+      }
+    }
+    return List.of();
   }
 
   /**

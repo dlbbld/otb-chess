@@ -46,7 +46,14 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
    *                   move" instead of "restore the position", and the server skips the restoration flow.
    */
   public record IllegalMoveDetail(Optional<String> playerReason, Optional<String> opponentReason, Side side, int count,
-      int maxIllegalMoves, boolean unlimited, boolean noMoveMade) {
+      int maxIllegalMoves, boolean unlimited, boolean noMoveMade, Square fromSquare, Square toSquare) {
+
+    /** An illegal move without one clear start and end square, so nothing to point at on the board. */
+    public IllegalMoveDetail(Optional<String> playerReason, Optional<String> opponentReason, Side side, int count,
+        int maxIllegalMoves, boolean unlimited, boolean noMoveMade) {
+      this(playerReason, opponentReason, side, count, maxIllegalMoves, unlimited, noMoveMade, Square.NONE,
+          Square.NONE);
+    }
 
     String playerReasonPrefix() {
       if (playerReason.isPresent() && playerReason.get().startsWith("because ")) {
@@ -102,6 +109,30 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
    * a legal rook move, the move is fixed as that rook move and the later king displacement must be restored.
    */
   public record RookFirstCastlingContext(Piece piece, Square rookFrom, Square rookTo, Square kingFrom) {
+  }
+
+  /**
+   * The squares this ruling points at, in the clear cases only. A touch-move ruling marks green what the binding
+   * touch obliges the player to move or capture - the evaluator has already picked the first touched piece that can
+   * move, or the first touched opponent piece that can be captured. An illegal move marks red its start and end
+   * square when the board shows exactly one such move. Everything else marks nothing.
+   */
+  public List<BoardMark> boardMarks() {
+    if (obligation.isPresent()) {
+      final TouchMoveObligation touch = obligation.get();
+      return switch (touch.type()) {
+        case OWN_PIECE, OPPONENT_PIECE -> List.of(BoardMark.green(touch.square()));
+        case SPECIFIC_CAPTURE -> List.of(BoardMark.green(touch.square()), BoardMark.green(touch.toSquare()));
+        case CASTLING -> List.of(BoardMark.green(touch.square()),
+            BoardMark.green(touch.castlingMove().rookFromSquare(touch.piece().getSide())));
+      };
+    }
+    if (illegalMoveDetail.isPresent() && illegalMoveDetail.get().fromSquare() != Square.NONE
+        && illegalMoveDetail.get().toSquare() != Square.NONE) {
+      return List.of(BoardMark.red(illegalMoveDetail.get().fromSquare()),
+          BoardMark.red(illegalMoveDetail.get().toSquare()));
+    }
+    return List.of();
   }
 
   public static ArbiterResponse moveAccepted(LegalMove move) {
