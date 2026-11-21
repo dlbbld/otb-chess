@@ -205,6 +205,50 @@ class TestBoardMarksServer {
   }
 
   @Test
+  void theIllegalMoveShownWithADrawOfferIsSentToBothBoards() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black, 2);
+    drag(white, "WHITE_KNIGHT", "b1", "b3");
+    final int before = white.messages.size();
+
+    final JsonObject offer = new JsonObject();
+    offer.addProperty("type", "offerDraw");
+    offer.add("boardState", GSON.toJsonTree(board));
+    server.onMessage(white.socket, offer.toString());
+
+    assertEquals(List.of("illegal_move", "boardMarks", "restoreRequired"),
+        white.types().subList(before, white.messages.size()));
+    assertEquals(List.of("b1:red", "b3:red"), white.marks());
+    assertEquals(List.of("b1:red", "b3:red"), black.marks());
+    assertEquals(0, black.count("drawOffered"), "the offer came with an illegal move: there is none");
+
+    revert(white, id);
+    assertEquals(List.of(), white.marks());
+    assertEquals(List.of(), black.marks());
+  }
+
+  @Test
+  void theCirclesAreTakenOffBothBoardsWhenTheGameEndsAnotherWay() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black, 2);
+    click(white, "WHITE_KNIGHT", "g1");
+    drag(white, "WHITE_PAWN", "e2", "e4");
+    clock(white);
+    revert(white, id);
+    assertEquals(List.of("g1:green"), black.marks());
+
+    send(white, "resign");
+
+    for (final Client client : new Client[] { white, black }) {
+      assertEquals("RESIGNATION", client.last("gameEnded").get("resultType").getAsString());
+      assertEquals(List.of(), client.marks());
+      assertEquals(2, client.count("boardMarks"));
+    }
+  }
+
+  @Test
   void aPlayerWhoComesBackIsSentTheCurrentMarks() throws Exception {
     final var white = new Client();
     final var black = new Client();

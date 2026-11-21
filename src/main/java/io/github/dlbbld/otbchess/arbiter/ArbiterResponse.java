@@ -8,6 +8,7 @@ import java.util.Optional;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.enums.CastlingMove;
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
+import io.github.dlbbld.ashlarchess.board.enums.PieceType;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.board.LegalMove;
@@ -123,7 +124,7 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
       return switch (touch.type()) {
         case OWN_PIECE, OPPONENT_PIECE -> List.of(BoardMark.green(touch.square()));
         case SPECIFIC_CAPTURE -> List.of(BoardMark.green(touch.square()), BoardMark.green(touch.toSquare()));
-        case CASTLING -> List.of(BoardMark.green(touch.square()),
+        case CASTLING -> List.of(BoardMark.green(castlingKingSquare(touch)),
             BoardMark.green(touch.castlingMove().rookFromSquare(touch.piece().getSide())));
       };
     }
@@ -133,6 +134,18 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
           BoardMark.red(illegalMoveDetail.get().toSquare()));
     }
     return List.of();
+  }
+
+  /**
+   * Where the king that has to castle stands once the board is as this ruling asks for: on its castling square when
+   * it was put there already and only the rook is still to be moved, on its own square otherwise.
+   */
+  private Square castlingKingSquare(TouchMoveObligation touch) {
+    final Side side = touch.piece().getSide();
+    final Square castlingSquare = touch.castlingMove().kingToSquare(side);
+    final boolean kingHasCastled = restorePosition
+        .map(position -> position.get(castlingSquare) == Piece.of(side, PieceType.KING)).orElse(false);
+    return kingHasCastled ? castlingSquare : touch.square();
   }
 
   public static ArbiterResponse moveAccepted(LegalMove move) {

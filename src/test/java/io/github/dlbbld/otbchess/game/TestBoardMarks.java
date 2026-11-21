@@ -194,6 +194,22 @@ class TestBoardMarks {
     assertEquals(green(Square.E1, Square.A1), session.getBoardMarks());
   }
 
+  @Test
+  void aKingThatStandsOnItsCastlingSquareAlreadyIsMarkedThere() {
+    final var session = session(BOTH_CASTLINGS);
+    click(session, Piece.WHITE_KING, Square.E1);
+    click(session, Piece.WHITE_ROOK, Square.H1);
+    drag(session, Piece.WHITE_KING, Square.E1, Square.G1);
+
+    final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KING, Square.E1, Square.G1));
+
+    // Only the rook is still to be moved: the king is not put back, and e1 is empty.
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, ruling.type());
+    assertEquals(Piece.WHITE_KING, ruling.restorePosition().orElseThrow().get(Square.G1));
+    assertEquals(green(Square.G1, Square.H1), session.getBoardMarks());
+  }
+
   // ----- red: the illegal move -----
 
   @Test
@@ -254,23 +270,147 @@ class TestBoardMarks {
     assertEquals(red(Square.B1, Square.B3), session.getBoardMarks());
   }
 
-  // ----- what replaces the marks and what does not -----
-
   @Test
-  void aNewRulingReplacesTheMarksOfTheOldOne() {
+  void theTouchedPieceStaysMarkedThroughAnIllegalMoveOfAnotherPiece() {
     final var session = session(null);
     click(session, Piece.WHITE_KNIGHT, Square.G1);
     revertAndResume(session, pawnToE4AndClock(session));
     assertEquals(green(Square.G1), session.getBoardMarks());
 
-    // The bound knight is now moved illegally.
+    drag(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3);
+    final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3));
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, ruling.type());
+    assertEquals(List.of(BoardMark.green(Square.G1), BoardMark.red(Square.B1), BoardMark.red(Square.B3)),
+        session.getBoardMarks());
+
+    revertAndResume(session, ruling);
+    assertEquals(green(Square.G1), session.getBoardMarks());
+  }
+
+  @Test
+  void anIllegalMoveOfTheTouchedPieceCoversItsCircleUntilThePositionIsRestored() {
+    final var session = session(null);
+    click(session, Piece.WHITE_KNIGHT, Square.G1);
+    revertAndResume(session, pawnToE4AndClock(session));
+
+    // The bound knight is now moved illegally: one circle per square, and red is the newer ruling.
     drag(session, Piece.WHITE_KNIGHT, Square.G1, Square.G3);
     final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
         moved(session, Piece.WHITE_KNIGHT, Square.G1, Square.G3));
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, ruling.type());
     assertEquals(red(Square.G1, Square.G3), session.getBoardMarks());
+
+    // The knight is back on g1 and still has to move - a pawn move is ruled on as before.
+    revertAndResume(session, ruling);
+    assertEquals(green(Square.G1), session.getBoardMarks());
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, pawnToE4AndClock(session).type());
+    assertEquals(green(Square.G1), session.getBoardMarks());
   }
+
+  // ----- the move shown with a draw offer -----
+
+  @Test
+  void anIllegalMoveShownWithADrawOfferIsMarkedLikeOneShownWithAClockPress() {
+    final var session = session(null);
+    drag(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3);
+
+    final ArbiterResponse ruling = session.offerDrawCorrectTime(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3));
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, ruling.type());
+    assertEquals(red(Square.B1, Square.B3), session.getBoardMarks());
+    revertAndResume(session, ruling);
+    assertEquals(List.of(), session.getBoardMarks());
+  }
+
+  @Test
+  void aTouchMoveRulingOnADrawOfferIsMarkedToo() {
+    final var session = session(null);
+    click(session, Piece.WHITE_KNIGHT, Square.G1);
+    drag(session, Piece.WHITE_PAWN, Square.E2, Square.E4);
+
+    final ArbiterResponse ruling = session.offerDrawCorrectTime(Side.WHITE,
+        moved(session, Piece.WHITE_PAWN, Square.E2, Square.E4));
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, ruling.type());
+    assertEquals(green(Square.G1), session.getBoardMarks());
+  }
+
+  @Test
+  void anIllegalMoveOfTheTouchedPieceShownWithADrawOfferCoversItsCircleToo() {
+    final var session = session(null);
+    click(session, Piece.WHITE_KNIGHT, Square.G1);
+    revertAndResume(session, pawnToE4AndClock(session));
+    assertEquals(green(Square.G1), session.getBoardMarks());
+
+    drag(session, Piece.WHITE_KNIGHT, Square.G1, Square.G3);
+    final ArbiterResponse ruling = session.offerDrawCorrectTime(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.G1, Square.G3));
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, ruling.type());
+    assertEquals(red(Square.G1, Square.G3), session.getBoardMarks());
+    revertAndResume(session, ruling);
+    assertEquals(green(Square.G1), session.getBoardMarks());
+  }
+
+  @Test
+  void aDrawOfferWithALegalMoveMarksNothing() {
+    final var session = session(null);
+    drag(session, Piece.WHITE_PAWN, Square.E2, Square.E4);
+
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, session
+        .offerDrawCorrectTime(Side.WHITE, moved(session, Piece.WHITE_PAWN, Square.E2, Square.E4)).type());
+    assertEquals(List.of(), session.getBoardMarks());
+  }
+
+  // ----- the end of the game -----
+
+  @Test
+  void aGameThatEndsAnotherWayTakesTheTouchedPiecesCircleOff() {
+    final var session = session(null);
+    click(session, Piece.WHITE_KNIGHT, Square.G1);
+    revertAndResume(session, pawnToE4AndClock(session));
+    assertEquals(green(Square.G1), session.getBoardMarks());
+
+    session.resign(Side.WHITE);
+
+    assertEquals(GameState.ENDED, session.getState());
+    assertEquals(List.of(), session.getBoardMarks());
+  }
+
+  @Test
+  void aGameThatEndsWhileAnIllegalMoveIsOnTheBoardTakesItsCirclesOff() {
+    final var session = session(null);
+    drag(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3);
+    final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3));
+    session.enterWaitingForRestoration(ruling.restorePosition().orElse(session.getPositionBeforeTurn()));
+    assertEquals(red(Square.B1, Square.B3), session.getBoardMarks());
+
+    session.resign(Side.BLACK);
+
+    assertEquals(List.of(), session.getBoardMarks());
+  }
+
+  @Test
+  void theIllegalMoveThatLosesTheGameIsTheOnlyThingMarkedAfterIt() {
+    final var session = new GameSession(new TimeControl(60000, 0), 1, true);
+    session.startGame();
+    click(session, Piece.WHITE_KNIGHT, Square.G1);
+    revertAndResume(session, pawnToE4AndClock(session));
+    drag(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3);
+
+    final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3));
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, ruling.type());
+    assertEquals(red(Square.B1, Square.B3), session.getBoardMarks(), "no move is owed any more");
+  }
+
+  // ----- what leaves the marks as they are -----
 
   @Test
   void aClockPressWithoutAMoveAndAPressThatIsNotRuledOnLeaveTheMarks() {

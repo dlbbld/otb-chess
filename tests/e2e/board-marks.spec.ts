@@ -1,5 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
-import { startTwoPlayerGame, clickRestore, expectGameResumed, TwoPlayerGame } from './helpers/app';
+import {
+  startTwoPlayerGame, clickRestore, expectGameResumed, expectGameResult, offerDraw, resign, TwoPlayerGame,
+} from './helpers/app';
 import { clickSquare, dragPiece, expectPiece, flipBoard, pressClock, pressOwnClock } from './helpers/board';
 
 // The arbiter's circles: with a ruling on a clock press, the piece a touch obliges the player to move or
@@ -14,6 +16,7 @@ test.afterEach(async () => {
 const arbiter = (page: Page) => page.locator('#arbiterMessage');
 /** After 1. e4 d5: White can capture on d5. */
 const CAPTURE_ON_D5 = 'rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
+const BOTH_CASTLINGS = 'r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1';
 
 /** The circled squares of a board, as "square:colour", in alphabetical order. */
 const marks = (page: Page) => page.evaluate(() =>
@@ -124,5 +127,170 @@ test('an illegal move with several displaced pieces is not circled', async ({ br
 
   await expect(arbiter(white)).toContainText('Illegal move');
   await expect(black.locator('#opponentInfoPanel')).toBeVisible();
+  for (const page of [white, black]) await expectMarks(page, []);
+});
+
+test('an own piece and the opponent piece it can capture are both circled green', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: CAPTURE_ON_D5 });
+  const { white, black } = game;
+
+  await clickSquare(white, 'e4');
+  await clickSquare(white, 'd5');
+  await dragPiece(white, 'g1', 'f3');
+  await pressOwnClock(white);
+
+  await expect(arbiter(white)).toContainText('d5');
+  for (const page of [white, black]) await expectMarks(page, ['d5:green', 'e4:green']);
+});
+
+test('king and rook touched for castling are circled where they stand', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: BOTH_CASTLINGS });
+  const { white, black } = game;
+
+  // The king is put on the other side than the rook that was touched: it has to go back to e1.
+  await clickSquare(white, 'e1');
+  await clickSquare(white, 'a1');
+  await dragPiece(white, 'e1', 'g1');
+  await pressClock(white);
+
+  await expect(arbiter(white)).toContainText('queenside');
+  for (const page of [white, black]) await expectMarks(page, ['a1:green', 'e1:green']);
+});
+
+test('a king that was put on its castling square is circled there, not on the square it left', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: BOTH_CASTLINGS });
+  const { white, black } = game;
+
+  // King and rook touched, the king put on g1, the rook forgotten: only the rook is still to be moved.
+  await clickSquare(white, 'e1');
+  await clickSquare(white, 'h1');
+  await dragPiece(white, 'e1', 'g1');
+  await pressClock(white);
+
+  await expect(arbiter(white)).toContainText('castl');
+  for (const page of [white, black]) {
+    await expectPiece(page, 'g1', 'WHITE_KING');
+    await expectMarks(page, ['g1:green', 'h1:green']);
+  }
+
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+  await expect(arbiter(black)).toContainText('Your turn');
+  for (const page of [white, black]) await expectMarks(page, []);
+});
+
+test('the green circle of a touched piece outlives an illegal move made after it', async ({ browser }) => {
+  // Two illegal moves follow: the limit is raised so that the second one does not end the game.
+  game = await startTwoPlayerGame(browser, { maxIllegal: 5 });
+  const { white, black } = game;
+
+  await clickSquare(white, 'g1');
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  for (const page of [white, black]) await expectMarks(page, ['g1:green']);
+  await clickRestore(white);
+  await expectGameResumed(white);
+
+  // The bound knight is moved illegally: red is over the green circle on g1 while the move is on the board.
+  await dragPiece(white, 'g1', 'g3');
+  await pressClock(white);
+  await expect(arbiter(white)).toContainText('Illegal move');
+  for (const page of [white, black]) await expectMarks(page, ['g1:red', 'g3:red']);
+
+  // Back on g1 the knight still has to move: its circle is there again, on both boards.
+  await clickRestore(white);
+  await expectPiece(black, 'g1', 'WHITE_KNIGHT');
+  for (const page of [white, black]) await expectMarks(page, ['g1:green']);
+
+  // An illegal move of another piece leaves the green circle beside the red ones.
+  await expectGameResumed(white);
+  await dragPiece(white, 'b1', 'b3');
+  await pressClock(white);
+  await expect(arbiter(white)).toContainText('Illegal move');
+  for (const page of [white, black]) await expectMarks(page, ['b1:red', 'b3:red', 'g1:green']);
+});
+
+test('an illegal move shown with a draw offer is circled red like one shown with a clock press', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'b1', 'b3');
+  await offerDraw(white);
+
+  await expect(arbiter(white)).toContainText('Illegal move');
+  for (const page of [white, black]) await expectMarks(page, ['b1:red', 'b3:red']);
+
+  await clickRestore(white);
+  await expectGameResumed(white);
+  for (const page of [white, black]) await expectMarks(page, []);
+});
+
+test('an illegal move of the touched piece shown with a draw offer is circled red, then green again', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // Touch g1, play e2-e4, press the clock and revert.
+  await clickSquare(white, 'g1');
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  await clickRestore(white);
+  await expectGameResumed(white);
+  for (const page of [white, black]) await expectMarks(page, ['g1:green']);
+
+  // Play g1-g3 and offer a draw: the arbiter orders a revert, and the boards show what it speaks of.
+  await dragPiece(white, 'g1', 'g3');
+  await offerDraw(white);
+  await expect(arbiter(white)).toContainText('Illegal move');
+  for (const page of [white, black]) await expectMarks(page, ['g1:red', 'g3:red']);
+
+  await clickRestore(white);
+  await expectPiece(black, 'g1', 'WHITE_KNIGHT');
+  for (const page of [white, black]) await expectMarks(page, ['g1:green']);
+});
+
+test('a touch-move ruling on a draw offer circles the touched piece green', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await clickSquare(white, 'g1');
+  await dragPiece(white, 'e2', 'e4');
+  await offerDraw(white);
+
+  await expect(arbiter(white)).toContainText('knight on g1');
+  for (const page of [white, black]) await expectMarks(page, ['g1:green']);
+});
+
+test('the circles are taken off both boards when the game ends another way', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await clickSquare(white, 'g1');
+  await dragPiece(white, 'e2', 'e4');
+  await pressClock(white);
+  for (const page of [white, black]) await expectMarks(page, ['g1:green']);
+
+  // White resigns instead of restoring the position: no move is owed any more.
+  await resign(white);
+  for (const page of [white, black]) {
+    await expectGameResult(page, '0-1');
+    await expectMarks(page, []);
+  }
+});
+
+test('the illegal move that loses the game stays circled, and the rematch starts without circles', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { maxIllegal: 1 });
+  const { white, black } = game;
+
+  await dragPiece(white, 'b1', 'b3');
+  await pressClock(white);
+
+  for (const page of [white, black]) {
+    await expectGameResult(page, '0-1');
+    await expectMarks(page, ['b1:red', 'b3:red']);
+  }
+
+  await white.locator('#rematchBtn').click();
+  await black.locator('#rematchBtn').click();
+  await expect(white.locator('#gameResultPanel')).toBeHidden();
   for (const page of [white, black]) await expectMarks(page, []);
 });

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.game;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -279,22 +280,35 @@ public class GameSession {
    * @return the arbiter response
    */
   public synchronized ArbiterResponse pressClockButton(Side side, BitboardPosition afterPosition) {
-    final ArbiterResponse response = ruleOnClockPress(side, afterPosition);
+    return markRuling(ruleOnClockPress(side, afterPosition));
+  }
+
+  /**
+   * Takes over the squares a ruling on the move points at - the move shown with a clock press or with a draw offer.
+   * An accepted move has started a new turn and the end of the game has taken the circles off already; a press that
+   * is not ruled on (not the player's turn, a pause) leaves them as they are.
+   */
+  private ArbiterResponse markRuling(ArbiterResponse response) {
     switch (response.type()) {
-      // A ruling on the move replaces what the arbiter pointed at before - also with nothing.
+      // A ruling on what was touched or released replaces what the arbiter pointed at before - also with nothing.
       case TOUCH_MOVE_VIOLATION, RELEASED_PIECE_VIOLATION -> boardMarks = response.boardMarks();
       case ILLEGAL_MOVE, ILLEGAL_MOVE_GAME_LOST -> {
         // A press without a move (FIDE 7.5.3) changed nothing on the board: what was pointed at stays.
         if (!response.illegalMoveDetail().map(detail -> detail.noMoveMade()).orElse(false)) {
-          boardMarks = response.boardMarks();
+          // The touched piece still has to move after this illegal move is taken back: its circle stays.
+          final List<BoardMark> marks = new ArrayList<>(marksOf(BoardMark.Color.GREEN));
+          marks.addAll(response.boardMarks());
+          boardMarks = List.copyOf(marks);
         }
       }
-      // An accepted move has started a new turn, which cleared the marks; a press that is not ruled on
-      // (not the player's turn, a pause) leaves them as they are.
       default -> {
       }
     }
     return response;
+  }
+
+  private List<BoardMark> marksOf(BoardMark.Color color) {
+    return boardMarks.stream().filter(mark -> mark.color() == color).toList();
   }
 
   private ArbiterResponse ruleOnClockPress(Side side, BitboardPosition afterPosition) {
@@ -554,7 +568,7 @@ public class GameSession {
       // (illegal-move counter, restoration target, etc.) via handleArbiterResponse. An offer that
       // is already pending stays: the opponent's is not this player's to cancel, and an earlier
       // one of their own cannot be withdrawn (FIDE 9.1.2.1) while it is on the opponent's screen.
-      return handleArbiterResponse(moveResponse, side, false);
+      return markRuling(handleArbiterResponse(moveResponse, side, false));
     }
 
     // Move is valid. Register the offer (handles repeat / game-lost penalty).
@@ -1029,7 +1043,8 @@ public class GameSession {
   // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
   private Side wrongClockPressPausedFor;
   private long wrongClockPauseId;
-  // The squares the arbiter points at since its last ruling on a clock press (circles on both boards).
+  // The squares the arbiter points at since its last ruling on the move (circles on both boards): the green
+  // ones of a touch, then the red ones of an illegal move.
   private List<BoardMark> boardMarks = List.of();
   // Who was answered "wait until the clock restarts" during the current admonishment pause.
   private final Set<Side> toldToWaitForClock = EnumSet.noneOf(Side.class);
@@ -1290,6 +1305,9 @@ public class GameSession {
     // restoration towards it, once the game is over.
     this.mustExecuteMove = null;
     this.mustExecuteMoveSan = null;
+    // Nothing is owed any more, so nothing is pointed at. The illegal move that loses the game is marked
+    // afterwards, by its own ruling.
+    this.boardMarks = List.of();
     drawOfferManager.clearOffer();
     this.clock.stopClock();
   }
@@ -1369,7 +1387,7 @@ public class GameSession {
     this.waitingForRestoration = false;
     // The illegal move is off the board again, so its squares are no longer pointed at. A touched piece
     // stays marked: the obligation holds until the move is made.
-    this.boardMarks = boardMarks.stream().filter(mark -> mark.color() != BoardMark.Color.RED).toList();
+    this.boardMarks = marksOf(BoardMark.Color.GREEN);
     // Preserve the FIDE 4.7 released-piece commitment when THIS restoration was caused by a
     // released-piece violation: the committed move must stay final across revert cycles until the
     // player actually plays it and presses the clock. Illegal/touch-move restorations still reset
@@ -1404,9 +1422,20 @@ public class GameSession {
     return false;
   }
 
-  /** @return the squares the arbiter currently points at, for both boards; empty when there are none */
+  /**
+   * @return the squares the arbiter currently points at, for both boards, one circle per square; empty when there are
+   *         none. On the square where an illegal move of the touched piece started, the red circle covers the green
+   *         one until the position is restored.
+   */
   public synchronized List<BoardMark> getBoardMarks() {
-    return boardMarks;
+    final List<BoardMark> red = marksOf(BoardMark.Color.RED);
+    if (red.isEmpty()) {
+      return boardMarks;
+    }
+    final List<BoardMark> marks = new ArrayList<>(marksOf(BoardMark.Color.GREEN));
+    marks.removeIf(green -> red.stream().anyMatch(mark -> mark.square() == green.square()));
+    marks.addAll(red);
+    return List.copyOf(marks);
   }
 
   /** @return and clears whether a clock press ended the automatic restoration pause since the last call. */

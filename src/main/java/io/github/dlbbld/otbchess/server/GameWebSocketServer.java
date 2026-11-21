@@ -926,14 +926,18 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
     if (response.type() == ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST) {
-      // Repeated-offer game-lost penalty. The session has already ended the game.
+      // The illegal move that reached the limit, or the repeated-offer game-lost penalty. The
+      // session has already ended the game.
       sendArbiterResponse(room, side, response);
+      sendBoardMarksIfChanged(room);
       return;
     }
 
     // Move was invalid (or repeated-offer info/warning). Apply the standard arbiter
     // intervention — for the move-validity violations, this also drives the restoration flow.
+    // The move shown with the offer is circled like one shown with a clock press.
     sendArbiterResponse(room, side, response);
+    sendBoardMarksIfChanged(room);
     if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
@@ -2113,6 +2117,8 @@ public class GameWebSocketServer extends WebSocketServer {
           room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
     }
     room.sendToBoth(GSON.toJson(msg));
+    // The end of the game took the circles of an open ruling off the board.
+    sendBoardMarksIfChanged(room);
   }
 
   private void checkGameEnded(GameRoom room) {

@@ -474,20 +474,21 @@ To match the experience of a real board, certain game-ending moves end the game 
 
 ### Circles on the board
 
-With a ruling on a clock press the arbiter points at the squares it speaks of, by circles drawn on **both** boards in the style of Lichess (a ring just inside the square's edge, over the piece). Only the clear cases are marked.
+With a ruling on the move — the move shown with a clock press, or with a draw offer made before the clock is pressed — the arbiter points at the squares it speaks of, by circles drawn on **both** boards in the style of Lichess (a ring just inside the square's edge, over the piece). Only the clear cases are marked.
 
 - **Green — the piece that must be moved or captured** (touch-move violation):
   - own piece: the first touched piece that can move — not the pieces touched after it, and not a piece touched before it that has no legal move;
   - opponent piece: the first touched opponent piece that can be captured;
   - an own piece together with the opponent piece it can capture: both;
-  - king and rook touched for castling: both.
+  - king and rook touched for castling: both, where they stand once the board is as the ruling asks for — a king that was put on its castling square already is circled there (only the rook is still to be moved), not on the empty square it left.
 - **Red — the illegal move**: its start and end square, when the board shows exactly one move — one own piece that left its square and stands on another one while nothing else changed (a pawn may stand on the last rank as the piece it was promoted to), or a castling attempt (the king's start square and the square the king was put on). An illegal position with several displaced pieces, and the clock pressed without a move, are not marked.
 
 How long they stay:
 
-- Green stays through the restoration, because the obligation does: until the move is accepted.
-- Red stays while the illegal move is on the board: until the position is restored. The illegal move that loses the game stays marked.
-- A new ruling on a clock press replaces the circles of the previous one. A press that is not ruled on (not the player's turn, a pause) and a press without a move leave them.
+- Green stays through the restoration, because the obligation does: until the move is accepted. An illegal move made meanwhile does not end it: its red circles are added, and the green one is there again after the restoration. A square has one circle — where the illegal move of the touched piece started, red covers green until the position is restored.
+- Red stays while the illegal move is on the board: until the position is restored.
+- A new ruling on what was touched or released replaces the circles of the previous one. A press that is not ruled on (not the player's turn, a pause) and a press without a move leave them.
+- The end of the game takes the circles off, whichever way it ends (resignation, flag fall, agreed draw, ...): nothing is owed any more. Only the illegal move that loses the game stays marked, in red, and alone.
 - A rematch starts without circles. A page that reconnects is sent the current ones.
 
 The server decides the circles (`GameSession.getBoardMarks`, from `ArbiterResponse.boardMarks`) and sends every change once to both players as `boardMarks`; the client only draws them (`ChessBoard.setMarks`).

@@ -35,11 +35,38 @@ release's tasks until it ships.
   the g1 knight to g3, then the b1 knight to g1 and press the clock. Both boards circle b1 and g3 as a single move.
 - [ ] Keep the king's red circles when an illegal castle is repeated after Revert. Castling out of check twice in the
   same turn circles the king's squares the first time and loses them on the game-ending second attempt.
-- [ ] Resolve stale green circles when **Offer Draw** triggers an illegal-move ruling. Touch g1, play e2–e4, press the
+- [x] Resolve stale green circles when **Offer Draw** triggers an illegal-move ruling. Touch g1, play e2–e4, press the
   clock and revert. Play g1–g3 and offer a draw. Both boards keep the green g1 circle while the arbiter orders a revert.
+  Fixed with the review fixes below: g1 and g3 are circled red, and g1 is green again after the Revert.
 - [ ] Review what green identifies during recovery. An unfinished castle can circle the empty king origin while the
   king is already on g1. After an illegal move replaces green with red, Revert clears both colors even when the
   original touch obligation still binds. The rings also have low contrast on dark squares (green 1.7:1, red 2.7:1).
+  The castling circle and the lost green circle are fixed with the review fixes below; the contrast is open.
+
+### Fixes after the board-circle reviews
+
+- [x] **Review of the circles (2026-11-21).** Four defects found by a review of `0c1c90d` and fixed:
+  - a ruling on the move shown with a draw offer (instead of a clock press) drew no circles — it is marked like
+    one on a clock press (`GameSession.markRuling`, sent by `handleCorrectTimeDrawOffer`);
+  - the green circle of a touched piece was lost with an illegal-move ruling although the obligation went on — it
+    stays, the red circles are added, and red covers green on a shared square until the position is restored;
+  - a king that was put on its castling square already (only the rook still to be moved) was circled on the empty
+    square it left — it is circled where it stands (`ArbiterResponse.castlingKingSquare`);
+  - circles of an open ruling stayed on the final boards when the game ended another way (resignation, flag fall,
+    ...) — the end of the game takes them off; only the illegal move that loses the game stays marked.
+- [x] Decision taken, for review: a game that ends while circles are shown loses them on both boards, also the red
+  ones of an illegal move that is still on the board (the opponent resigns during the restoration).
+- [ ] Left open from that review: a reconnect that overlaps a restoration by milliseconds can be sent circles that
+  were just removed (`resumeSeat` holds the room lock, `handleBoardEvent` / `handleRestorePosition` do not);
+  `ArbiterEngine.illegalMoveSquares` looks for the castling attempt a second time per illegal move.
+- [x] Tests: `TestBoardMarks` (24), `TestBoardMarksServer` (7), `board-marks.spec.ts` (13 — now also own piece
+  with its capture, both castling cases, the losing illegal move and the rematch in the browser, and the Offer
+  Draw journey of the Windows review replayed literally).
+  Verification on macOS: `mvn -o test` runs 446 Java tests, 0 failures, 4 skipped (Windows-only launcher tests);
+  `CI=1 npx playwright test --retries=0`: 217 passed, 1 skipped (Windows-only), before the Offer Draw journey
+  was added as a test; `board-marks.spec.ts` (13 passed) was run again with it. Not run: `RuleFuzzer`,
+  `TouchMoveOracle` (no rule is evaluated differently; only what is circled changed), and the launcher test
+  changed on Windows in `b3732a5` (Windows-only).
 
 ## 0.2.0 — Game Lifecycle and Draw Guards
 
