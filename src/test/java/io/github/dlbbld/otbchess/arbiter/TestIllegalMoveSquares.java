@@ -113,4 +113,85 @@ class TestIllegalMoveSquares {
         squares(board, castled, BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0),
             BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1)));
   }
+
+  // ----- what the events tell that the position does not -----
+
+  @Test
+  void twoPiecesOfTheSameKindThatChangedPlacesAreNotOneMove() {
+    final var board = new Board();
+    final BitboardPosition looksLikeB1ToG3 = with(board, Square.B1, Piece.NONE, Square.G3, Piece.WHITE_KNIGHT);
+    // The knight from g1 went to g3, the one from b1 took its place.
+    assertEquals(List.of(),
+        squares(board, looksLikeB1ToG3, BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0),
+            BoardEvent.dragMove(Square.B1, Square.G1, Piece.WHITE_KNIGHT, 1)));
+    // The same through the side area: the knight from g1 is taken off and comes back on g3.
+    assertEquals(List.of(),
+        squares(board, looksLikeB1ToG3, BoardEvent.remove(Square.G1, Piece.WHITE_KNIGHT, 0),
+            BoardEvent.dragMove(Square.B1, Square.G1, Piece.WHITE_KNIGHT, 1),
+            BoardEvent.restoreToEmpty(Square.G3, Piece.WHITE_KNIGHT, 2)));
+  }
+
+  @Test
+  void onePieceMovedInSeveralStepsIsOneMove() {
+    final var board = new Board();
+    final BitboardPosition knightOnB3 = with(board, Square.B1, Piece.NONE, Square.B3, Piece.WHITE_KNIGHT);
+    assertEquals(List.of(Square.B1, Square.B3),
+        squares(board, knightOnB3, BoardEvent.click(Square.G1, Piece.WHITE_KNIGHT, 0),
+            BoardEvent.dragMove(Square.B1, Square.B4, Piece.WHITE_KNIGHT, 1),
+            BoardEvent.dragMove(Square.B4, Square.B3, Piece.WHITE_KNIGHT, 2)));
+    // taken off the board and put back on another square
+    assertEquals(List.of(Square.B1, Square.B3),
+        squares(board, knightOnB3, BoardEvent.remove(Square.B1, Piece.WHITE_KNIGHT, 0),
+            BoardEvent.restoreToEmpty(Square.B3, Piece.WHITE_KNIGHT, 1)));
+    // another piece that was lifted and put back on its own square has not moved
+    assertEquals(List.of(Square.B1, Square.B3),
+        squares(board, knightOnB3, BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0),
+            BoardEvent.dragMove(Square.G3, Square.G1, Piece.WHITE_KNIGHT, 1),
+            BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 2)));
+  }
+
+  @Test
+  void aPromotionPieceFromTheSideAreaIsStillOneMove() {
+    final var board = Board.fromFenStrict(PROMOTION);
+    assertEquals(List.of(Square.A7, Square.B8),
+        squares(board, with(board, Square.A7, Piece.NONE, Square.B8, Piece.WHITE_QUEEN),
+            BoardEvent.dragMove(Square.A7, Square.B8, Piece.WHITE_PAWN, 0),
+            BoardEvent.restoreToOccupied(Square.B8, Piece.WHITE_QUEEN, Piece.WHITE_PAWN, 1)));
+  }
+
+  @Test
+  void whatWasDoneBeforeARestorationIsNoLongerOnTheBoard() {
+    final var board = new Board();
+    final var sequence = new ActionSequence(board.getSideToMove());
+    sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.G1, Piece.WHITE_KNIGHT, 1));
+    sequence.markPositionRestored();
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 2));
+
+    assertEquals(List.of(Square.B1, Square.B3), ArbiterEngine.illegalMoveSquares(board,
+        with(board, Square.B1, Piece.NONE, Square.B3, Piece.WHITE_KNIGHT), sequence));
+  }
+
+  @Test
+  void aCastlingAttemptRepeatedAfterARestorationIsMarkedAgain() {
+    final var board = Board.fromFenStrict("r3k2r/pppppppp/8/8/8/5n2/PPPPP1PP/R3K2R w KQkq - 0 1");
+    final BitboardPosition castled = with(board, Square.E1, Piece.NONE, Square.G1, Piece.WHITE_KING, Square.H1,
+        Piece.NONE, Square.F1, Piece.WHITE_ROOK);
+    final var sequence = new ActionSequence(board.getSideToMove());
+    for (int attempt = 0; attempt < 2; attempt++) {
+      sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+      sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
+      assertEquals(List.of(Square.E1, Square.G1), ArbiterEngine.illegalMoveSquares(board, castled, sequence));
+      sequence.markPositionRestored();
+    }
+  }
+
+  @Test
+  void eventsThatDoNotLeadToThePositionLeaveItToThePosition() {
+    final var board = new Board();
+    // The events are those of another position (a restoration to another one than the start of the turn).
+    assertEquals(List.of(Square.B1, Square.B3),
+        squares(board, with(board, Square.B1, Piece.NONE, Square.B3, Piece.WHITE_KNIGHT),
+            BoardEvent.dragMove(Square.E4, Square.E5, Piece.WHITE_PAWN, 0)));
+  }
 }

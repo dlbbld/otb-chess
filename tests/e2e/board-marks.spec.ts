@@ -17,6 +17,8 @@ const arbiter = (page: Page) => page.locator('#arbiterMessage');
 /** After 1. e4 d5: White can capture on d5. */
 const CAPTURE_ON_D5 = 'rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
 const BOTH_CASTLINGS = 'r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1';
+/** The knight on f3 gives check: White cannot castle. */
+const WHITE_IN_CHECK = 'r3k2r/pppppppp/8/8/8/5n2/PPPPP1PP/R3K2R w KQkq - 0 1';
 
 /** The circled squares of a board, as "square:colour", in alphabetical order. */
 const marks = (page: Page) => page.evaluate(() =>
@@ -293,4 +295,43 @@ test('the illegal move that loses the game stays circled, and the rematch starts
   await black.locator('#rematchBtn').click();
   await expect(white.locator('#gameResultPanel')).toBeHidden();
   for (const page of [white, black]) await expectMarks(page, []);
+});
+
+test('two pieces of the same kind that moved are not circled as one move', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  // The knight from g1 goes to g3 and the one from b1 takes its place: the board looks like b1-g3.
+  await dragPiece(white, 'g1', 'g3');
+  await dragPiece(white, 'b1', 'g1');
+  await pressClock(white);
+
+  await expect(arbiter(white)).toContainText('Illegal move');
+  await expect(black.locator('#opponentInfoPanel')).toBeVisible();
+  for (const page of [white, black]) await expectMarks(page, []);
+});
+
+test('an illegal castling repeated after the Revert is circled again, also when it loses the game', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: WHITE_IN_CHECK });
+  const { white, black } = game;
+
+  // Castling out of check.
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+  await expect(arbiter(white)).toContainText('Illegal move');
+  for (const page of [white, black]) await expectMarks(page, ['e1:red', 'g1:red']);
+
+  await clickRestore(white);
+  await expectGameResumed(white);
+  for (const page of [white, black]) await expectMarks(page, []);
+
+  // The same again in the same turn: the second illegal move ends the game, and it stays marked.
+  await dragPiece(white, 'e1', 'g1');
+  await dragPiece(white, 'h1', 'f1');
+  await pressClock(white);
+  for (const page of [white, black]) {
+    await expectGameResult(page, '0-1');
+    await expectMarks(page, ['e1:red', 'g1:red']);
+  }
 });

@@ -3,8 +3,10 @@
 package io.github.dlbbld.otbchess.arbiter;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -761,14 +763,17 @@ public class ArbiterEngine {
    * Where the illegal move started and ended, for the circles on the board - only when the board shows exactly one
    * move: a castling attempt (the king's squares), or one own piece that left its square and stands on another one
    * while nothing else changed. A pawn may stand there as the piece it was promoted to. Several displaced pieces
-   * give no squares: the arbiter does not guess which of them was "the move".
+   * give no squares: the arbiter does not guess which of them was "the move" - also not when two pieces of the same
+   * kind moved and the board merely looks like one move. Only what was done since the board was last set back by a
+   * restoration counts: an earlier attempt of the same turn is no longer on the board.
    *
    * @return the start and the end square, or an empty list
    */
   static List<Square> illegalMoveSquares(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
     final Side side = board.getSideToMove();
+    final List<BoardEvent> events = sequence.getEventsSincePositionRestored();
     final Optional<CastlingAttemptDetector.Attempt> castling = CastlingAttemptDetector.findPhysicalAttempt(board,
-        afterPosition, sequence.getEvents());
+        afterPosition, events);
     if (castling.isPresent()) {
       // The square the king was actually put on, which need not be the castling square.
       return List.of(castling.get().moveSpecification().castlingMove().kingFromSquare(side),
@@ -796,10 +801,78 @@ public class ArbiterEngine {
       final boolean promoted = moved.getPieceType() == PieceType.PAWN && to.getRank().getNumber() == lastRank
           && arrived.getPieceType() != PieceType.PAWN && arrived.getPieceType() != PieceType.KING;
       if (arrived == moved || promoted) {
-        return List.of(from, to);
+        return otherPiecesStayed(before, afterPosition, events, from, to) ? List.of(from, to) : List.of();
       }
     }
     return List.of();
+  }
+
+  /** A piece on the board or in the side area, with the square it stood on before the events. */
+  private record TrackedPiece(Piece piece, Square origin) {
+  }
+
+  /**
+   * Whether every piece beside the move still stands on its own square, by following each piece through the events.
+   * Two pieces of the same kind that changed places leave the position as it was, and only the events tell. Events
+   * that do not lead from the one position to the other say nothing about it, and the positions decide alone.
+   */
+  private static boolean otherPiecesStayed(BitboardPosition before, BitboardPosition after, List<BoardEvent> events,
+      Square from, Square to) {
+    final Map<Square, TrackedPiece> onBoard = new EnumMap<>(Square.class);
+    for (final Square square : Square.values()) {
+      if (square != Square.NONE && before.get(square) != Piece.NONE) {
+        onBoard.put(square, new TrackedPiece(before.get(square), square));
+      }
+    }
+    final List<TrackedPiece> sideArea = new ArrayList<>();
+    for (final BoardEvent event : events) {
+      final TrackedPiece moving;
+      switch (event.type()) {
+        case CLICK -> {
+          continue;
+        }
+        case DRAG_MOVE, DRAG_CAPTURE, REMOVE -> {
+          moving = onBoard.remove(event.square());
+          if (moving == null || moving.piece() != event.piece()) {
+            return true;
+          }
+        }
+        case RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> {
+          final List<TrackedPiece> candidates = sideArea.stream().filter(piece -> piece.piece() == event.piece())
+              .toList();
+          // Which one of several pieces of a kind came back is not known - and neither is where a new piece is from.
+          moving = candidates.size() == 1 ? candidates.get(0) : new TrackedPiece(event.piece(), Square.NONE);
+          if (!candidates.isEmpty()) {
+            sideArea.remove(candidates.get(0));
+          }
+        }
+        default -> {
+          return true;
+        }
+      }
+      if (event.type() == BoardEventType.REMOVE) {
+        sideArea.add(moving);
+        continue;
+      }
+      if (event.targetSquare() == Square.NONE) {
+        return true;
+      }
+      final TrackedPiece displaced = onBoard.put(event.targetSquare(), moving);
+      if (displaced != null) {
+        sideArea.add(displaced);
+      }
+    }
+    for (final Square square : Square.values()) {
+      if (square == Square.NONE) {
+        continue;
+      }
+      final TrackedPiece piece = onBoard.get(square);
+      if ((piece == null ? Piece.NONE : piece.piece()) != after.get(square)) {
+        return true;
+      }
+    }
+    return onBoard.entrySet().stream().filter(entry -> entry.getKey() != from && entry.getKey() != to)
+        .allMatch(entry -> entry.getValue().origin() == entry.getKey());
   }
 
   /**

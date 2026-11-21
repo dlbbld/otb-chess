@@ -31,10 +31,12 @@ release's tasks until it ships.
   touch-move oracle reported zero differences in 33,793 cases. Separate two-player checks reproduced the issues below.
 - [x] Verified on both players' boards that a binding touch circles the piece in green, an illegal move circles its
   endpoints in red, and the circles survive a board flip and reconnect. Checked the rendered colors through `start.bat`.
-- [ ] Suppress misleading red circles when two pieces of the same kind have moved. From the starting position, drag
+- [x] Suppress misleading red circles when two pieces of the same kind have moved. From the starting position, drag
   the g1 knight to g3, then the b1 knight to g1 and press the clock. Both boards circle b1 and g3 as a single move.
-- [ ] Keep the king's red circles when an illegal castle is repeated after Revert. Castling out of check twice in the
+  Fixed (see below): nothing is circled.
+- [x] Keep the king's red circles when an illegal castle is repeated after Revert. Castling out of check twice in the
   same turn circles the king's squares the first time and loses them on the game-ending second attempt.
+  Fixed (see below): the second attempt is circled too.
 - [x] Resolve stale green circles when **Offer Draw** triggers an illegal-move ruling. Touch g1, play e2–e4, press the
   clock and revert. Play g1–g3 and offer a draw. Both boards keep the green g1 circle while the arbiter orders a revert.
   Fixed with the review fixes below: g1 and g3 are circled red, and g1 is green again after the Revert.
@@ -67,6 +69,21 @@ release's tasks until it ships.
   was added as a test; `board-marks.spec.ts` (13 passed) was run again with it. Not run: `RuleFuzzer`,
   `TouchMoveOracle` (no rule is evaluated differently; only what is circled changed), and the launcher test
   changed on Windows in `b3732a5` (Windows-only).
+- [x] **The two open circle issues of the Windows review (2026-11-21).**
+  - Two pieces of the same kind that both moved are no longer circled as one move:
+    `ArbiterEngine.illegalMoveSquares` follows every piece through the board events (drags, and the side area) and
+    marks a move only when every other piece stands on its own square. Events that do not lead to the position on
+    the board say nothing, and the position decides alone as before.
+  - An illegal castling repeated after the Revert is circled again: the circles look only at the events since the
+    board was last set back (`ActionSequence.markPositionRestored`, set by `GameSession.completeRestoration`).
+    What was touched is still taken from the whole turn.
+- [ ] Seen while fixing, not changed: the *reason* of an illegal move ("Illegal move because ...") is inferred from
+  all events of the turn (`inferAttemptedMove`), so it is missing when the move is repeated after a Revert: Nb1-b3
+  is answered "Illegal move: the knight cannot move in this way." the first time and "Illegal move." the second.
+- [x] Tests: `TestBoardMarks` (27), `TestIllegalMoveSquares` (13), `board-marks.spec.ts` (15, both journeys of the
+  Windows review replayed literally). Verification on macOS: `mvn -o test` runs 455 Java tests, 0 failures,
+  4 skipped (Windows-only launcher tests); `CI=1 npx playwright test --retries=0`: 220 passed, 1 skipped
+  (Windows-only). Not run: `RuleFuzzer`, `TouchMoveOracle` (no ruling changed, only what is circled).
 
 ## 0.2.0 — Game Lifecycle and Draw Guards
 

@@ -244,6 +244,55 @@ class TestBoardMarks {
   }
 
   @Test
+  void twoPiecesOfTheSameKindThatMovedAreNotMarkedAsOneMove() {
+    final var session = session(null);
+    // The knight from g1 goes to g3 and the one from b1 takes its place: the board looks like b1-g3.
+    drag(session, Piece.WHITE_KNIGHT, Square.G1, Square.G3);
+    drag(session, Piece.WHITE_KNIGHT, Square.B1, Square.G1);
+
+    final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.B1, Square.G3));
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, ruling.type());
+    assertEquals(List.of(), session.getBoardMarks());
+  }
+
+  @Test
+  void aPieceThatWasMovedAboutBeforeItsIllegalMoveIsStillMarked() {
+    final var session = session(null);
+    // Not released on a square it can go to, which would be the move (FIDE 4.7).
+    drag(session, Piece.WHITE_KNIGHT, Square.B1, Square.B4);
+    drag(session, Piece.WHITE_KNIGHT, Square.B4, Square.B1);
+    drag(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3);
+
+    final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3));
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, ruling.type());
+    assertEquals(red(Square.B1, Square.B3), session.getBoardMarks());
+  }
+
+  @Test
+  void aCastlingThatIsNotAllowedIsMarkedAgainWhenItIsRepeatedAfterTheRestoration() {
+    final var session = session(WHITE_IN_CHECK);
+    final BitboardPosition castled = moved(session, Piece.WHITE_KING, Square.E1, Square.G1, Piece.WHITE_ROOK,
+        Square.H1, Square.F1);
+    drag(session, Piece.WHITE_KING, Square.E1, Square.G1);
+    drag(session, Piece.WHITE_ROOK, Square.H1, Square.F1);
+    final ArbiterResponse first = session.pressClockButton(Side.WHITE, castled);
+    assertEquals(red(Square.E1, Square.G1), session.getBoardMarks());
+    revertAndResume(session, first);
+    assertEquals(List.of(), session.getBoardMarks());
+
+    drag(session, Piece.WHITE_KING, Square.E1, Square.G1);
+    drag(session, Piece.WHITE_ROOK, Square.H1, Square.F1);
+    final ArbiterResponse second = session.pressClockButton(Side.WHITE, castled);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, second.type());
+    assertEquals(red(Square.E1, Square.G1), session.getBoardMarks());
+  }
+
+  @Test
   void aCastlingThatIsNotAllowedIsMarkedOnTheKingsSquares() {
     final var session = session(WHITE_IN_CHECK);
     drag(session, Piece.WHITE_KING, Square.E1, Square.G1);

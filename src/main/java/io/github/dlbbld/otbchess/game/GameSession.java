@@ -1385,6 +1385,7 @@ public class GameSession {
       return false;
     }
     this.waitingForRestoration = false;
+    currentSequence.markPositionRestored();
     // The illegal move is off the board again, so its squares are no longer pointed at. A touched piece
     // stays marked: the obligation holds until the move is made.
     this.boardMarks = marksOf(BoardMark.Color.GREEN);
