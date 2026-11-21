@@ -5,6 +5,7 @@ import {
   expectGameResult,
   requestPiece,
   clickRestore,
+  expectGameResumed,
   SCORE_DRAW,
 } from './helpers/app';
 import {
@@ -195,6 +196,55 @@ test('illegal move with a shielding piece says it exposes the own king to check'
     'Illegal move because it exposes the own king to check.');
   await expect(white.locator('#arbiterMessage')).not.toContainText('would expose');
   await expect(black.locator('#opponentInfoPanel')).toContainText('it exposes the own king to check');
+});
+
+test('an illegal move repeated after the Revert is given its reason again', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { maxIllegal: 5 });
+  const { white, black } = game;
+
+  await dragPiece(white, 'b1', 'b3');
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move: the knight cannot move in this way. This is your 1st illegal move.');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('the knight cannot move in this way');
+
+  await clickRestore(white);
+  await expectGameResumed(white);
+
+  // The same move again in the same turn.
+  await dragPiece(white, 'b1', 'b3');
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move: the knight cannot move in this way. This is your 2nd illegal move.');
+
+  // Another illegal move after the next Revert is given its own reason.
+  await clickRestore(white);
+  await expectGameResumed(white);
+  await dragPiece(white, 'a1', 'a3'); // the rook jumps over its own pawn
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move: the rook cannot jump over other pieces. This is your 3rd illegal move.');
+  await expect(black.locator('#opponentInfoPanel')).toContainText(
+    'Your opponent made an illegal move: the rook cannot jump over other pieces.');
+});
+
+test('the repeated illegal move that loses the game is given its reason', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+
+  await dragPiece(white, 'b1', 'b3');
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move: the knight cannot move in this way. This is your 1st illegal move.');
+  await clickRestore(white);
+  await expectGameResumed(white);
+
+  await dragPiece(white, 'b1', 'b3');
+  await pressClock(white);
+
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move: the knight cannot move in this way. White loses the game.');
+  for (const page of [white, black]) await expectGameResult(page, '0-1');
 });
 
 test('moving an opponent piece is rejected immediately', async ({ browser }) => {

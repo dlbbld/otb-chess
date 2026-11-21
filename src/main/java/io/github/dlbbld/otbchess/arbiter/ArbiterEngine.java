@@ -942,14 +942,19 @@ public class ArbiterEngine {
     return Optional.of(new IllegalMoveReason(reason, reason));
   }
 
+  /**
+   * The move the player made on the board, read from what was done since the board was last set back by a
+   * restoration: an earlier attempt of the same turn is no longer on the board, and counting its events would hide
+   * the move when it is repeated.
+   */
   private static Optional<AttemptedMove> inferAttemptedMove(Board board, BitboardPosition afterPosition,
       ActionSequence sequence) {
-    final Optional<AttemptedMove> castlingAttempt = inferPhysicalCastlingAttempt(board, afterPosition,
-        sequence.getEvents());
+    final List<BoardEvent> events = sequence.getEventsSincePositionRestored();
+    final Optional<AttemptedMove> castlingAttempt = inferPhysicalCastlingAttempt(board, afterPosition, events);
     if (castlingAttempt.isPresent()) {
       return castlingAttempt;
     }
-    return inferSimpleAttemptedMove(board, afterPosition, sequence);
+    return inferSimpleAttemptedMove(board, afterPosition, events);
   }
 
   private static Optional<AttemptedMove> inferPhysicalCastlingAttempt(Board board, BitboardPosition afterPosition,
@@ -992,10 +997,10 @@ public class ArbiterEngine {
   }
 
   private static Optional<AttemptedMove> inferSimpleAttemptedMove(Board board, BitboardPosition afterPosition,
-      ActionSequence sequence) {
+      List<BoardEvent> events) {
     BoardEvent moveEvent = null;
 
-    for (final BoardEvent event : sequence.getEvents()) {
+    for (final BoardEvent event : events) {
       if (event.type() == BoardEventType.CLICK) {
         continue;
       }

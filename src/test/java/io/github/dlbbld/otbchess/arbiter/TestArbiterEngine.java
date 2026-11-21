@@ -705,6 +705,79 @@ class TestArbiterEngine {
   }
 
   /**
+   * The events of a turn stay in the sequence across a restoration. The reason of an illegal move is read from what
+   * was done since the board was last set back, so the move keeps its reason when it is repeated - also when the
+   * repetition loses the game.
+   */
+  @Test
+  void testIllegalMoveRepeatedAfterRestorationKeepsItsReason() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B1, Piece.NONE).createChangedPosition(Square.B3, Piece.WHITE_KNIGHT).build();
+
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0));
+    final ArbiterResponse first = engine.evaluateClockPress(board, afterPosition, sequence);
+    sequence.markPositionRestored();
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 1));
+    final ArbiterResponse second = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
+    assertEquals("the knight cannot move in this way", first.illegalMoveDetail().get().playerReason().get());
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, second.type());
+    assertEquals("the knight cannot move in this way", second.illegalMoveDetail().get().playerReason().get());
+    assertEquals("the knight cannot move in this way", second.illegalMoveDetail().get().opponentReason().get());
+    assertTrue(second.message().startsWith("Illegal move: the knight cannot move in this way. White loses the game."),
+        second.message());
+  }
+
+  @Test
+  void testDifferentIllegalMoveAfterRestorationGetsItsOwnReason() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/4R3/1N2K3 w - - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0));
+    engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B1, Piece.NONE).createChangedPosition(Square.B3, Piece.WHITE_KNIGHT).build(),
+        sequence);
+    sequence.markPositionRestored();
+    // The rook shields the king from the black rook on e8.
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.D2, Piece.WHITE_ROOK, 1));
+    final ArbiterResponse second = engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.D2, Piece.WHITE_ROOK).build(),
+        sequence);
+
+    assertEquals("because it exposes the own king to check",
+        second.illegalMoveDetail().get().playerReason().get());
+  }
+
+  @Test
+  void testIllegalCastlingRepeatedAfterRestorationKeepsItsReason() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k4r2/8/8/8/8/8/8/4K2R w K - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+    final BitboardPosition afterPosition = BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E1, Piece.NONE).createChangedPosition(Square.H1, Piece.NONE)
+        .createChangedPosition(Square.G1, Piece.WHITE_KING).createChangedPosition(Square.F1, Piece.WHITE_ROOK).build();
+
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 1));
+    final ArbiterResponse first = engine.evaluateClockPress(board, afterPosition, sequence);
+    sequence.markPositionRestored();
+    sequence.addEvent(BoardEvent.dragMove(Square.E1, Square.G1, Piece.WHITE_KING, 2));
+    sequence.addEvent(BoardEvent.dragMove(Square.H1, Square.F1, Piece.WHITE_ROOK, 3));
+    final ArbiterResponse second = engine.evaluateClockPress(board, afterPosition, sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, second.type());
+    assertEquals(first.illegalMoveDetail().get().playerReason(), second.illegalMoveDetail().get().playerReason());
+    assertTrue(second.message().contains("castling is not possible"), second.message());
+    assertTrue(second.message().contains("the king would travel over a field that is in check"), second.message());
+  }
+
+  /**
    * With max=4 the early illegal moves should name the 4th (not "next") as the loss-trigger, and the count should
    * advance correctly across attempts.
    */

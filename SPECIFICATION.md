@@ -512,6 +512,7 @@ The server decides the circles (`GameSession.getBoardMarks`, from `ArbiterRespon
   > _"Illegal move because it leaves the own king in check."_ (the move does not answer an existing check)
   >
   > _"Illegal move because it exposes the own king to check."_ (the move takes a shielding piece off the king's line)
+- The reason is given when the board shows one move (or a castling attempt), read from what was done since the board was last set back by a restoration. An illegal move repeated after the Revert is therefore given its reason again, also when it loses the game; otherwise the message is the plain _"Illegal move."_
 
 ---
 

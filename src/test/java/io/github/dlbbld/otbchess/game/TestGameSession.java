@@ -240,6 +240,31 @@ class TestGameSession {
     assertEquals(Side.BLACK, session.getResult().winner());
   }
 
+  /** Nb1-b3, Revert, Nb1-b3 again: the second ruling names the reason like the first one. */
+  @Test
+  void testIllegalMoveRepeatedAfterRevertKeepsItsReason() {
+    final GameSession session = new GameSession(TEST_TIME);
+    session.startGame();
+    final BitboardPosition illegalPos = BitboardPositions.from(session.getBoard().getBitboardPosition())
+        .createChangedPosition(Square.B1, Piece.NONE).createChangedPosition(Square.B3, Piece.WHITE_KNIGHT).build();
+
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0));
+    final ArbiterResponse first = session.pressClockButton(Side.WHITE, illegalPos);
+    session.enterWaitingForRestoration(session.getPositionBeforeTurn());
+    assertTrue(session.completeRestoration());
+    assertTrue(session.resumeAfterRestorationDelay());
+    session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 1));
+    final ArbiterResponse second = session.pressClockButton(Side.WHITE, illegalPos);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
+    assertTrue(first.renderedPlayerMessage().startsWith("Illegal move: the knight cannot move in this way. "),
+        first.renderedPlayerMessage());
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, second.type());
+    assertTrue(second.renderedPlayerMessage()
+        .startsWith("Illegal move: the knight cannot move in this way. White loses the game."),
+        second.renderedPlayerMessage());
+  }
+
   @Test
   void testCustomFenStartingPositionWithBlackToMove() {
     // FEN with Black to move: White just played e4. Standard openings notation.

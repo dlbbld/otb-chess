@@ -77,9 +77,13 @@ release's tasks until it ships.
   - An illegal castling repeated after the Revert is circled again: the circles look only at the events since the
     board was last set back (`ActionSequence.markPositionRestored`, set by `GameSession.completeRestoration`).
     What was touched is still taken from the whole turn.
-- [ ] Seen while fixing, not changed: the *reason* of an illegal move ("Illegal move because ...") is inferred from
-  all events of the turn (`inferAttemptedMove`), so it is missing when the move is repeated after a Revert: Nb1-b3
-  is answered "Illegal move: the knight cannot move in this way." the first time and "Illegal move." the second.
+- [x] Seen while fixing: the *reason* of an illegal move ("Illegal move because ...") was inferred from all events
+  of the turn (`inferAttemptedMove`), so it was missing when the move was repeated after a Revert: Nb1-b3 was
+  answered "Illegal move: the knight cannot move in this way." the first time and "Illegal move." the second -
+  in a default game on the very ruling that loses the game. Fixed: the reason is read from the events since the
+  board was last set back, like the circles. An illegal castling repeated after the Revert and a different
+  illegal move after a Revert get their reason too. Tests: `TestArbiterEngine` (3), `TestGameSession` (1),
+  `rules-extra.spec.ts` (2, Nb1-b3 / Revert / Nb1-b3 replayed with and without losing the game).
 - [x] Tests: `TestBoardMarks` (27), `TestIllegalMoveSquares` (13), `board-marks.spec.ts` (15, both journeys of the
   Windows review replayed literally). Verification on macOS: `mvn -o test` runs 455 Java tests, 0 failures,
   4 skipped (Windows-only launcher tests); `CI=1 npx playwright test --retries=0`: 220 passed, 1 skipped
