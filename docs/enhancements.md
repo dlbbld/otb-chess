@@ -127,11 +127,16 @@ Nothing else on the server changes, and the message carries no rule meaning.
 
 ### Where the samples come from (decision needed)
 
-The Lichess sound files are not simply copied: Lichess is published under the AGPL and this project under GPL-3.0 only, and the licence of each Lichess sound set would have to be checked first.
+Lichess is open source, but that does not cover all of its sounds. Its licence file (`COPYING.md` in `lichess-org/lila`, read on 2026-11-23) says:
+
+- The default sounds, the set `standard` that a visitor hears on Lichess, are not in its list of free files; the file names "the other sounds" under "Exceptions (non-free)". They cannot be used here.
+- The sets `sfx`, `piano`, `nes` and `futuristic` by Enigmahack are AGPLv3+. A file from them could be shipped with this GPL-3.0 project: it stays under the AGPL, the author is credited, and the source of the app must be offered to the users of the site, which the public repository does.
+- Lichess has no sound for a clock press, so that one needs another source in any case.
 
 1. **Own recordings (preferred for this app).** A piece set down on a wooden board and a press of a real chess clock, recorded with a phone, cut and normalised. Authentic, and the rights are clear.
 2. **CC0 recordings** from a public sound library, with source and licence recorded in `static/sounds/README.md`.
-3. **Synthesised in code** (a short filtered noise burst for the piece, a double click for the clock). No files and no licence question, but it sounds artificial. Usable as a stand-in until recordings exist; the module does not care where its two buffers come from.
+3. **The piece sound from the Lichess set `sfx`** (AGPLv3+, see above), with the clock sound from option 1 or 2.
+4. **Synthesised in code** (a short filtered noise burst for the piece, a double click for the clock). No files and no licence question, but it sounds artificial. Usable as a stand-in until recordings exist; the module does not care where its two buffers come from.
 
 ### Tests
 
