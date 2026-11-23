@@ -58,7 +58,7 @@ public class StaticFileHandler {
     }
   }
 
-  private static String guessContentType(String path) {
+  static String guessContentType(String path) {
     if (path.endsWith(".html")) {
       return "text/html; charset=UTF-8";
     }
@@ -73,6 +73,9 @@ public class StaticFileHandler {
     }
     if (path.endsWith(".png")) {
       return "image/png";
+    }
+    if (path.endsWith(".wav")) {
+      return "audio/wav";
     }
     if (path.endsWith(".json")) {
       return "application/json; charset=UTF-8";

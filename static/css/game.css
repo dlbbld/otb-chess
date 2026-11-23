@@ -29,6 +29,9 @@ body {
 .lobby-section label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
 .radio-group { display: flex; gap: 16px; margin-bottom: 12px; }
 .radio-group label { display: inline; cursor: pointer; color: #333; }
+.checkbox-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.checkbox-group label { margin-bottom: 0; cursor: pointer; color: #333; }
+.lobby-hint { font-size: 12px; color: #777; }
 .preset-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .preset-btn {
   padding: 6px 12px; border: 1px solid #ccc; background: #fff;

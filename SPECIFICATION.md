@@ -71,6 +71,11 @@ The player configures the game on a single screen before clicking **Create**:
    server-side exceptions (NPEs, programming mistakes, JVM jargon), which are
    wrapped behind a friendly generic line.
 
+**Sounds.** Below *Join a Game* the start screen has a section **Sounds** with two checkboxes,
+**Sound for a moved piece** and **Sound for the clock press**, both on by default. They are the
+player's own options, not settings of the game: they are saved in this browser, are not sent to
+the server, and hold for every game the player creates, joins or returns to. See *Sounds*.
+
 ### Joining
 
 6. The creator receives an **8-character game code** with a **Copy code** button.
@@ -171,6 +176,7 @@ The two LCDs and the rocker keep the same relative placement so that "the LCD ne
 - A press of the player's **own** lever on their **own turn** triggers full move evaluation (see "Two-Layer Evaluation at Clock Press").
 - **Pressing the clock without having made a move** (board unchanged at the press) is considered and penalised **as an illegal move** per FIDE 7.5.3: standard penalty time to the opponent, counts toward the illegal-move limit (default 2 → the second such press loses the game). There is nothing to restore, so the message asks the player to make a move and their clock keeps running.
 - A press of the **opponent's** lever registers only while the opponent's clock is running (their lever up) and escalates per [A-006](docs/fide-deviations.md#a-006--wrong-clock-press-pressing-the-opponents-clock-escalation): pause + admonishment, pause + warning, loss on the third press. With the opponent's lever already down (or one's own lever pressed out of turn) the press is a physical no-op — silence, like the real clock.
+- Every press that registers - the own lever when the move is evaluated, the opponent's lever while their clock is running - is heard by both players (`clockPressHeard`, see *Sounds*). A press that is a no-op is silent.
 - When the arbiter restarts the clock after that pause, the restart is announced (`clockRestarted`): the offender reads *"Clock restarted. Game continues."* in place of the admonishment, after the second press with the warning repeated; the opponent's info window changes from *"…your clock will restart shortly."* to *"…Your clock has restarted."* The opponent's arbiter window is changed only if the arbiter had answered them *"The game is paused. Please wait until the clock restarts."* during the pause — an instruction standing there otherwise (for example a touch-move ruling) stays.
 
 ---
@@ -208,6 +214,56 @@ While the opponent is moving, the player sees a translucent floating piece follo
 - Any non-cosmetic event (`DRAG_MOVE`, `DRAG_CAPTURE`, `REMOVE`, `RESTORE_*`, `CLICK`) ends the floating-piece visualisation on the observer's side and applies the new state.
 - Forwarded events are suppressed during restoration-resume-pending (the moving player has agreed to a restored position; the observer has already updated).
 - A lifted piece is in the player's hand, not captured: while its source square shows empty (on either screen), the side areas still count it as on the board and do not list it among the off-board pieces.
+
+### Sounds
+
+Two sounds, as at a real board: a piece set down, and a clock lever pressed. Both players hear
+both, each on their own board, unless a player has switched a sound off on the start screen
+(*Start screen*). One sound per kind: a capture sounds like any other piece set down, and nothing
+else makes a sound (game start, game end, draw offers, low time, arbiter messages). There is no
+control during the game and no volume setting.
+
+**Piece sound** -- when a held piece is set down on a square of the board:
+
+| Event | Sound |
+|---|---|
+| Drag-move, Drag-capture | yes |
+| Restore-to-empty, Restore-to-occupied (a piece brought back from the side) | yes |
+| Click (a piece touched, or put back on its own square) | no |
+| Remove, Drag-start, Drag-hover | no |
+| A position set by the server (Revert, a restored position, a reconnect, a rematch) | no -- nobody set a piece down |
+
+The player's own board plays it at the release, without waiting for the server. The opponent's
+board plays it when it shows the same event (*Real-time opponent drag mirroring*). A piece put
+back by hand during a restoration is heard on both boards; castling makes two sounds.
+
+**Clock sound** -- when a lever that is up is pressed down. The server decides this and sends
+`clockPressHeard` to both players, before anything else the press causes; the client plays the
+sound on this message and on no other, also for the player's own press.
+
+- Heard: the player's own lever when the move is evaluated (accepted, illegal, a press without a
+  move, an incomplete move), including the press that ends the game; the opponent's lever while
+  their clock is running (*Clock-press semantics*), including the third press that loses the game.
+- Silent: a lever that is already down; a press while the game is paused (the position is to be
+  restored, both players are asked whether they are ready, the pause after a wrong clock press);
+  a press after the game or with the time expired. The clock restarted by the arbiter or by the
+  automatic resume is no press. A press during the short delay before the automatic resume
+  restarts the clock itself and is evaluated, so it is heard.
+- A move that ends the game without a clock press (checkmate and the other automatic endings) has
+  the piece sound and no clock sound.
+- A player who is not connected when the lever is pressed does not hear it later.
+
+**Playback.** `static/js/sounds.js` plays two short WAV samples (`static/sounds/piece.wav`,
+`static/sounds/clock.wav`) with the Web Audio API. The options are `otbSoundPiece` and
+`otbSoundClock` in `localStorage` (`on` / `off`, missing = on; on as well where storage cannot be
+used), read once when the game page loads. With both off, the page opens no audio output and
+fetches no sample.
+
+A browser gives a page its audio output only after the player has acted on that page, and a phone
+takes it away again in the background. The page asks for it on every mouse press, end of a touch,
+and key. A sound that is due before the first such gesture, or before its sample is loaded, is
+dropped, not played later; so the opponent's first move can be silent for a player who has not yet
+touched the game page. No failure of the audio output or of a sample affects the game.
 
 ### Freedom of movement
 
@@ -835,7 +891,7 @@ Tracked in **Spec-driven implementation follow-ups** below.
 
 ### Outbound (server -> client)
 
-`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawOfferExpired` (to a player whose own offer replaced an outdated offer of the opponent: close the panel), `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown), `sessionReplaced` (to a window whose seat was taken over by another window of the same player, see *One connection per seat*), `clockRestarted` (the pause after a wrong clock press is over; only the arbiter message changes, with `style: "error"` when it repeats the warning), `boardMarks` (`marks`: list of `{square, color}` with `color` `green` or `red`; the complete set of circles on the board, an empty list removes them — see *Circles on the board*).
+`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawOfferExpired` (to a player whose own offer replaced an outdated offer of the opponent: close the panel), `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown), `sessionReplaced` (to a window whose seat was taken over by another window of the same player, see *One connection per seat*), `clockRestarted` (the pause after a wrong clock press is over; only the arbiter message changes, with `style: "error"` when it repeats the warning), `boardMarks` (`marks`: list of `{square, color}` with `color` `green` or `red`; the complete set of circles on the board, an empty list removes them — see *Circles on the board*), `clockPressHeard` (no content; a lever that was up was pressed down, sent to both players before everything else the press causes — see *Sounds*).
 
 #### Guards on what a connection may do
 

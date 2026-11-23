@@ -32,6 +32,17 @@ When an illegal or incomplete action requires the position to be restored, this 
 
 Leave empty for the normal starting position. Enter a FEN to start from a custom position. The FEN is validated before the game starts.
 
+## Sounds
+
+Below **Join a Game** there are two options, both switched on at first:
+
+- **Sound for a moved piece** — a sound when a piece is set down on a square of the board.
+- **Sound for the clock press** — a sound when a clock lever is pressed down.
+
+You hear your own pieces and clock presses and your opponent's. The options are yours alone: they are saved in your browser, apply to every game you create, join or return to, and do not change what your opponent hears. Set them before you open a game; there is no switch during the game. The volume is that of your device.
+
+A browser plays sounds on a page only after you have clicked or touched that page. If your opponent moves before you have touched the game page, that first move can be silent. On a phone the same can happen after the screen was locked: touch the page once and the sounds are back.
+
 ## Join a Game
 
 1. Open the same OTB Chess page.

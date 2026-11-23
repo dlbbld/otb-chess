@@ -14,9 +14,38 @@ release's tasks until it ships.
   branch starts from the released `main`.
 - [x] Requirement and proposed implementation of the sounds written down as
   [E-004](docs/enhancements.md#e-004--sounds-for-a-released-piece-and-for-the-clock-press).
-- [ ] Review of the E-004 proposal, and the decisions it asks for (where the two samples come from, the
-  points for the review).
-- [ ] Implement E-004 with tests at both levels, then release it on its own.
+- [x] Review of the E-004 proposal (Codex, 2026-11-23) and the decisions it asked for: the two samples are
+  supplied by the project owner, and both players hear both players' pieces and clock. From the review: the
+  clock sound waits for the server also for the own press, `clockPressHeard` goes to both players, the audio
+  output is woken on every gesture, the tests observe the audio output. Recorded in E-004.
+- [x] **Sounds implemented (2026-11-24).** A piece set down on the board and a clock lever pressed down are
+  heard on both boards; two options on the entry screen, saved in the browser, both on by default.
+  `static/js/sounds.js`, `static/sounds/`, `ChessBoard.onPiecePlaced`, `GameSession.consumeClockPressRegistered`,
+  message `clockPressHeard`, `.wav` served as `audio/wav`. Also from the review: the creator's board is set up
+  when the browser refuses storage (the `lastGameId` write is guarded). `SPECIFICATION.md` (*Sounds*),
+  `MANUAL.md` and E-004 describe it.
+- [x] The clock sample is stored without its first 0.14 s (room noise and lever travel before the click), so
+  that the click is not heard late; the piece sample is stored as supplied (`static/sounds/README.md`).
+- [x] Tests: `TestClockPressRegistered` (12), `TestClockPressHeardServer` (15), `TestStaticFileHandler` (5),
+  `sounds.spec.ts` (12). `TestBoardMarksServer` now expects `clockPressHeard` before the ruling. The other
+  browser tests start with both sounds off (`playwright.config.ts`).
+- [x] Verification on macOS at the commit: `mvn test` runs 502 Java tests, 0 failures, 4 skipped (Windows-only
+  launcher tests); `CI=1 npx playwright test --retries=0` against the rebuilt jar: 240 passed, 1 skipped
+  (Windows-only); `RuleFuzzer` 20,000 games, 0 findings. The storage test fails without the `lastGameId` guard.
+  Not run: `TouchMoveOracle` (no ruling changed). The entry screen with the Sounds section was looked at in a
+  browser.
+- [ ] By ear, before the release: both sounds on the Windows machine and on an iPhone, also after locking and
+  reopening the phone. No automated test hears anything, and nobody has listened to the sounds in the app yet.
+- [ ] Not verified: the sounds with the browser's own Web Audio. On this Mac the test browser needs 20 s to open
+  the audio output (`new AudioContext()` blocks that long; the default output is a virtual device) and suspends
+  it again by itself after 10 s, so `sounds.spec.ts` ran here with its stand-in audio context only
+  (`tests/e2e/README.md`). Run the full suites on Windows, where the spec should print `audio mode 'real'`.
+  Whether a normal browser on this Mac shows the same 20 s is not checked. `launcher.spec.ts` (Windows-only,
+  a server of its own) still opens its page with sounds on.
+- [ ] Open from the same review, not part of the sounds: `RELEASING.md` step 6 deletes the release branch by
+  name after the check (a push in between escapes it, an open PR that targets the branch escapes `--head`,
+  `git branch -d` fails while the branch is checked out); the review proposes a lease on the verified commit.
+- [ ] Release the sounds on their own, when asked.
 
 ## 0.3.0 — Board Circles and Early Draw Offers
 

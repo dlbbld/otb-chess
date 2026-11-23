@@ -56,7 +56,7 @@ Companion: [`SPECIFICATION.md`](../SPECIFICATION.md) for current behaviour, [`fi
 
 ## E-004 — Sounds for a released piece and for the clock press
 
-**Status**: Requirement recorded on 2026-11-23, implementation proposed below, **not implemented**. Awaiting review of the proposal. Planned as a release of its own, developed on `add-sounds`.
+**Status**: Implemented on `add-sounds` on 2026-11-24, not yet released. Requirement recorded on 2026-11-23; the proposal was reviewed by Codex on 2026-11-23 and changed as listed under *Decisions and review*. Current behaviour is specified in [`SPECIFICATION.md`](../SPECIFICATION.md#sounds); this entry keeps the requirement and why it was built this way.
 
 ### Requirement
 
@@ -66,11 +66,24 @@ Companion: [`SPECIFICATION.md`](../SPECIFICATION.md) for current behaviour, [`fi
    - sound for a moved piece;
    - sound for the clock press.
 
-### Reading of the requirement (to confirm)
+### Decisions and review
 
-The requirement leaves these points open. The proposal assumes:
+Decided by the project owner on 2026-11-23:
 
-- **Both players hear both.** A player hears their own piece and clock, and the opponent's, as two people at one board would. Lichess also plays the opponent's move.
+- **Both players hear both.** A player hears their own piece and clock, and the opponent's, as two people at one board would.
+- **The two samples are supplied by the project owner** (`piece_release.wav`, `clock_press.wav`). How they are stored is recorded in [`static/sounds/README.md`](../static/sounds/README.md). The Lichess sound files are not used: Lichess is published under the AGPL and this project under GPL-3.0 only.
+
+Taken over from the review:
+
+- **The clock sound waits for the server, also for the player's own press.** The proposal played the own press at once. But a request the client sends does not show that a lever went down: the client also sends a press of the opponent's lever that is already down, and of the own lever during a pause, while a press during the short delay before the game resumes after a restoration does count although the clock shows a pause. Only the server knows. It costs one round trip; in exchange both boards always agree on what was heard. The piece sound stays immediate.
+- **A dedicated message, `clockPressHeard`, sent to both players.** The existing messages cannot carry the sound: a checkmate arrives as `opponentMoved` without any press, one press can produce a resumed game, a ruling and a clock update, the restart after a wrong clock press comes from a timer, and a reconnect resends the restored position.
+- **The audio output is woken on every gesture, for the life of the page**, not once on the first `pointerdown`: the gesture a browser accepts from a finger or pen is the end of the contact, and a phone takes the output away again when the page goes to the background.
+- **The tests observe the audio output**, not a list kept by the sounds module, and go through the entry screen.
+- **Storage that cannot be used** must not stop the creator's board from being set up (the unguarded `lastGameId` write).
+- Confirmed as proposed: the table of board events including silence for a touched piece, short mono PCM WAV samples, the options belonging to the player and not to the game, one sound per kind, no control during the game, no volume setting, no separate options for the opponent's sounds.
+
+### Reading of the requirement
+
 - **The options belong to the player, not to the game.** Each player sets them in their own browser. They are saved in that browser and are not sent to the server, so one player can play with sound and the other without. They apply whether the player creates a game, joins one, or returns to a running one.
 - **One sound per kind.** A capture sounds like any other released piece. No sounds for anything else (game start, game end, draw offer, low time, arbiter messages).
 - **No control during the game and no volume setting.** The options are on the entry screen only; the volume is the device's.
@@ -87,76 +100,52 @@ The requirement leaves these points open. The proposal assumes:
 | `REMOVE` (piece taken off the board), `DRAG_START`, `DRAG_HOVER` | no |
 | Position set by the server (`boardUpdate`, Revert, restored position, reconnect, rematch) | no — nobody released a piece |
 
-The player's own board plays it at the release, without waiting for the server. The opponent's board plays it when it applies the same event from `opponentBoardEvent`. That message already arrives for every event and needs no change; the board applies it only while the opponent is to move, and the sound follows the board.
+The player's own board plays it at the release, without waiting for the server. The opponent's board plays it when it applies the same event from `opponentBoardEvent`. The server does not forward every event (not those of a player who is not to move, and none during the delay before the game resumes), and the board applies an event only while the opponent is to move; the sound follows the board. A piece put back by hand during a restoration is forwarded and is heard once on each board. Castling makes two sounds, king and rook.
 
-**Clock sound** — when a lever that is up is pressed down:
+A touched piece stays silent although a piece lifted and put back makes a sound on a real board: the app cannot tell the two apart, and the rules treat both as a touch.
 
-- The player's own lever while it is their turn: played at the press, without waiting for the server. The press counts as a press whatever the arbiter then rules (accepted, illegal, incomplete).
-- A press of the opponent's lever that registers (the wrong clock press): played for both players.
-- A press of a lever that is already down is a physical no-op and stays silent, as it is today.
-- The opponent hears a press through a new server message (below), not by inference from the dozen messages that can follow a press.
+**Clock sound** — when a lever that is up is pressed down. The server decides, and both players hear it from the same message:
 
-### Proposed implementation
+- The player's own lever, when the arbiter rules on the move: an accepted move, an illegal move, a press without a move, an incomplete move. Also the press that ends the game.
+- The opponent's lever while the opponent's clock is running (the wrong clock press), all three times.
+- Silent: a lever that is already down (the own one when it is not the player's turn, the opponent's when their clock is not running), any press while the game is paused (the position is to be restored, the players are asked whether they are ready, the pause after a wrong clock press), after the game, or with the time expired. A press during the short delay before the game resumes after a restoration is the exception among the pauses: it restarts the clock and is ruled on, so it is heard.
+- A player who is not connected at that moment does not hear the press later.
+
+### Implementation
 
 **Playback: Web Audio API, two short recorded samples.**
 
-- New `static/js/sounds.js` with one small class. It creates one `AudioContext`, fetches and decodes the two samples once into `AudioBuffer`s when the game page loads, and plays one by starting a new `AudioBufferSourceNode`. This starts within a few milliseconds and lets sounds overlap; an `<audio>` element is slower to start and cuts itself off when retriggered.
-- New `static/sounds/piece.wav` and `static/sounds/clock.wav`: mono, 44.1 kHz, 16 bit, each under 0.25 s and so under about 20 KB. WAV has no decoder delay or padding and every browser decodes it; at this length compression gains nothing.
-- `StaticFileHandler.guessContentType` gets `.wav` → `audio/wav`. Today it would serve the files as `application/octet-stream`.
-- **Browser autoplay rule.** A page may not start audio before the user has interacted with it; until then the `AudioContext` is suspended. The module resumes it on the first `pointerdown` or `keydown` on the game page. A sound requested before that is dropped, not queued. In practice a player's own first sound always follows their own pointer press. The opponent's very first move can be silent for a player who has not yet touched the page (browsers differ; Safari is the strictest). This is accepted and stated in the manual.
-- A failure to load or play a sound never affects the game: errors are caught and the game goes on silently.
+- `static/js/sounds.js`: `OtbSoundSettings` (the two options) and `GameSounds`. `GameSounds` creates one `AudioContext`, fetches and decodes the samples the player has switched on into `AudioBuffer`s when the game page loads, and plays one by starting a new `AudioBufferSourceNode`. This starts within a few milliseconds and lets sounds overlap; an `<audio>` element is slower to start and cuts itself off when retriggered. With both options off, no audio context is created and nothing is fetched.
+- `static/sounds/piece.wav` and `static/sounds/clock.wav`: mono 16-bit PCM, 0.07 s and 0.15 s, 1.4 KB and 14 KB. WAV has no decoder delay or padding and every browser decodes it; at this length compression gains nothing.
+- `StaticFileHandler.guessContentType`: `.wav` → `audio/wav`.
+- **Browser autoplay rule.** A page may not start audio before the user has acted on it; until then the `AudioContext` is suspended. The module calls `resume()` inside the handler of every gesture a browser accepts (`pointerdown`, `pointerup`, `mousedown`, `touchend`, `keydown`, `click`), and again when the page returns to the foreground. A sound requested before the first gesture, or while a sample is still being decoded, is dropped, not queued. A sound requested while the output is waking up is played if the output is there within 250 ms and dropped otherwise. So the opponent's first move can be silent for a player who has not yet touched the game page, and after a phone was locked the first sound may be missing until the player touches the page. This is accepted and stated in the manual.
+- A failure to create the audio output, to load a sample or to play a sound never affects the game: errors are caught and the game goes on silently.
 
 **Settings.**
 
-- Entry screen (`static/index.html`): a block "Sounds" with two checkboxes, "Sound for a moved piece" and "Sound for the clock press", outside the "Create a Game" section so it visibly applies to joining and returning as well.
-- Saved in `localStorage` as `otbSoundPiece` and `otbSoundClock` (`on` / `off`) on every change; a missing value means on. If `localStorage` is unavailable both are on.
+- Entry screen (`static/index.html`): a section "Sounds" of its own with two checkboxes, "Sound for a moved piece" and "Sound for the clock press", below "Join a Game", so it visibly applies to creating, joining and returning alike.
+- Saved in `localStorage` as `otbSoundPiece` and `otbSoundClock` (`on` / `off`) on every change; a missing value means on. If `localStorage` cannot be used both are on.
 - `game.js` reads them once when the page loads.
 
 **Client hooks.**
 
-- `board.js`: after `emitEvent` for the four placing events, and in `applyOpponentEvent` for the same four, call `sounds.play('piece')`.
-- `game.js` `onClockButtonPressed`: call `sounds.play('clock')` where the press is sent to the server (own lever on the own turn; the opponent's lever while the opponent's clock is running).
-- `game.js`: handler for the new `clockPressHeard` message plays `clock`.
+- `board.js`: `ChessBoard.onPiecePlaced`, called at the player's own four placing events and in `applyOpponentEvent` when one of the same four is applied. `game.js` plays `piece` there.
+- `game.js`: the handler for `clockPressHeard` plays `clock`. Nothing else does; `onClockButtonPressed` only sends the press.
 
-**Server.** One new message, `clockPressHeard`, without content, sent to the *other* player:
+**Server.** One new message, `clockPressHeard`, without content, sent to both players:
 
-- from the clock-press handler for every press it accepts for evaluation, before the ruling is sent;
-- from the wrong-clock-press handler when the press registers.
+- from the clock-press handler when `GameSession.consumeClockPressRegistered()` says the press was ruled on, before everything else the press causes;
+- from the wrong-clock-press handler when the press registers, before the result of a press that loses the game.
 
-Nothing else on the server changes, and the message carries no rule meaning.
-
-### Where the samples come from (decision needed)
-
-Lichess is open source, but that does not cover all of its sounds. Its licence file (`COPYING.md` in `lichess-org/lila`, read on 2026-11-23) says:
-
-- The default sounds, the set `standard` that a visitor hears on Lichess, are not in its list of free files; the file names "the other sounds" under "Exceptions (non-free)". They cannot be used here.
-- The sets `sfx`, `piano`, `nes` and `futuristic` by Enigmahack are AGPLv3+. A file from them could be shipped with this GPL-3.0 project: it stays under the AGPL, the author is credited, and the source of the app must be offered to the users of the site, which the public repository does.
-- Lichess has no sound for a clock press, so that one needs another source in any case.
-
-1. **Own recordings (preferred for this app).** A piece set down on a wooden board and a press of a real chess clock, recorded with a phone, cut and normalised. Authentic, and the rights are clear.
-2. **CC0 recordings** from a public sound library, with source and licence recorded in `static/sounds/README.md`.
-3. **The piece sound from the Lichess set `sfx`** (AGPLv3+, see above), with the clock sound from option 1 or 2.
-4. **Synthesised in code** (a short filtered noise burst for the piece, a double click for the clock). No files and no licence question, but it sounds artificial. Usable as a stand-in until recordings exist; the module does not care where its two buffers come from.
+`GameSession` records whether the last press of the own lever was ruled on, because the answer for a press that is not ruled on has the same type (`INCOMPLETE_MOVE`) as the answer for a genuinely incomplete move. The message carries no rule meaning.
 
 ### Tests
 
-- **Java**: `StaticFileHandler` serves `.wav` as `audio/wav`; server tests that `clockPressHeard` goes to the opponent and only the opponent for an accepted press, for a press ruled illegal, and for a registered wrong clock press, and is not sent for a press that does not register.
-- **Playwright** (`tests/e2e/sounds.spec.ts`): the module keeps a list of the sounds it started (`window.otbSounds.played`, with whether the audio context was running), which the tests read on both boards:
-  - both options are on by default on the entry screen;
-  - White releases a piece: `piece` on both boards; White presses the clock: `clock` on both boards;
-  - a capture and a piece brought back from the side play `piece`; a piece taken off the board, a touched piece, Revert and a restored position play nothing;
-  - with "moved piece" off for one player, that board plays no `piece` and still plays `clock`, and the other board plays both; the same for "clock press" off;
-  - the options survive a reload of the entry screen and are honoured when joining a game;
-  - `/sounds/piece.wav` and `/sounds/clock.wav` are served with an audio content type.
-- **By hand, before the merge**: listening on the Windows machine and on a phone, since no automated test hears anything.
+- **Java**: `TestClockPressRegistered` (session: which presses register), `TestClockPressHeardServer` (exact counts, recipients and order for an accepted move, an illegal move, a press without a move, a press that loses the game, each wrong clock press including the losing third; none for a lever that is down, the wrong turn, a finished game, the restoration pause, the Ready wait and the pause after a wrong clock press; one for the press during the delay before the game resumes and none for the delayed resume; none replayed to a returning player; none for a checkmate without a press; one per board for the first press of a rematch), `TestStaticFileHandler` (`.wav` is served as `audio/wav`; the samples are short mono PCM).
+- **Playwright** (`tests/e2e/sounds.spec.ts`): two first-time visitors in two isolated browser contexts who use the real Create, Join and Return controls. An observer on the audio output counts what each page really started: a decoded sample, connected to the output, started while the output was running. The tests assert exact counts on both boards for a touch, a move, a capture, a piece taken off, both placements from the side, an illegal move with Revert and the resumed game, a piece put back by hand, a wrong clock press with its pause and restart, levers that are down, a checkmate without a press, a rematch and a reload; each option alone, kept over a reload and honoured on joining and returning; a listener who has not touched the page; a sample that fails to load; a browser that refuses storage; the content type of the samples.
+- The rest of the browser suite starts with both sounds off (see `playwright.config.ts`), and the sounds tests use a stand-in audio context where the browser needs seconds to open the audio output (`tests/e2e/README.md`).
+- **By ear, before the release**: on the Windows machine and on an iPhone, also after locking and reopening the phone. No automated test hears anything.
 
-### Documentation with the change
+### Not part of this
 
-`SPECIFICATION.md` (start screen, new section "Sounds"), `MANUAL.md` (the two options, the first-sound limitation), changelog at the release.
-
-### Points for the review
-
-- Is a dedicated `clockPressHeard` message right, or should the opponent's clock sound be derived from the existing messages?
-- Should the own clock sound wait for the server instead of playing at once? At once feels like a real clock; waiting can never play for a press the server ignores.
-- Is silence for `CLICK` right? A piece lifted and put back on its own square makes a sound on a real board, but the app cannot tell that from a mere touch.
-- Should the opponent's sounds be separately switchable, or is "both players' sounds follow my two options" enough?
+Separate options for the opponent's sounds, a control during the game, a volume setting, sounds for other events, and playing the board by touch (its drag handlers are mouse-based).
