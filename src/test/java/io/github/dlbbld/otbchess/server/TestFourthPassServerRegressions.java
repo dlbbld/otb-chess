@@ -114,6 +114,14 @@ class TestFourthPassServerRegressions {
     server.onMessage(client.socket, message.toString());
   }
 
+  /** h2-h3 and h7-h6 with the clock presses: a draw can be offered only after both players have made a move. */
+  private void bothPlayersMove(Client white, Client black) {
+    drag(white, "WHITE_PAWN", "h2", "h3");
+    sendWithBoard(white, "clockPress");
+    drag(black, "BLACK_PAWN", "h7", "h6");
+    sendWithBoard(black, "clockPress");
+  }
+
   /** The Revert button: the server puts the board back and says so. */
   private void revert(Client client) {
     send(client, "restorePosition");
@@ -205,6 +213,7 @@ class TestFourthPassServerRegressions {
     final var black = new Client();
     final String id = start(white, black, true, null);
     final var offers = room(id).getSession().getDrawOfferManager();
+    bothPlayersMove(white, black);
 
     drag(white, "WHITE_PAWN", "e2", "e4");
     sendWithBoard(white, "offerDraw");
@@ -230,9 +239,11 @@ class TestFourthPassServerRegressions {
     final var white = new Client();
     final var black = new Client();
     start(white, black, true, null);
+    bothPlayersMove(white, black);
 
     send(white, "offerDraw");
 
+    assertEquals(1, black.count("drawOffered"));
     assertEquals(0, white.count("drawOfferExpired"));
     assertEquals(0, black.count("drawOfferExpired"));
   }

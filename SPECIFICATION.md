@@ -716,7 +716,17 @@ The same holds while the arbiter has stopped the clocks (a restoration, the paus
 
 #### When a draw can be agreed (FIDE 5.2.3)
 
-A game is drawn upon agreement *"provided both players have made at least one move"*. A move made on the board counts although its clock press is still outstanding - that is exactly the moment at which an offer is to be made (9.1.2.1). Before that, *Accept* and an answering offer are refused with *"A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."* The offer itself is made and stays on the table. In practice: White's first move with an offer cannot be accepted (Black has not moved); Black's first move with an offer can.
+A game is drawn upon agreement *"provided both players have made at least one move"*. A move made on the board counts although its clock press is still outstanding - that is exactly the moment at which an offer is to be made (9.1.2.1). In practice: White's first move with an offer is too early (Black has not moved); Black's first move with an offer is not.
+
+**An offer made before that is not valid, and the arbiter says so at once to both players.** It is not passed on: the opponent gets no Accept/Reject panel for an offer that could not be accepted, and nothing stays on the table.
+
+- Offerer (arbiter window): _"The draw offer is not valid: a draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."_
+- Opponent (info window below the clock, no action required): _"Your opponent offered a draw. The offer is not valid: a draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."_
+- This holds for every way of offering: on the own move without a move, with the move before the clock press, and while the opponent has the move. A move shown with the offer is not affected - it is completed with the clock press as usual. An offer shown with an **invalid** move is ruled on as that move (see *Offer-with-invalid-move*).
+- **Counting:** early offers are counted on the same ladder as the wrong-time offers, per player and per move. The second early offer on the same move is not considered and brings the warning (_"You are again offering a draw before both players have made a move. This offer was not considered. Warning: your next draw offer on this move loses the game."_; the opponent is informed passively), the third loses the game (`WRONG_TIME_OFFER_GAME_LOST`). The count starts again with the next move.
+- **A rejected draw claim** counts as a draw offer (FIDE 9.5) only once a draw can be agreed. Before that the claim is examined and rejected as usual (two minutes for the opponent, the one claim of the move is used, a move named with the claim must be played), but it is no offer: the claimer's message ends with _"It does not count as a draw offer: a draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."_, and the opponent reads the same in the info window instead of being asked to accept.
+
+*Accept* and an answering offer keep their own check of the rule and would be refused with *"A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."* - a safeguard only, since no offer is on the table before both players have moved.
 
 #### The game record of an agreed draw
 

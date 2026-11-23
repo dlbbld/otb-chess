@@ -294,7 +294,7 @@ test('a creator who creates another game gives up the first one', async ({ brows
 
 // ----- no draw before both players have moved; the offered move and the result in the record -----
 
-const TOO_EARLY = 'A draw can be agreed only after both players have made at least one move (FIDE 5.2.3).';
+const TOO_EARLY = 'a draw can be agreed only after both players have made at least one move (FIDE 5.2.3).';
 
 async function shownPgn(page: Page): Promise<string> {
   await page.locator('#exportPgnBtn').click();
@@ -304,24 +304,20 @@ async function shownPgn(page: Page): Promise<string> {
   return pgn;
 }
 
-test('a draw offered on the first move cannot be agreed until both players have made a move', async ({ browser }) => {
+test('a draw offered on the first move is declared not valid; Black\'s first move with an offer can be agreed', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
-  // White makes the first move and offers a draw with it: only White has made a move.
+  // White makes the first move and offers a draw with it: only White has made a move. The arbiter
+  // declares the offer not valid to both players, and Black is not asked to accept anything.
   await dragPiece(white, 'e2', 'e4');
   await white.locator('#offerDrawBtn').click();
-  await expect(offerPanel(black)).toBeVisible();
-
-  await black.locator('#acceptDrawBtn').click();
-  await expect(arbiter(black)).toHaveText(TOO_EARLY);
-  await black.locator('#offerDrawBtn').click();
-  await expect(arbiter(black)).toHaveText(TOO_EARLY);
+  await expect(arbiter(white)).toHaveText(`The draw offer is not valid: ${TOO_EARLY}`);
+  await expect(black.locator('#opponentInfoPanel')).toHaveText(
+    `Your opponent offered a draw. The offer is not valid: ${TOO_EARLY}`);
   for (const page of [white, black]) {
+    await expect(offerPanel(page)).toBeHidden();
     await expect(resultPanel(page)).toBeHidden();
   }
-  // The offer stays on the table and is not answered by an offer of Black's.
-  await expect(offerPanel(black)).toBeVisible();
-  await expect(offerPanel(white)).toBeHidden();
 
   // White completes the move. Black makes the first move and offers with it: now both have moved.
   await pressClock(white);

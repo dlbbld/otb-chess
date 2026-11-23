@@ -89,6 +89,46 @@ release's tasks until it ships.
   4 skipped (Windows-only launcher tests); `CI=1 npx playwright test --retries=0`: 220 passed, 1 skipped
   (Windows-only). Not run: `RuleFuzzer`, `TouchMoveOracle` (no ruling changed, only what is circled).
 
+### Draw offers before both players have moved (2026-11-23)
+
+- [x] **An offer before both players have made a move is declared not valid at once (FIDE 5.2.3).** Reported
+  journeys: (1) the game starts, White offers a draw, Black gets the Accept/Reject panel, and *Accept* is answered
+  "A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."; (2) the same after
+  White's first move when Black offers. The offer was passed on although it could never be accepted. Now the
+  arbiter intervenes when the offer is made: the offerer reads "The draw offer is not valid: a draw can be
+  agreed only ...", the opponent reads "Your opponent offered a draw. The offer is not valid: ..." in the info
+  window, no panel opens and nothing stays on the table. `DrawOfferManager.offerDrawTooEarly`,
+  `GameSession.rejectEarlyOffer`.
+- [x] Counting, as decided: early offers go on the same per-move ladder as the wrong-time offers - the second on
+  the same move is not considered and brings the warning, the third loses the game
+  (`WRONG_TIME_OFFER_GAME_LOST`); the count starts again with the next move. An early offer made the right way
+  (with the move, before the clock) counts too; the move itself stays and is completed with the clock press.
+  Black's first move with an offer is not early: both have then made a move.
+- [x] Same cause, also fixed: a **rejected draw claim** on the first move was passed on as a draw offer
+  (FIDE 9.5) with the same dead Accept button. Before both players have moved it is now rejected as usual (two
+  minutes, the claim of the move is used, a named move must be played) but is no offer; both players are told
+  "It does not count as a draw offer: ...". `DrawClaimManager.processClaim(..., drawCanBeAgreed)`,
+  `DrawClaimResult.rejectedBeforeDrawCanBeAgreed`.
+- [x] Decisions taken, for review: the opponent is informed passively (info window, nothing to answer); the game
+  result of the third early offer keeps the wording "... by repeatedly offering a draw at the wrong time"; an
+  early offer shown with an invalid move is ruled on as that move, as before; *Accept* and an answering offer
+  keep their own 5.2.3 check as a safeguard; in a game from a custom position the moves of this game count, as
+  before.
+- [x] Tests: `TestFinalPassRegressions` (9 on this rule), `TestFinalPassServerRegressions` (5), new
+  `early-draw-offer.spec.ts` (6, both reported journeys replayed literally), the old first-move journey in
+  `final-pass.spec.ts` rewritten. 33 Java tests and 18 browser tests that offered or claimed on the first move
+  now let both players move first (`DrawTestSupport.bothPlayersMove`, `bothPlayersMove`, `bothKingsMove` for
+  the king-and-rook positions). Verification on macOS: `mvn -o test` runs 470 Java tests, 0 failures, 4 skipped
+  (Windows-only launcher tests); `CI=1 npx playwright test --retries=0`: 228 passed, 1 skipped (Windows-only);
+  `RuleFuzzer` 20,000 games, 0 findings. Not run: `TouchMoveOracle` (no touch-move ruling changed) and the
+  Windows-only launcher tests.
+
+### Planned after the next release
+
+- [ ] **Sounds, in a release of their own.** A sound when a piece is released on a square (as on Lichess) and a
+  sound when the clock is pressed. Two options on the entry screen, each on or off, default on: sound for a
+  moved piece, sound for the clock press.
+
 ## 0.2.0 — Game Lifecycle and Draw Guards
 
 - [x] Scope: everything on `latest-ai-model-review` since `0.1.6` - the model review of `0.1.6`, its

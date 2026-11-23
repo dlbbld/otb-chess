@@ -408,6 +408,7 @@ class TestBoardMarks {
   @Test
   void aDrawOfferWithALegalMoveMarksNothing() {
     final var session = session(null);
+    DrawTestSupport.bothPlayersMove(session);
     drag(session, Piece.WHITE_PAWN, Square.E2, Square.E4);
 
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, session

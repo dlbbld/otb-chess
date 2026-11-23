@@ -25,6 +25,13 @@ public class DrawOfferManager {
   private static final int PENALTY_GAME_LOST = 3;
   private static final String DEFAULT_OFFERER_REJECTION_MESSAGE = "Your opponent rejected the draw offer.";
 
+  /** FIDE 5.2.3, as a sentence of its own. */
+  static final String DRAW_TOO_EARLY = "A draw can be agreed only after both players have made at least one move"
+      + " (FIDE 5.2.3).";
+  /** FIDE 5.2.3, as the reason that follows a colon. */
+  static final String DRAW_TOO_EARLY_REASON = "a draw can be agreed only after both players have made at least one"
+      + " move (FIDE 5.2.3).";
+
   private boolean drawOffered;
   private Side offeringSide;
   private boolean opponentTouchedPiece;
@@ -93,6 +100,14 @@ public class DrawOfferManager {
     /** Wrong-time offer NOT considered (second on the same move): not forwarded; both players informed. */
     public static DrawOfferResult wrongTimeNotConsidered(String message, String opponentInfo) {
       return new DrawOfferResult(false, false, true, message, opponentInfo, true);
+    }
+
+    /**
+     * The offer is not valid because a draw cannot be agreed yet (FIDE 5.2.3): nothing is registered or forwarded,
+     * and both players are told.
+     */
+    public static DrawOfferResult tooEarly(String message, String opponentInfo) {
+      return new DrawOfferResult(false, false, true, message, opponentInfo, false);
     }
 
     public static DrawOfferResult wrongTimeGameLost(String message) {
@@ -186,6 +201,31 @@ public class DrawOfferManager {
     return DrawOfferResult
         .wrongTime("Please note that the draw offer should be made on your own turn. Not following this"
             + " procedure could lead to a warning. The offer still counts as a draw offer.");
+  }
+
+  /**
+   * An offer made before both players have made a move. A draw cannot be agreed then (FIDE 5.2.3), so the arbiter
+   * declares the offer not valid at once instead of passing it on: nothing is registered, and the opponent is only
+   * told what happened. The offers of a move are counted on one ladder, the same as the wrong-time offers: the second
+   * one on the same move is not considered and brings the warning, the third one loses the game.
+   */
+  public DrawOfferResult offerDrawTooEarly(Side side) {
+    final int count = incrementWrongTimeCount(side);
+
+    if (count >= PENALTY_GAME_LOST) {
+      return DrawOfferResult.wrongTimeGameLost(
+          "You have been warned that you will lose the game when you offer a draw again on this move."
+              + " As you have offered again, you lose the game.");
+    }
+    if (count == PENALTY_WARNING) {
+      return DrawOfferResult.tooEarly(
+          "You are again offering a draw before both players have made a move. This offer was not considered."
+              + " Warning: your next draw offer on this move loses the game.",
+          "Your opponent again offered a draw before both players have made a move. This offer was not considered,"
+              + " and they have been warned: their next draw offer on this move loses them the game.");
+    }
+    return DrawOfferResult.tooEarly("The draw offer is not valid: " + DRAW_TOO_EARLY_REASON,
+        "Your opponent offered a draw. The offer is not valid: " + DRAW_TOO_EARLY_REASON);
   }
 
   /**

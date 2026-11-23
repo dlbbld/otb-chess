@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { startTwoPlayerGame, TwoPlayerGame, expectGameResult } from './helpers/app';
-import { dragPiece, pressClock } from './helpers/board';
+import { bothPlayersMove, dragPiece, pressClock } from './helpers/board';
 
 // Wrong-time draw offers (A-001): escalation is per player PER MOVE — first offer of the move
 // is a real offer, the second is not considered (+ warning), the third loses the game. The count
 // never carries over to the next move (an offer is only semi-illegal, unlike wrong-time claims).
+// Both players move first: before that an offer is not valid at all (see early-draw-offer.spec.ts).
 
 let game: TwoPlayerGame;
 
@@ -19,6 +20,7 @@ test('wrong-time offers escalate within one move: real offer, not considered + w
 }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   // White is to move. Black's first wrong-time offer is a REAL offer: White gets Accept/Reject.
   await black.locator('#offerDrawBtn').click();
@@ -54,6 +56,7 @@ test('the wrong-time offer count resets every move — the first offer of a new 
 }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   // Black reaches the warning on this move (offer, rejected, offer again).
   await black.locator('#offerDrawBtn').click();
@@ -82,8 +85,9 @@ test('a not-considered wrong-time offer clears the opponent stale rejection noti
 }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
-  // White has the move and offers too early. The first offer is still real, so Black rejects it.
+  // White has the move and offers before making the move. The first offer is still real, so Black rejects it.
   await white.locator('#offerDrawBtn').click();
   await expect(white.locator('#arbiterMessage')).toContainText(
     'should be made after making your move and before pressing the clock');

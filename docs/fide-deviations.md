@@ -79,7 +79,9 @@ FIDE's Article 11.5 and 12.9 give the arbiter judgment over distraction, annoyin
 
 **Rationale**: Arbiter judgment must be encoded into a digital system; an explicit threshold is more transparent than a fuzzy heuristic. The per-move reset reflects the semi-legal nature of the offence: every move starts with a fresh, genuine right to offer.
 
-**Note**: This policy applies only to wrong-time offers. Repeated offers at the recommended time are not currently penalized — see [E-002](enhancements.md#e-002) for the open question of whether they should be.
+**Offers before both players have made a move**: FIDE 5.2.3 allows a draw by agreement only *"provided both players have made at least one move"*. An offer made before that is not valid at all, so the arbiter declares it not valid at once to both players and does not forward it - an arbiter at the board would intervene the same way rather than let the opponent answer an offer that cannot be accepted. Such offers are counted on the same per-move ladder: the first is declared not valid, the second on the same move is not considered and brings the warning, the third loses the game (`WRONG_TIME_OFFER_GAME_LOST`). This holds also for an early offer made the right way, with the move before the clock press. A rejected draw claim (FIDE 9.5) is likewise no draw offer before both players have moved.
+
+**Note**: Apart from that, this policy applies only to wrong-time offers. Repeated offers at the recommended time are not currently penalized — see [E-002](enhancements.md#e-002) for the open question of whether they should be.
 
 ---
 

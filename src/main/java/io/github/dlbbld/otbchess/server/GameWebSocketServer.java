@@ -947,7 +947,21 @@ public class GameWebSocketServer extends WebSocketServer {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     }
-    // INCOMPLETE_MOVE / repeated-offer warning — message has already been sent, no further action.
+    // INCOMPLETE_MOVE / repeated-offer warning — message has already been sent. An offer that is
+    // not valid because a draw cannot be agreed yet is also made known to the opponent.
+    room.getSession().consumeEarlyOfferOpponentInfo()
+        .ifPresent(info -> sendOpponentInfo(room, side.getOppositeSide(), info, false));
+  }
+
+  /** Passive information about what the other player did, for the info window below the clock. */
+  private void sendOpponentInfo(GameRoom room, Side recipient, String message, boolean clearArbiterMessage) {
+    final JsonObject info = new JsonObject();
+    info.addProperty("type", "opponentInfo");
+    info.addProperty("message", message);
+    if (clearArbiterMessage) {
+      info.addProperty("clearArbiterMessage", true);
+    }
+    room.sendToSide(recipient, GSON.toJson(info));
   }
 
   private void handleWrongTimeDrawOffer(GameRoom room, WebSocket conn, Side side) {
@@ -969,15 +983,10 @@ public class GameWebSocketServer extends WebSocketServer {
       // Per FIDE the offer is informational and the clock keeps running on whoever has the move.
     }
 
-    // A not-considered second offer: the opponent sees what happened passively (info window).
+    // An offer that was not considered or is not valid: the opponent sees what happened passively
+    // (info window).
     if (result.opponentInfo() != null) {
-      final JsonObject info = new JsonObject();
-      info.addProperty("type", "opponentInfo");
-      info.addProperty("message", result.opponentInfo());
-      if (result.clearOpponentArbiterMessage()) {
-        info.addProperty("clearArbiterMessage", true);
-      }
-      room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
+      sendOpponentInfo(room, side.getOppositeSide(), result.opponentInfo(), result.clearOpponentArbiterMessage());
     }
 
     // Forward the offer to the opponent — only a REAL registered offer (the first wrong-time

@@ -341,6 +341,7 @@ class TestFourthPassRegressions {
   @ValueSource(strings = { "WHITE", "BLACK" })
   void anOfferWithAnInvalidMoveLeavesAPendingOfferAlone(String pending) {
     final var session = session();
+    DrawTestSupport.bothPlayersMove(session);
     final Side offerer = Side.valueOf(pending);
     assertTrue(session.offerDrawWrongTime(offerer).accepted());
     // Touch-move: White touches the g2 pawn and then plays h2-h3. For White as recipient the offer was made at

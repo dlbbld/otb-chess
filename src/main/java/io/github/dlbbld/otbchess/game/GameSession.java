@@ -571,7 +571,15 @@ public class GameSession {
       return markRuling(handleArbiterResponse(moveResponse, side, false));
     }
 
-    // Move is valid. Register the offer (handles repeat / game-lost penalty).
+    // Move is valid. It is the offerer's move of this turn, made on the board: with it both players
+    // have moved unless it is the first move of the game.
+    if (board.getPerformedMovesAsSan().isEmpty()) {
+      final var early = rejectEarlyOffer(side);
+      earlyOfferOpponentInfo = early.opponentInfo();
+      return ArbiterResponse.incompleteMove(early.arbiterMessage());
+    }
+
+    // Register the offer (handles repeat / game-lost penalty).
     final var result = drawOfferManager.offerDrawCorrectTime(side);
     if (result.gameLost()) {
       endGame(new GameResult(GameResultType.DRAW_AGREEMENT, side.getOppositeSide(), result.arbiterMessage()));
@@ -616,14 +624,46 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated(pauseMessage);
     }
 
+    if (!haveBothPlayersMadeAMove()) {
+      return rejectEarlyOffer(side);
+    }
+
     final boolean offererHasMove = side == board.getSideToMove();
     final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
     if (result.gameLost()) {
-      terminationActor = side;
-      endGame(new GameResult(GameResultType.WRONG_TIME_OFFER_GAME_LOST, side.getOppositeSide(),
-          sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
+      loseByOfferingAtTheWrongTime(side);
     }
     return result;
+  }
+
+  /**
+   * An offer before both players have made a move is not valid (FIDE 5.2.3): the arbiter says so at once to both
+   * players instead of passing on an offer that could not be accepted. It counts on the offer ladder of the move.
+   */
+  private DrawOfferManager.DrawOfferResult rejectEarlyOffer(Side side) {
+    final var result = drawOfferManager.offerDrawTooEarly(side);
+    if (result.gameLost()) {
+      loseByOfferingAtTheWrongTime(side);
+    }
+    return result;
+  }
+
+  private void loseByOfferingAtTheWrongTime(Side side) {
+    terminationActor = side;
+    endGame(new GameResult(GameResultType.WRONG_TIME_OFFER_GAME_LOST, side.getOppositeSide(),
+        sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
+  }
+
+  private String earlyOfferOpponentInfo;
+
+  /**
+   * @return and clears what the opponent is to be told about an offer that was made with a move before both players
+   *         had moved; the offerer's part is the answer to the offer itself
+   */
+  public synchronized Optional<String> consumeEarlyOfferOpponentInfo() {
+    final Optional<String> info = Optional.ofNullable(earlyOfferOpponentInfo);
+    earlyOfferOpponentInfo = null;
+    return info;
   }
 
   /** What became of an offer that was made while the opponent's offer was on the table. */
@@ -749,8 +789,7 @@ public class GameSession {
   }
 
   private static final String DRAW_AGREEMENT_DESCRIPTION = "The game is drawn by agreement.";
-  private static final String DRAW_TOO_EARLY = "A draw can be agreed only after both players have made at least"
-      + " one move (FIDE 5.2.3).";
+  private static final String DRAW_TOO_EARLY = DrawOfferManager.DRAW_TOO_EARLY;
 
   private String lastAcceptDrawRejection;
 
@@ -789,7 +828,10 @@ public class GameSession {
       return proceduralRejection;
     }
 
-    final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
+    // A rejected claim is a draw offer (FIDE 9.5) - but not before both players have made a move,
+    // when no draw can be agreed (FIDE 5.2.3). Nothing has been touched yet on the move of a claim.
+    final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san,
+        haveBothPlayersMadeAMove());
 
     // An invalid SAN doesn't constitute a completed claim attempt: no legal intended move was
     // presented, so the claim is not considered. Any other outcome counts and locks claims for

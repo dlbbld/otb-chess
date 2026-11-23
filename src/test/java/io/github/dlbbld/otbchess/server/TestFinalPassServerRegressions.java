@@ -271,6 +271,7 @@ class TestFinalPassServerRegressions {
     final var blackOld = new Client();
     final var blackNew = new Client();
     final String id = start(white, blackOld);
+    playOneMoveEach(white, blackOld);
     resume(blackNew, id, blackOld.token());
     send(blackNew, "offerDraw");
     final int whiteMessages = white.messages.size();
@@ -651,27 +652,111 @@ class TestFinalPassServerRegressions {
 
   // ----- findings 7 and 8: no draw before both players have moved; the offered move is in the record -----
 
+  private static final String OFFER_NOT_VALID = "The draw offer is not valid: a draw can be agreed only after both"
+      + " players have made at least one move (FIDE 5.2.3).";
+  private static final String OFFER_NOT_VALID_FOR_OPPONENT = "Your opponent offered a draw. The offer is not valid:"
+      + " a draw can be agreed only after both players have made at least one move (FIDE 5.2.3).";
+
+  /** The offer was declared not valid: the other player has no offer to answer, and the game goes on. */
+  private void assertNoOfferReached(Client recipient, String id) throws Exception {
+    assertEquals(0, recipient.count("drawOffered"), "no Accept/Reject panel");
+    assertEquals(OFFER_NOT_VALID_FOR_OPPONENT, recipient.text("opponentInfo"));
+    assertFalse(recipient.last("opponentInfo").has("clearArbiterMessage"));
+    send(recipient, "acceptDraw");
+    assertEquals("No draw offer is active.", recipient.text("drawAcceptRejected"));
+    final var session = rooms().get(id).getSession();
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+    assertFalse(session.getDrawOfferManager().isDrawOffered());
+    assertEquals(0, recipient.count("gameEnded"));
+  }
+
   @Test
-  void acceptingOnTheFirstMoveIsRefusedAndTheOfferStaysOnTheTable() throws Exception {
+  void anOfferBeforeTheFirstMoveIsDeclaredNotValidToBothPlayers() throws Exception {
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black);
+
     send(white, "offerDraw");
-    assertEquals(1, black.count("drawOffered"));
-    final String tooEarly = "A draw can be agreed only after both players have made at least one move (FIDE 5.2.3).";
 
-    send(black, "acceptDraw");
-    assertEquals(tooEarly, black.text("drawAcceptRejected"));
+    assertEquals(OFFER_NOT_VALID, white.text("wrongTimeDrawOffer"));
+    assertNoOfferReached(black, id);
+  }
+
+  @Test
+  void blacksOfferBeforeBlackHasMovedIsDeclaredNotValidToBothPlayers() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    drag(white, "WHITE_PAWN", "e2", "e4");
+    sendWithBoard(white, "clockPress");
+
     send(black, "offerDraw");
-    assertEquals(tooEarly, black.text("repeatedDrawOffer"));
 
-    final var session = rooms().get(id).getSession();
-    assertEquals(GameState.IN_PROGRESS, session.getState());
-    assertEquals(Side.WHITE, session.getDrawOfferManager().getOfferingSide());
+    assertEquals(OFFER_NOT_VALID, black.text("wrongTimeDrawOffer"));
+    assertNoOfferReached(white, id);
+  }
+
+  @Test
+  void anEarlyOfferMadeWithTheMoveIsDeclaredNotValidAndTheMoveIsStillPlayed() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    drag(white, "WHITE_PAWN", "e2", "e4");
+
+    sendWithBoard(white, "offerDraw");
+
+    assertEquals(OFFER_NOT_VALID, white.text("incomplete_move"));
+    assertEquals(0, white.count("drawOfferSent"));
+    assertNoOfferReached(black, id);
+    sendWithBoard(white, "clockPress");
+    assertEquals(1, white.count("move_accepted"));
+    assertEquals(List.of("e4"), rooms().get(id).getSession().getBoard().getPerformedMovesAsSan());
+  }
+
+  @Test
+  void theThirdEarlyOfferOnTheSameMoveLosesTheGame() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    start(white, black);
+
+    send(white, "offerDraw");
+    send(white, "offerDraw");
+    assertEquals("You are again offering a draw before both players have made a move. This offer was not"
+        + " considered. Warning: your next draw offer on this move loses the game.", white.text("wrongTimeDrawOffer"));
+    assertEquals("Your opponent again offered a draw before both players have made a move. This offer was not"
+        + " considered, and they have been warned: their next draw offer on this move loses them the game.",
+        black.text("opponentInfo"));
     assertEquals(0, white.count("gameEnded"));
-    assertEquals(0, white.count("drawOffered"), "Black's answer is no offer of its own");
-    assertEquals(0, white.count("drawRejected"));
-    assertEquals(0, black.count("drawOfferExpired"), "the panel with White's offer stays");
+    send(white, "offerDraw");
+
+    assertEquals(0, black.count("drawOffered"));
+    for (final Client client : new Client[] { white, black }) {
+      assertEquals(1, client.count("gameEnded"));
+      assertEquals("WRONG_TIME_OFFER_GAME_LOST", client.last("gameEnded").get("resultType").getAsString());
+      assertEquals("black", client.last("gameEnded").get("winner").getAsString());
+      assertEquals("white", client.last("gameEnded").get("actor").getAsString());
+    }
+  }
+
+  @Test
+  void aRejectedClaimBeforeBothPlayersHaveMovedIsNotPassedOnAsAnOffer() throws Exception {
+    final var white = new Client();
+    final var black = new Client();
+    final String id = start(white, black);
+    final String noOffer = " It does not count as a draw offer: a draw can be agreed only after both players have made"
+        + " at least one move (FIDE 5.2.3).";
+
+    claim(white, "THREEFOLD_ON_BOARD");
+
+    assertEquals("Threefold repetition claim rejected. The position has not occurred three times." + noOffer,
+        white.text("drawClaimResult"));
+    assertEquals(0, black.count("drawOffered"), "no Accept/Reject panel");
+    assertEquals(0, black.count("drawClaimOpponent"));
+    assertEquals("Your opponent claimed a draw by threefold repetition of the current position, but the claim is"
+        + " not valid." + noOffer, black.text("opponentInfo"));
+    send(black, "acceptDraw");
+    assertEquals("No draw offer is active.", black.text("drawAcceptRejected"));
+    assertEquals(GameState.IN_PROGRESS, rooms().get(id).getSession().getState());
   }
 
   @Test

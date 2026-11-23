@@ -471,6 +471,7 @@ class TestGameSession {
   void testClaimConvertedDrawOfferSurvivesClaimantClockPress() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    DrawTestSupport.bothPlayersMove(session);
 
     final DrawClaimResult claim = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
     assertTrue(claim.convertsToDrawOffer());
@@ -491,6 +492,7 @@ class TestGameSession {
   void testDrawOfferTouchedPiecePreventsAcceptance() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    DrawTestSupport.bothPlayersMove(session);
 
     // White plays e4 and offers draw
     final Side white = session.getHavingMove();
@@ -825,6 +827,7 @@ class TestGameSession {
   void testWrongTimeClaimDoesNotConsumeOnMoveClaimRight() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    DrawTestSupport.bothPlayersMove(session);
 
     // Black claims while White has the move — rejected as wrong-time.
     assertTrue(session.claimDraw(Side.BLACK, DrawClaimType.THREEFOLD_ON_BOARD, null).wrongTime());
@@ -865,8 +868,9 @@ class TestGameSession {
   @Test
   void testWrongTimeOfferEscalatesWithinTheMove() {
     final GameSession session = new GameSession(TEST_TIME);
-    session.startGame(); // White to move — Black's offers are wrong-time
-
+    session.startGame();
+    DrawTestSupport.bothPlayersMove(session);
+    // White to move — Black's offers are wrong-time
     final var first = session.offerDrawWrongTime(Side.BLACK);
     assertTrue(first.accepted()); // a REAL offer — forwarded, the opponent can accept it
     assertTrue(first.arbiterMessage().contains("The offer still counts as a draw offer"));
@@ -1286,9 +1290,13 @@ class TestGameSession {
     assertFalse(result.accepted());
     assertFalse(result.invalidMove());
     assertTrue(result.moveToPerform().isPresent());
+    // It is the first move of the game: the rejected claim is no draw offer yet (FIDE 5.2.3).
     assertEquals("Threefold claim for move a3 was rejected because this does not result in a threefold repetition."
-        + " Please play. The claim also counts as a draw offer for your opponent, which he can accept or reject.",
+        + " Please play. It does not count as a draw offer: a draw can be agreed only after both players have made"
+        + " at least one move (FIDE 5.2.3).",
         result.message());
+    assertFalse(result.convertsToDrawOffer());
+    assertFalse(session.getDrawOfferManager().isDrawOffered());
     assertFalse(result.message().contains("no move from the current position"));
     assertNotNull(session.getMustExecuteMove());
     assertEquals(Side.WHITE, session.getHavingMove());
@@ -1299,6 +1307,7 @@ class TestGameSession {
   void testFiftyMoveClaimWithMoveRejectedForSubmittedMoveWhenClockIsBelowThreshold() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    DrawTestSupport.bothPlayersMove(session);
     // Half-move clock 0; canClaimFiftyMoveRuleWithOwnMove() requires 99+. The legal
     // submitted move is still the considered claim move and must be played.
     final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.FIFTY_MOVE_WITH_MOVE, "e4");
@@ -1479,6 +1488,7 @@ class TestGameSession {
   void testRejectedClaimRegistersDrawOfferToOpponent() {
     final GameSession session = new GameSession(TEST_TIME);
     session.startGame();
+    DrawTestSupport.bothPlayersMove(session);
     final DrawClaimResult result = session.claimDraw(Side.WHITE, DrawClaimType.THREEFOLD_ON_BOARD, null);
     assertFalse(result.accepted());
     assertTrue(result.convertsToDrawOffer());
@@ -1505,6 +1515,13 @@ class TestGameSession {
   private String rejectOfferFromClaim(Board board, DrawClaimType type, String san) {
     final GameSession session = new GameSession(TEST_TIME, 2, true, board);
     session.startGame();
+    // A rejected claim is a draw offer only after both players have made a move (FIDE 5.2.3).
+    if (board.getBitboardPosition().get(Square.A2) == Piece.WHITE_PAWN) {
+      DrawTestSupport.bothPlayersMove(session);
+    } else {
+      makeMove(session, Square.E1, Square.E2, Piece.WHITE_KING);
+      makeMove(session, Square.E8, Square.E7, Piece.BLACK_KING);
+    }
 
     final DrawClaimResult result = session.claimDraw(Side.WHITE, type, san);
 

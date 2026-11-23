@@ -36,6 +36,7 @@ class TestSecondPassRegressions {
   @ValueSource(strings = {"restoring", "ready", "delayed"})
   void offersDuringRecoveryDoNotCountThePendingIllegalMoveAgain(String phase) {
     final var session = session(phase.equals("delayed"));
+    DrawTestSupport.bothPlayersMove(session);
     final var illegal = pawnTo(session, Square.E5);
     session.recordEvent(Side.WHITE, BoardEvent.dragMove(Square.E2, Square.E5, Piece.WHITE_PAWN, 0));
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, session.pressClockButton(Side.WHITE, illegal).type());

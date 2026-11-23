@@ -154,6 +154,7 @@ class TestCloudReviewRegressions {
   @Test
   void drawClaimsDuringTheWrongClockPressPauseAreNotConsidered() {
     final var session = session(60000);
+    DrawTestSupport.bothPlayersMove(session);
     assertTrue(session.pressOpponentClock(Side.BLACK).offense());
     assertEquals(Side.NONE, session.getClock().getRunningFor());
     final long whiteTime = session.getClock().getRemainingTimeMs(Side.WHITE);
@@ -185,6 +186,7 @@ class TestCloudReviewRegressions {
   @Test
   void drawOffersDuringTheWrongClockPressPauseAreNotConsidered() {
     final var session = session(60000);
+    DrawTestSupport.bothPlayersMove(session);
     assertTrue(session.pressOpponentClock(Side.BLACK).offense());
     final String paused = "The game is paused. Please wait until the clock restarts.";
 
@@ -217,6 +219,7 @@ class TestCloudReviewRegressions {
   void aStaleWrongClockMarkerDoesNotPauseARunningGame() {
     // The admonishment pause is over as soon as a clock runs again, whatever restarted it.
     final var session = session(60000);
+    DrawTestSupport.bothPlayersMove(session);
     assertTrue(session.pressOpponentClock(Side.BLACK).offense());
     session.getClock().startClock(Side.WHITE);
 

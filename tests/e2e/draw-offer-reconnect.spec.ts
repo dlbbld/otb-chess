@@ -30,6 +30,7 @@ for (const recipient of ['white', 'black'] as const) {
 
 test('a correct-time offer can be rejected after refresh and stays rejected on another refresh', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
+  await bothPlayersMove(game.white, game.black);
   await dragPiece(game.white, 'e2', 'e4');
   await game.white.locator('#offerDrawBtn').click();
   await expect(game.black.locator('#drawOfferPanel')).toBeVisible();
@@ -64,6 +65,7 @@ test('refresh preserves the explanation for an offer converted from a rejected d
 
 test('refreshing a visible offer cannot restore the right to accept after touching a piece', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
+  await bothPlayersMove(game.white, game.black);
   await dragPiece(game.white, 'e2', 'e4');
   await game.white.locator('#offerDrawBtn').click();
   await expect(game.black.locator('#drawOfferPanel')).toBeVisible();
