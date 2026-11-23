@@ -17,9 +17,13 @@ release's tasks until it ships.
   jar (`/api/version`, lobby and board show `v0.3.0`), and `TouchMoveOracle` (33,793 cases, 0 differences).
   The full browser suite (228 passed, 1 skipped) and `RuleFuzzer` (20,000 games, 0 findings) passed at
   `f77b893`; the release commit changes metadata only.
-- [ ] Before the merge: the manual test through `start.bat` on Windows (version, the circles, an early draw
-  offer on both boards), and the Windows-only launcher tests, which do not run on macOS. The full suites last
-  ran on the Windows machine at `0c1c90d`; the launcher test was changed there afterwards in `b3732a5`.
+- [x] Verified the release candidate `dfb41d4` through `start.bat` on Windows on 2026-11-23. The API, lobby
+  and both boards reported 0.3.0. Both players saw the early draw offer rejected without an Accept/Reject panel.
+  Both boards circled the touched g1 knight in green, showed g1 and g3 in red on the illegal move, restored green
+  after Revert and cleared the circles when Nf3 was accepted. The Windows Java and Playwright launcher tests passed.
+- [x] Ran both full suites on native Windows at `dfb41d4`. All 471 Java tests and all 229 Chromium Playwright
+  tests passed, with zero skips or retries. The rebuilt JAR reports 0.3.0. `RuleFuzzer` found no issues in
+  20,000 games and `TouchMoveOracle` found no differences across 33,793 cases.
 - [ ] Open, not part of this release: low contrast of the rings on dark squares, the rare reconnect race, the
   castling attempt that is detected twice (see *Fixes after the board-circle reviews*); sounds (see *Planned
   after the next release*).
