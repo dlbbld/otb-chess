@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.game;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -19,6 +21,7 @@ import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.ashlarchess.pgn.PgnCreate;
 import io.github.dlbbld.otbchess.arbiter.ArbiterEngine;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
+import io.github.dlbbld.otbchess.arbiter.BoardMark;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse.IllegalMoveDetail;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
 import io.github.dlbbld.otbchess.arbiter.MidPlayValidator;
@@ -277,6 +280,38 @@ public class GameSession {
    * @return the arbiter response
    */
   public synchronized ArbiterResponse pressClockButton(Side side, BitboardPosition afterPosition) {
+    return markRuling(ruleOnClockPress(side, afterPosition));
+  }
+
+  /**
+   * Takes over the squares a ruling on the move points at - the move shown with a clock press or with a draw offer.
+   * An accepted move has started a new turn and the end of the game has taken the circles off already; a press that
+   * is not ruled on (not the player's turn, a pause) leaves them as they are.
+   */
+  private ArbiterResponse markRuling(ArbiterResponse response) {
+    switch (response.type()) {
+      // A ruling on what was touched or released replaces what the arbiter pointed at before - also with nothing.
+      case TOUCH_MOVE_VIOLATION, RELEASED_PIECE_VIOLATION -> boardMarks = response.boardMarks();
+      case ILLEGAL_MOVE, ILLEGAL_MOVE_GAME_LOST -> {
+        // A press without a move (FIDE 7.5.3) changed nothing on the board: what was pointed at stays.
+        if (!response.illegalMoveDetail().map(detail -> detail.noMoveMade()).orElse(false)) {
+          // The touched piece still has to move after this illegal move is taken back: its circle stays.
+          final List<BoardMark> marks = new ArrayList<>(marksOf(BoardMark.Color.GREEN));
+          marks.addAll(response.boardMarks());
+          boardMarks = List.copyOf(marks);
+        }
+      }
+      default -> {
+      }
+    }
+    return response;
+  }
+
+  private List<BoardMark> marksOf(BoardMark.Color color) {
+    return boardMarks.stream().filter(mark -> mark.color() == color).toList();
+  }
+
+  private ArbiterResponse ruleOnClockPress(Side side, BitboardPosition afterPosition) {
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
@@ -533,10 +568,18 @@ public class GameSession {
       // (illegal-move counter, restoration target, etc.) via handleArbiterResponse. An offer that
       // is already pending stays: the opponent's is not this player's to cancel, and an earlier
       // one of their own cannot be withdrawn (FIDE 9.1.2.1) while it is on the opponent's screen.
-      return handleArbiterResponse(moveResponse, side, false);
+      return markRuling(handleArbiterResponse(moveResponse, side, false));
     }
 
-    // Move is valid. Register the offer (handles repeat / game-lost penalty).
+    // Move is valid. It is the offerer's move of this turn, made on the board: with it both players
+    // have moved unless it is the first move of the game.
+    if (board.getPerformedMovesAsSan().isEmpty()) {
+      final var early = rejectEarlyOffer(side);
+      earlyOfferOpponentInfo = early.opponentInfo();
+      return ArbiterResponse.incompleteMove(early.arbiterMessage());
+    }
+
+    // Register the offer (handles repeat / game-lost penalty).
     final var result = drawOfferManager.offerDrawCorrectTime(side);
     if (result.gameLost()) {
       endGame(new GameResult(GameResultType.DRAW_AGREEMENT, side.getOppositeSide(), result.arbiterMessage()));
@@ -581,14 +624,46 @@ public class GameSession {
       return DrawOfferManager.DrawOfferResult.repeated(pauseMessage);
     }
 
+    if (!haveBothPlayersMadeAMove()) {
+      return rejectEarlyOffer(side);
+    }
+
     final boolean offererHasMove = side == board.getSideToMove();
     final var result = drawOfferManager.offerDrawWrongTime(side, offererHasMove);
     if (result.gameLost()) {
-      terminationActor = side;
-      endGame(new GameResult(GameResultType.WRONG_TIME_OFFER_GAME_LOST, side.getOppositeSide(),
-          sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
+      loseByOfferingAtTheWrongTime(side);
     }
     return result;
+  }
+
+  /**
+   * An offer before both players have made a move is not valid (FIDE 5.2.3): the arbiter says so at once to both
+   * players instead of passing on an offer that could not be accepted. It counts on the offer ladder of the move.
+   */
+  private DrawOfferManager.DrawOfferResult rejectEarlyOffer(Side side) {
+    final var result = drawOfferManager.offerDrawTooEarly(side);
+    if (result.gameLost()) {
+      loseByOfferingAtTheWrongTime(side);
+    }
+    return result;
+  }
+
+  private void loseByOfferingAtTheWrongTime(Side side) {
+    terminationActor = side;
+    endGame(new GameResult(GameResultType.WRONG_TIME_OFFER_GAME_LOST, side.getOppositeSide(),
+        sideName(side) + " loses the game by repeatedly offering a draw at the wrong time."));
+  }
+
+  private String earlyOfferOpponentInfo;
+
+  /**
+   * @return and clears what the opponent is to be told about an offer that was made with a move before both players
+   *         had moved; the offerer's part is the answer to the offer itself
+   */
+  public synchronized Optional<String> consumeEarlyOfferOpponentInfo() {
+    final Optional<String> info = Optional.ofNullable(earlyOfferOpponentInfo);
+    earlyOfferOpponentInfo = null;
+    return info;
   }
 
   /** What became of an offer that was made while the opponent's offer was on the table. */
@@ -714,8 +789,7 @@ public class GameSession {
   }
 
   private static final String DRAW_AGREEMENT_DESCRIPTION = "The game is drawn by agreement.";
-  private static final String DRAW_TOO_EARLY = "A draw can be agreed only after both players have made at least"
-      + " one move (FIDE 5.2.3).";
+  private static final String DRAW_TOO_EARLY = DrawOfferManager.DRAW_TOO_EARLY;
 
   private String lastAcceptDrawRejection;
 
@@ -754,7 +828,10 @@ public class GameSession {
       return proceduralRejection;
     }
 
-    final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san);
+    // A rejected claim is a draw offer (FIDE 9.5) - but not before both players have made a move,
+    // when no draw can be agreed (FIDE 5.2.3). Nothing has been touched yet on the move of a claim.
+    final DrawClaimResult claimResult = drawClaimManager.processClaim(board, type, san,
+        haveBothPlayersMadeAMove());
 
     // An invalid SAN doesn't constitute a completed claim attempt: no legal intended move was
     // presented, so the claim is not considered. Any other outcome counts and locks claims for
@@ -1008,6 +1085,9 @@ public class GameSession {
   // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
   private Side wrongClockPressPausedFor;
   private long wrongClockPauseId;
+  // The squares the arbiter points at since its last ruling on the move (circles on both boards): the green
+  // ones of a touch, then the red ones of an illegal move.
+  private List<BoardMark> boardMarks = List.of();
   // Who was answered "wait until the clock restarts" during the current admonishment pause.
   private final Set<Side> toldToWaitForClock = EnumSet.noneOf(Side.class);
   /** What both players read when the arbiter restarts the clock, after a restoration and after this pause alike. */
@@ -1236,6 +1316,7 @@ public class GameSession {
   }
 
   private void startNewTurn() {
+    this.boardMarks = List.of();
     this.wrongClockPressPausedFor = null;
     this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
@@ -1266,6 +1347,9 @@ public class GameSession {
     // restoration towards it, once the game is over.
     this.mustExecuteMove = null;
     this.mustExecuteMoveSan = null;
+    // Nothing is owed any more, so nothing is pointed at. The illegal move that loses the game is marked
+    // afterwards, by its own ruling.
+    this.boardMarks = List.of();
     drawOfferManager.clearOffer();
     this.clock.stopClock();
   }
@@ -1343,6 +1427,10 @@ public class GameSession {
       return false;
     }
     this.waitingForRestoration = false;
+    currentSequence.markPositionRestored();
+    // The illegal move is off the board again, so its squares are no longer pointed at. A touched piece
+    // stays marked: the obligation holds until the move is made.
+    this.boardMarks = marksOf(BoardMark.Color.GREEN);
     // Preserve the FIDE 4.7 released-piece commitment when THIS restoration was caused by a
     // released-piece violation: the committed move must stay final across revert cycles until the
     // player actually plays it and presses the clock. Illegal/touch-move restorations still reset
@@ -1375,6 +1463,22 @@ public class GameSession {
       return true;
     }
     return false;
+  }
+
+  /**
+   * @return the squares the arbiter currently points at, for both boards, one circle per square; empty when there are
+   *         none. On the square where an illegal move of the touched piece started, the red circle covers the green
+   *         one until the position is restored.
+   */
+  public synchronized List<BoardMark> getBoardMarks() {
+    final List<BoardMark> red = marksOf(BoardMark.Color.RED);
+    if (red.isEmpty()) {
+      return boardMarks;
+    }
+    final List<BoardMark> marks = new ArrayList<>(marksOf(BoardMark.Color.GREEN));
+    marks.removeIf(green -> red.stream().anyMatch(mark -> mark.square() == green.square()));
+    marks.addAll(red);
+    return List.copyOf(marks);
   }
 
   /** @return and clears whether a clock press ended the automatic restoration pause since the last call. */

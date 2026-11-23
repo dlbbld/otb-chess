@@ -241,6 +241,7 @@ test('a draw offer by Black can be accepted after Black presses the clock', asyn
 test('a rejected draw offer after the offerer clock press names who rejected, for both players', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   await dragPiece(white, 'e2', 'e4');
   await offerDraw(white);
@@ -262,6 +263,7 @@ test('a draw offer remains visible after Black touches, but Accept is refused un
 }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   await dragPiece(white, 'e2', 'e4');
   await offerDraw(white);

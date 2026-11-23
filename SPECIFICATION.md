@@ -472,6 +472,27 @@ To match the experience of a real board, certain game-ending moves end the game 
    - **Auto-resume mode (default):** the clock resumes immediately; the player just plays.
    - **Manual mode:** both players see _"Are you ready to continue?"_ with a **Ready to continue** button. Both must click before the clock restarts.
 
+### Circles on the board
+
+With a ruling on the move — the move shown with a clock press, or with a draw offer made before the clock is pressed — the arbiter points at the squares it speaks of, by circles drawn on **both** boards in the style of Lichess (a ring just inside the square's edge, over the piece). Only the clear cases are marked.
+
+- **Green — the piece that must be moved or captured** (touch-move violation):
+  - own piece: the first touched piece that can move — not the pieces touched after it, and not a piece touched before it that has no legal move;
+  - opponent piece: the first touched opponent piece that can be captured;
+  - an own piece together with the opponent piece it can capture: both;
+  - king and rook touched for castling: both, where they stand once the board is as the ruling asks for — a king that was put on its castling square already is circled there (only the rook is still to be moved), not on the empty square it left.
+- **Red — the illegal move**: its start and end square, when the board shows exactly one move — one own piece that left its square and stands on another one while nothing else changed (a pawn may stand on the last rank as the piece it was promoted to), or a castling attempt (the king's start square and the square the king was put on). An illegal position with several displaced pieces, and the clock pressed without a move, are not marked. Neither are two pieces of the same kind that both moved although the board looks like one move (the knight from g1 put on g3, the one from b1 on g1): the server follows each piece through the board events and marks a move only when every other piece stands on its own square. What counts is what was done since the board was last set back by a restoration, so an illegal move — also an illegal castling — that is repeated in the same turn is marked again.
+
+How long they stay:
+
+- Green stays through the restoration, because the obligation does: until the move is accepted. An illegal move made meanwhile does not end it: its red circles are added, and the green one is there again after the restoration. A square has one circle — where the illegal move of the touched piece started, red covers green until the position is restored.
+- Red stays while the illegal move is on the board: until the position is restored.
+- A new ruling on what was touched or released replaces the circles of the previous one. A press that is not ruled on (not the player's turn, a pause) and a press without a move leave them.
+- The end of the game takes the circles off, whichever way it ends (resignation, flag fall, agreed draw, ...): nothing is owed any more. Only the illegal move that loses the game stays marked, in red, and alone.
+- A rematch starts without circles. A page that reconnects is sent the current ones.
+
+The server decides the circles (`GameSession.getBoardMarks`, from `ArbiterResponse.boardMarks`) and sends every change once to both players as `boardMarks`; the client only draws them (`ChessBoard.setMarks`).
+
 ### Touch-move violation vs. illegal move
 
 - **Touch-move violation** -> no penalty, does not count toward the illegal move rule.
@@ -491,6 +512,7 @@ To match the experience of a real board, certain game-ending moves end the game 
   > _"Illegal move because it leaves the own king in check."_ (the move does not answer an existing check)
   >
   > _"Illegal move because it exposes the own king to check."_ (the move takes a shielding piece off the king's line)
+- The reason is given when the board shows one move (or a castling attempt), read from what was done since the board was last set back by a restoration. An illegal move repeated after the Revert is therefore given its reason again, also when it loses the game; otherwise the message is the plain _"Illegal move."_
 
 ---
 
@@ -694,7 +716,17 @@ The same holds while the arbiter has stopped the clocks (a restoration, the paus
 
 #### When a draw can be agreed (FIDE 5.2.3)
 
-A game is drawn upon agreement *"provided both players have made at least one move"*. A move made on the board counts although its clock press is still outstanding - that is exactly the moment at which an offer is to be made (9.1.2.1). Before that, *Accept* and an answering offer are refused with *"A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."* The offer itself is made and stays on the table. In practice: White's first move with an offer cannot be accepted (Black has not moved); Black's first move with an offer can.
+A game is drawn upon agreement *"provided both players have made at least one move"*. A move made on the board counts although its clock press is still outstanding - that is exactly the moment at which an offer is to be made (9.1.2.1). In practice: White's first move with an offer is too early (Black has not moved); Black's first move with an offer is not.
+
+**An offer made before that is not valid, and the arbiter says so at once to both players.** It is not passed on: the opponent gets no Accept/Reject panel for an offer that could not be accepted, and nothing stays on the table.
+
+- Offerer (arbiter window): _"The draw offer is not valid: a draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."_
+- Opponent (info window below the clock, no action required): _"Your opponent offered a draw. The offer is not valid: a draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."_
+- This holds for every way of offering: on the own move without a move, with the move before the clock press, and while the opponent has the move. A move shown with the offer is not affected - it is completed with the clock press as usual. An offer shown with an **invalid** move is ruled on as that move (see *Offer-with-invalid-move*).
+- **Counting:** early offers are counted on the same ladder as the wrong-time offers, per player and per move. The second early offer on the same move is not considered and brings the warning (_"You are again offering a draw before both players have made a move. This offer was not considered. Warning: your next draw offer on this move loses the game."_; the opponent is informed passively), the third loses the game (`WRONG_TIME_OFFER_GAME_LOST`). The count starts again with the next move.
+- **A rejected draw claim** counts as a draw offer (FIDE 9.5) only once a draw can be agreed. Before that the claim is examined and rejected as usual (two minutes for the opponent, the one claim of the move is used, a move named with the claim must be played), but it is no offer: the claimer's message ends with _"It does not count as a draw offer: a draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."_, and the opponent reads the same in the info window instead of being asked to accept.
+
+*Accept* and an answering offer keep their own check of the rule and would be refused with *"A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."* - a safeguard only, since no offer is on the table before both players have moved.
 
 #### The game record of an agreed draw
 
@@ -803,7 +835,7 @@ Tracked in **Spec-driven implementation follow-ups** below.
 
 ### Outbound (server -> client)
 
-`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawOfferExpired` (to a player whose own offer replaced an outdated offer of the opponent: close the panel), `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown), `sessionReplaced` (to a window whose seat was taken over by another window of the same player, see *One connection per seat*), `clockRestarted` (the pause after a wrong clock press is over; only the arbiter message changes, with `style: "error"` when it repeats the warning).
+`gameCreated`, `gameJoined`, `gameStarted`, `move_accepted`, `opponentMoved` (with full board state), `boardUpdate`, `clockUpdate` (white time, black time, side currently running), `opponentBoardEvent` (for real-time mirroring), `illegal_move`, `touch_move_violation`, `released_piece_violation`, `incomplete_move`, `illegal_move_game_lost`, `revert_opponent_piece`, `revert_restoration`, `position_change`, `restoreRequired`, `positionRestored`, `waitingForReady`, `waitingForOpponentReady`, `gameResumed`, `drawOffered`, `drawOfferInvalidated`, `drawOfferExpired` (to a player whose own offer replaced an outdated offer of the opponent: close the panel), `drawRejected`, `drawAcceptRejected`, `wrongTimeDrawOffer`, `repeatedDrawOffer`, `drawClaimResult` (incl. `invalidMove` / `mustExecuteMove` / `wrongTime` / `repeatClaim` — the latter two mark procedural rejections after which the client keeps the claim buttons enabled, see A-003/A-004 in `docs/fide-deviations.md`), `drawClaimOpponent` (per-player split: opponent-side notification of the claim event; NOT sent when a rejected claim converts to a draw offer — then `drawOffered` carries the claim-specific message instead), `opponentInfo` (PASSIVE opponent notification — face-to-face principle: things the opponent would see happen at a real board but must not act on, e.g. a wrong-time draw claim, an illegal/touch/released-piece intervention against the player on move, or its warning; rendered in the info window below the clock, never in the arbiter message window), `gameEnded`, `rematchOfferSent` / `rematchOffered` / `rematchStarted` (see *Rematch* below), `pgn`, `error` (with optional `devDetail` for unexpected exceptions), `opponentDisconnected` (with `abandonInMs` — the client shows a countdown plus the Claim-victory button), `opponentReconnected` (clears the countdown), `sessionReplaced` (to a window whose seat was taken over by another window of the same player, see *One connection per seat*), `clockRestarted` (the pause after a wrong clock press is over; only the arbiter message changes, with `style: "error"` when it repeats the warning), `boardMarks` (`marks`: list of `{square, color}` with `color` `green` or `red`; the complete set of circles on the board, an empty list removes them — see *Circles on the board*).
 
 #### Guards on what a connection may do
 

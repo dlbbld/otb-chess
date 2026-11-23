@@ -33,6 +33,8 @@ class ChessBoard {
     this.floatingPiece = null;
     this.eventCallback = null;
     this.enabled = false;
+    // Squares the arbiter points at: squareName -> 'green' | 'red' (see setMarks).
+    this.marks = {};
 
     this.buildBoard();
     this.setupDragListeners();
@@ -76,6 +78,9 @@ class ChessBoard {
           sq.appendChild(rankLabel);
         }
 
+        if (this.marks[squareName]) {
+          sq.classList.add('mark-' + this.marks[squareName]);
+        }
         this.boardEl.appendChild(sq);
         // Restore piece state or default to NONE
         const piece = savedState[squareName] || 'NONE';
@@ -118,6 +123,25 @@ class ChessBoard {
   flip() {
     this.flipped = !this.flipped;
     this.buildBoard();
+  }
+
+  /**
+   * Circles the squares of the arbiter's ruling, as the server sent them: green for a piece the
+   * player must move or capture, red for the start and end square of an illegal move. Replaces
+   * the circles shown before; an empty list removes them. The class sits on the square, so the
+   * circle follows the square when the board is flipped and stays when its piece is redrawn.
+   */
+  setMarks(marks) {
+    for (const sq of Object.values(this.squares)) {
+      sq.element.classList.remove('mark-green', 'mark-red');
+    }
+    this.marks = {};
+    for (const mark of marks || []) {
+      const sq = this.squares[mark.square];
+      if (!sq || (mark.color !== 'green' && mark.color !== 'red')) continue;
+      this.marks[mark.square] = mark.color;
+      sq.element.classList.add('mark-' + mark.color);
+    }
   }
 
   getBoardState() {

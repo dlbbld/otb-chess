@@ -339,6 +339,8 @@ class Game {
       // A socket reconnect can reuse this page. Clear stale offers before the server
       // replays the current offer (if any) after the authoritative snapshot.
       document.getElementById('drawOfferPanel').style.display = 'none';
+      // The same for the arbiter's circles: the server sends the current ones after this snapshot.
+      this.board.setMarks([]);
       const changedSeat = this.side !== data.side;
       this.gameId = data.gameId;
       this.side = data.side;
@@ -563,6 +565,12 @@ class Game {
 
     this.ws.on('opponentClockPressed', (data) => {
       this.showArbiterMessage(data.message, 'error');
+    });
+
+    // The squares the arbiter points at with its ruling, the same on both boards. The server
+    // sends every change, also the removal, so the page only draws what it is sent.
+    this.ws.on('boardMarks', (data) => {
+      this.board.setMarks(data.marks);
     });
 
     // The pause after a wrong clock press is over. Only the message changes: buttons and the
@@ -793,6 +801,8 @@ class Game {
     this.ws.on('rematchStarted', (data) => {
       this.gameId = data.gameId;
       this.side = data.side;
+      // The circles of the finished game do not belong on the new board.
+      this.board.setMarks([]);
       // The seats swapped: orient the board absolutely for the NEW colour (flip() only toggles).
       this.boardTurnedByPlayer = false;
       if ((this.side === 'black') !== this.board.flipped) {

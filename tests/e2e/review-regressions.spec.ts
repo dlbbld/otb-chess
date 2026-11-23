@@ -99,6 +99,7 @@ test('checkmate during a wrong-clock pause ends on both boards', async ({ browse
 
 test('delayed terminal messages cannot rewrite a resignation on either board', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
+  await bothPlayersMove(game.white, game.black);
   await game.white.locator('#offerDrawBtn').click();
   await expect(game.black.locator('#acceptDrawBtn')).toBeVisible();
   await game.white.locator('#resignBtn').click();

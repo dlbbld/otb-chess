@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import {
   startTwoPlayerGame,
   TwoPlayerGame,
@@ -24,6 +24,19 @@ const FIFTY_REACHED = '4k3/8/8/8/3R4/8/8/4K3 w - - 100 80'; // half-move clock 1
 const FIFTY_ONE_AWAY = '4k3/8/8/8/3R4/8/8/4K3 w - - 99 51'; // 99 -> a quiet move makes 100
 const FIFTY_FAR = '4k3/8/8/8/3R4/8/8/4K3 w - - 0 1'; // nowhere near the rule
 const SEVENTYFIVE_ONE_AWAY = '4k3/8/8/8/3R4/8/8/4K3 w - - 149 100'; // 149 -> a quiet move makes 150
+
+/**
+ * Ke1-e2 and Ke8-e7 in the king-and-rook positions. A rejected claim is a draw offer only after both players
+ * have made a move (FIDE 5.2.3); the two quiet moves add two to the half-move clock of the position.
+ */
+async function bothKingsMove(white: Page, black: Page): Promise<void> {
+  await dragPiece(white, 'e1', 'e2');
+  await pressClock(white);
+  await expect(black.locator('#arbiterMessage')).toContainText('Your turn');
+  await dragPiece(black, 'e8', 'e7');
+  await pressClock(black);
+  await expect(white.locator('#arbiterMessage')).toContainText('Your turn');
+}
 
 // ---- Claims while not having the move ----------------------------------------------------------
 
@@ -69,6 +82,7 @@ test('wrong-time with-move claim skips the SAN prompt; counts are per player; cl
 }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   // White has the move. Black presses a WITH-MOVE claim button: no SAN prompt appears (the claim
   // is rejected regardless of any move) — the rejection comes straight at the button press.
@@ -175,6 +189,7 @@ test('claims after touching a piece (move made, clock not pressed) escalate acro
 test('repeat claims on the same move escalate: warning, then loss of the game', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   // White (on move) uses their one legitimate claim — rejected on the merits, forwarded to
   // Black as a draw offer. The claim buttons stay ENABLED.
@@ -320,6 +335,7 @@ test('50-move claim with an invalid SAN reports a validation message', async ({ 
 test('rejected on-board 50-move claim announces the claim and the offer to the opponent', async ({ browser }) => {
   game = await startTwoPlayerGame(browser, { fen: FIFTY_FAR });
   const { white, black } = game;
+  await bothKingsMove(white, black);
 
   await claimFiftyMoveOnBoard(white); // nowhere near the rule -> rejected
 
@@ -358,8 +374,10 @@ test('the draw offer converted from a rejected claim can be accepted and draws t
 test('the draw offer converted from a rejected with-move 50-move claim can be rejected after the clock press', async ({
   browser,
 }) => {
-  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/3R4/4P3/8/4K3 w - - 99 51' });
+  // Half-move clock 97: the two king moves bring it to 99, one short of the rule.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/3R4/4P3/8/4K3 w - - 97 50' });
   const { white, black } = game;
+  await bothKingsMove(white, black);
 
   await claimFiftyMoveWithMove(white, 'e4'); // legal, considered, rejected; White must still play e4
   await expect(black.locator('#drawOfferPanel')).toContainText('50-move rule with the move e4');
@@ -379,6 +397,7 @@ test('the draw offer converted from a rejected with-move 50-move claim can be re
 test('Black claim-converted draw offer survives Black clock press symmetrically', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   await dragPiece(white, 'e2', 'e4');
   await pressClock(white);
@@ -403,6 +422,7 @@ test('50-move claim with a legal move that does not satisfy the rule is rejected
 }) => {
   game = await startTwoPlayerGame(browser, { fen: FIFTY_FAR });
   const { white, black } = game;
+  await bothKingsMove(white, black);
 
   await claimFiftyMoveWithMove(white, 'Rd1'); // legal, but the rule is nowhere near satisfied
 
@@ -461,6 +481,7 @@ test('threefold claim with the move that reaches it draws and normalizes the SAN
 test('threefold claim without a repetition is rejected and informs the opponent', async ({ browser }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
   await claimThreefoldOnBoard(white);
 
@@ -498,18 +519,19 @@ test('threefold claim with a legal move that creates no repetition is rejected a
 }) => {
   game = await startTwoPlayerGame(browser);
   const { white, black } = game;
+  await bothPlayersMove(white, black);
 
-  await claimThreefoldWithMove(white, 'a3'); // legal move, but no repetition results
+  await claimThreefoldWithMove(white, 'b3'); // legal move, but no repetition results
 
   await expect(white.locator('#arbiterMessage')).toContainText(
-    'Threefold claim for move a3 was rejected because this does not result in a threefold repetition.');
+    'Threefold claim for move b3 was rejected because this does not result in a threefold repetition.');
   await expect(white.locator('#arbiterMessage')).toContainText(
     'The claim also counts as a draw offer for your opponent, which he can accept or reject.');
   await expect(white.locator('#arbiterMessage')).not.toContainText('no move from the current position');
   // FIDE: an unsuccessful claim is forwarded to the opponent as a draw offer — announced with
   // what actually happened, not a bare "offers a draw".
   await expect(black.locator('#drawOfferPanel')).toContainText(
-    'claimed a draw by threefold repetition with the move a3');
+    'claimed a draw by threefold repetition with the move b3');
   await expect(black.locator('#drawOfferPanel')).toContainText('still counts as a draw offer');
   await expect(black.locator('#arbiterMessage')).not.toContainText('claimed a draw');
   await expect(black.locator('#drawOfferPanel')).toBeVisible();

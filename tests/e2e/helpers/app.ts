@@ -10,6 +10,8 @@ export interface CreateOptions {
   fen?: string;
   /** Server default is true; set false to require an explicit "ready to continue" after a restore. */
   autoResume?: boolean;
+  /** The illegal move that loses the game (1..10, -1 = unlimited); the server default is 2. */
+  maxIllegal?: number;
 }
 
 /** Navigates `page` to a freshly created game and returns the game code shown on the board page. */
@@ -20,6 +22,7 @@ export async function createGame(page: Page, opts: CreateOptions = {}): Promise<
   let url = `/game.html?creator=true&side=${side}&time=${time}&inc=${inc}`;
   if (opts.fen) url += `&fen=${encodeURIComponent(opts.fen)}`;
   if (opts.autoResume === false) url += `&autoResumeAfterRestore=false`;
+  if (opts.maxIllegal !== undefined) url += `&maxIllegal=${opts.maxIllegal}`;
   await page.goto(url);
 
   // game.js appends the code element only after the server's `gameCreated` message.

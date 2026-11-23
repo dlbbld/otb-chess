@@ -51,6 +51,16 @@ public record DrawClaimResult(boolean accepted, String message, Optional<String>
   }
 
   /**
+   * The claim was examined and is not valid, like {@link #rejected} and {@link #rejectedWithMove} - but no draw can be
+   * agreed yet (FIDE 5.2.3), so it is not a draw offer. The opponent has nothing to answer and is informed passively.
+   */
+  public static DrawClaimResult rejectedBeforeDrawCanBeAgreed(String message, String opponentInfo,
+      Optional<MoveSpecification> moveToPerform) {
+    return new DrawClaimResult(false, message, Optional.empty(), Optional.empty(), moveToPerform, false, false, false,
+        false, Optional.of(opponentInfo));
+  }
+
+  /**
    * Player's SAN failed validation. No legal intended move was presented, so the claim is not considered: no opponent
    * notification, no draw-offer conversion, no forced move.
    */

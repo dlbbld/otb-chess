@@ -227,6 +227,8 @@ test.describe('on a server of its own', () => {
   test('a draw claim and draw offers during the pause after a wrong clock press are not considered', async ({ browser, request }) => {
     isolated = await startIsolatedServer(request, { OTB_WRONG_CLOCK_PAUSE_MS: '5000' });
     const { white, black } = await startIsolatedGame(browser);
+    // Both players have moved: an offer or a rejected claim can then be a draw offer at all.
+    await bothPlayersMove(white, black);
     const paused = 'The game is paused. Please wait until the clock restarts.';
 
     // White is to move; Black presses White's clock. The arbiter stops the clocks for five seconds.

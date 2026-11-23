@@ -2,6 +2,50 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.3.0 — Board Circles and Early Draw Offers — 2026-11-23
+
+The arbiter now points at the squares it rules on, and it rules on a draw offer that comes too
+early when the offer is made. Each change has Java tests and a browser test of its journey.
+
+### Added
+
+- **Circles on the board for the arbiter's rulings**, on both boards, in the style of Lichess.
+  - Green: the piece a touch obliges the player to move or capture - the first touched own piece
+    that can move, the first touched opponent piece that can be captured, both together when the
+    one must capture the other, king and rook for castling.
+  - Red: the start and the end square of an illegal move, when the board shows exactly one move
+    or a castling attempt. Several displaced pieces are not marked, and neither are two pieces of
+    the same kind that both moved.
+  - Green stays until the move is accepted, also through an illegal move made meanwhile. Red
+    stays until the position is restored. The end of the game takes the circles off the board,
+    except for the illegal move that lost it.
+  - A ruling on a move shown with a draw offer is marked like one on a clock press, and a page
+    that reconnects gets the current circles.
+
+### Changed
+
+- **A draw offer made before both players have made a move is declared not valid at once
+  (FIDE 5.2.3).** Before, the offer was passed on and *Accept* was then refused. Now the arbiter
+  tells both players when the offer is made, the opponent is not asked to accept anything, and
+  nothing stays on the table. Black's first move with an offer is a real offer: both have then
+  made a move.
+- Such early offers are counted like offers at the wrong time: the second on the same move is not
+  considered and brings the warning, the third loses the game. The count starts again with the
+  next move.
+- A rejected draw claim does not count as a draw offer before both players have made a move. The
+  claim itself is rejected as before, with the two minutes for the opponent.
+
+### Fixed
+
+- An illegal move that is repeated after the Revert is given its reason again - before, the
+  second ruling, which in a default game loses the game, said only "Illegal move." The same holds
+  for an illegal castling that is repeated, and for a different illegal move after a Revert.
+
+### Rules interpretation
+
+- [`docs/fide-deviations.md`](docs/fide-deviations.md): A-001 extended (offers before both
+  players have made a move).
+
 ## 0.2.0 — Game Lifecycle and Draw Guards — 2026-11-18
 
 This release is the result of several review passes over the whole game: how a game starts, ends,

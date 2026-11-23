@@ -195,6 +195,7 @@ class TestReviewServerRegressions {
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black);
+    ServerDrawTestSupport.bothPlayersMove(server, rooms().get(id), white.socket, black.socket);
     server.onMessage(white.socket, "{\"type\":\"claimDraw\",\"claimType\":\"THREEFOLD_ON_BOARD\"}");
     final var expected = black.last("drawOffered");
     assertTrue(expected.get("message").getAsString().contains("still counts as a draw offer"));
@@ -213,6 +214,7 @@ class TestReviewServerRegressions {
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black);
+    ServerDrawTestSupport.bothPlayersMove(server, rooms().get(id), white.socket, black.socket);
     server.onMessage(white.socket, "{\"type\":\"offerDraw\"}");
     final var session = rooms().get(id).getSession();
     session.getDrawOfferManager().recordOpponentTouchedPiece();

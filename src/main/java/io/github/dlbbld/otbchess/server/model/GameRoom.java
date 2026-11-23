@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.server.model;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -12,6 +14,7 @@ import org.java_websocket.exceptions.WebsocketNotConnectedException;
 import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
+import io.github.dlbbld.otbchess.arbiter.BoardMark;
 import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
 
@@ -28,6 +31,8 @@ public class GameRoom {
   private String drawOfferMessage = "Your opponent offers a draw.";
   // Both players have been sent the result of the current session.
   private boolean gameEndAnnounced;
+  // The marked squares both boards were last sent; a change of the session's marks is sent once.
+  private List<BoardMark> announcedBoardMarks = List.of();
   private final TimeControl timeControl;
   // Kept for rematches: a rematch rebuilds the session with the SAME settings.
   private final int maxIllegalMoves;
@@ -301,6 +306,20 @@ public class GameRoom {
         new Board(session.getBoard().getInitialFen()));
     physicalPosition = session.getBoard().getBitboardPosition();
     gameEndAnnounced = false;
+    announcedBoardMarks = List.of();
     drawOfferMessage = "Your opponent offers a draw.";
+  }
+
+  /**
+   * @return the marks to send when they differ from what both boards were last sent - they are then remembered as
+   *         sent; empty when nothing changed
+   */
+  public synchronized Optional<List<BoardMark>> takeChangedBoardMarks() {
+    final List<BoardMark> marks = session.getBoardMarks();
+    if (marks.equals(announcedBoardMarks)) {
+      return Optional.empty();
+    }
+    announcedBoardMarks = marks;
+    return Optional.of(marks);
   }
 }

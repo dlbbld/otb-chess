@@ -3,6 +3,7 @@
 package io.github.dlbbld.otbchess.game;
 
 import java.util.List;
+import java.util.Optional;
 
 import io.github.dlbbld.ashlarchess.board.Board;
 import io.github.dlbbld.ashlarchess.board.LegalMove;
@@ -26,29 +27,59 @@ public class DrawClaimManager {
   private static final String FIFTY_MOVE_ENDED = "The game is drawn by the 50-move rule.";
   private static final String REJECTED_CLAIM_COUNTS_AS_OFFER =
       " The claim also counts as a draw offer for your opponent, which he can accept or reject.";
+  private static final String REJECTED_CLAIM_IS_OFFER_TO_OPPONENT =
+      " It still counts as a draw offer. Do you accept the draw?";
+  private static final String REJECTED_CLAIM_IS_NO_OFFER = " It does not count as a draw offer: "
+      + DrawOfferManager.DRAW_TOO_EARLY_REASON;
 
+  /** A claim in a game in which a draw can be agreed: a rejected claim is a draw offer (FIDE 9.5). */
   public DrawClaimResult processClaim(Board board, DrawClaimType type, String san) {
+    return processClaim(board, type, san, true);
+  }
+
+  /**
+   * @param drawCanBeAgreed whether both players have made a move (FIDE 5.2.3). Before that a rejected claim is not
+   *                        a draw offer: the claimer is told so, and the opponent is only informed
+   */
+  public DrawClaimResult processClaim(Board board, DrawClaimType type, String san, boolean drawCanBeAgreed) {
     return switch (type) {
-      case THREEFOLD_ON_BOARD -> claimThreefoldOnBoard(board);
-      case THREEFOLD_WITH_MOVE -> claimThreefoldWithMove(board, san);
-      case FIFTY_MOVE_ON_BOARD -> claimFiftyMoveOnBoard(board);
-      case FIFTY_MOVE_WITH_MOVE -> claimFiftyMoveWithMove(board, san);
+      case THREEFOLD_ON_BOARD -> claimThreefoldOnBoard(board, drawCanBeAgreed);
+      case THREEFOLD_WITH_MOVE -> claimThreefoldWithMove(board, san, drawCanBeAgreed);
+      case FIFTY_MOVE_ON_BOARD -> claimFiftyMoveOnBoard(board, drawCanBeAgreed);
+      case FIFTY_MOVE_WITH_MOVE -> claimFiftyMoveWithMove(board, san, drawCanBeAgreed);
     };
   }
 
-  private DrawClaimResult claimThreefoldOnBoard(Board board) {
+  /**
+   * A claim that was examined and is not valid.
+   *
+   * @param message         what the claimer is told about the claim itself
+   * @param opponentMessage what the opponent is told about the claim itself
+   * @param moveToPerform   the move of a claim with a move, which must still be played; else {@code null}
+   */
+  private static DrawClaimResult rejected(String message, String opponentMessage, MoveSpecification moveToPerform,
+      boolean drawCanBeAgreed) {
+    if (!drawCanBeAgreed) {
+      return DrawClaimResult.rejectedBeforeDrawCanBeAgreed(message + REJECTED_CLAIM_IS_NO_OFFER,
+          opponentMessage + REJECTED_CLAIM_IS_NO_OFFER, Optional.ofNullable(moveToPerform));
+    }
+    final String toClaimer = message + REJECTED_CLAIM_COUNTS_AS_OFFER;
+    final String toOpponent = opponentMessage + REJECTED_CLAIM_IS_OFFER_TO_OPPONENT;
+    return moveToPerform == null ? DrawClaimResult.rejected(toClaimer, toOpponent)
+        : DrawClaimResult.rejectedWithMove(toClaimer, toOpponent, moveToPerform);
+  }
+
+  private DrawClaimResult claimThreefoldOnBoard(Board board, boolean drawCanBeAgreed) {
     if (board.canClaimThreefoldRepetitionRule()) {
       return DrawClaimResult.accepted("Your claim was accepted.",
           "Your opponent claimed a draw by threefold repetition. The claim was accepted.", THREEFOLD_ENDED);
     }
-    return DrawClaimResult.rejected(
-        "Threefold repetition claim rejected. The position has not occurred three times."
-            + REJECTED_CLAIM_COUNTS_AS_OFFER,
-        "Your opponent claimed a draw by threefold repetition of the current position, but the claim is not valid."
-            + " It still counts as a draw offer. Do you accept the draw?");
+    return rejected("Threefold repetition claim rejected. The position has not occurred three times.",
+        "Your opponent claimed a draw by threefold repetition of the current position, but the claim is not valid.",
+        null, drawCanBeAgreed);
   }
 
-  private DrawClaimResult claimThreefoldWithMove(Board board, String san) {
+  private DrawClaimResult claimThreefoldWithMove(Board board, String san, boolean drawCanBeAgreed) {
     if (san == null || san.isBlank()) {
       return DrawClaimResult.invalidMove("Please enter a move in SAN notation for the claim.");
     }
@@ -62,13 +93,12 @@ public class DrawClaimManager {
     final String canonicalSan = canonicalSan(board, moveSpec);
 
     if (!board.canClaimThreefoldRepetitionRuleWithOwnMove()) {
-      return DrawClaimResult.rejectedWithMove(
+      return rejected(
           "Threefold claim for move " + canonicalSan
-              + " was rejected because this does not result in a threefold repetition. Please play."
-              + REJECTED_CLAIM_COUNTS_AS_OFFER,
+              + " was rejected because this does not result in a threefold repetition. Please play.",
           "Your opponent claimed a draw by threefold repetition with the move " + canonicalSan + ", but the claim is not"
-              + " valid. It still counts as a draw offer. Do you accept the draw?",
-          moveSpec);
+              + " valid.",
+          moveSpec, drawCanBeAgreed);
     }
 
     board.move(moveSpec);
@@ -82,28 +112,25 @@ public class DrawClaimManager {
           THREEFOLD_ENDED);
     }
 
-    return DrawClaimResult.rejectedWithMove(
+    return rejected(
         "Threefold claim for move " + canonicalSan
-            + " was rejected because this does not result in a threefold repetition. Please play."
-            + REJECTED_CLAIM_COUNTS_AS_OFFER,
+            + " was rejected because this does not result in a threefold repetition. Please play.",
         "Your opponent claimed a draw by threefold repetition with the move " + canonicalSan
-            + ", but the claim is not valid. It still counts as a draw offer. Do you accept the draw?",
-        moveSpec);
+            + ", but the claim is not valid.",
+        moveSpec, drawCanBeAgreed);
   }
 
-  private DrawClaimResult claimFiftyMoveOnBoard(Board board) {
+  private DrawClaimResult claimFiftyMoveOnBoard(Board board, boolean drawCanBeAgreed) {
     if (board.canClaimFiftyMoveRule()) {
       return DrawClaimResult.accepted("Your claim was accepted.",
           "Your opponent claimed a draw by the 50-move rule. The claim was accepted.", FIFTY_MOVE_ENDED);
     }
-    return DrawClaimResult.rejected(
-        "50-move rule claim rejected. 50 moves have not been played without a pawn move or capture."
-            + REJECTED_CLAIM_COUNTS_AS_OFFER,
-        "Your opponent claimed a draw by the 50-move rule on the current position, but the claim is not valid."
-            + " It still counts as a draw offer. Do you accept the draw?");
+    return rejected("50-move rule claim rejected. 50 moves have not been played without a pawn move or capture.",
+        "Your opponent claimed a draw by the 50-move rule on the current position, but the claim is not valid.",
+        null, drawCanBeAgreed);
   }
 
-  private DrawClaimResult claimFiftyMoveWithMove(Board board, String san) {
+  private DrawClaimResult claimFiftyMoveWithMove(Board board, String san, boolean drawCanBeAgreed) {
     if (san == null || san.isBlank()) {
       return DrawClaimResult.invalidMove("Please enter a move in SAN notation for the claim.");
     }
@@ -117,13 +144,12 @@ public class DrawClaimManager {
     final String canonicalSan = canonicalSan(board, moveSpec);
 
     if (!board.canClaimFiftyMoveRuleWithOwnMove()) {
-      return DrawClaimResult.rejectedWithMove(
+      return rejected(
           "50-move rule claim for move " + canonicalSan
-              + " was rejected because the 50-move rule does not apply after this move. Please play."
-              + REJECTED_CLAIM_COUNTS_AS_OFFER,
+              + " was rejected because the 50-move rule does not apply after this move. Please play.",
           "Your opponent claimed a draw by the 50-move rule with the move " + canonicalSan
-              + ", but the claim is not valid. It still counts as a draw offer. Do you accept the draw?",
-          moveSpec);
+              + ", but the claim is not valid.",
+          moveSpec, drawCanBeAgreed);
     }
 
     board.move(moveSpec);
@@ -137,13 +163,12 @@ public class DrawClaimManager {
           FIFTY_MOVE_ENDED);
     }
 
-    return DrawClaimResult.rejectedWithMove(
+    return rejected(
         "50-move rule claim for move " + canonicalSan
-            + " was rejected because the 50-move rule does not apply after this move. Please play."
-            + REJECTED_CLAIM_COUNTS_AS_OFFER,
+            + " was rejected because the 50-move rule does not apply after this move. Please play.",
         "Your opponent claimed a draw by the 50-move rule with the move " + canonicalSan
-            + ", but the claim is not valid. It still counts as a draw offer. Do you accept the draw?",
-        moveSpec);
+            + ", but the claim is not valid.",
+        moveSpec, drawCanBeAgreed);
   }
 
   private static String canonicalSan(Board board, MoveSpecification moveSpec) {

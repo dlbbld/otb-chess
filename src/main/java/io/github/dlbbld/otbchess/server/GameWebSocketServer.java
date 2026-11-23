@@ -6,6 +6,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.SecureRandom;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
@@ -32,6 +34,7 @@ import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponseType;
+import io.github.dlbbld.otbchess.arbiter.BoardMark;
 import io.github.dlbbld.otbchess.event.BoardEvent;
 import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.DrawClaimResult;
@@ -743,6 +746,7 @@ public class GameWebSocketServer extends WebSocketServer {
       final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, autoEndPosition);
       if (autoEndResponse.isPresent()) {
         sendArbiterResponse(room, side, autoEndResponse.get());
+        sendBoardMarksIfChanged(room);
         sendClockUpdate(room);
       }
       checkGameEnded(room);
@@ -780,6 +784,7 @@ public class GameWebSocketServer extends WebSocketServer {
     sendArbiterResponse(room, side, response);
 
     sendOpponentArbiterNotification(room, side, response);
+    sendBoardMarksIfChanged(room);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       sendClockUpdate(room);
@@ -921,14 +926,18 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
     if (response.type() == ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST) {
-      // Repeated-offer game-lost penalty. The session has already ended the game.
+      // The illegal move that reached the limit, or the repeated-offer game-lost penalty. The
+      // session has already ended the game.
       sendArbiterResponse(room, side, response);
+      sendBoardMarksIfChanged(room);
       return;
     }
 
     // Move was invalid (or repeated-offer info/warning). Apply the standard arbiter
     // intervention — for the move-validity violations, this also drives the restoration flow.
+    // The move shown with the offer is circled like one shown with a clock press.
     sendArbiterResponse(room, side, response);
+    sendBoardMarksIfChanged(room);
     if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
     } else if (response.type() == ArbiterResponseType.TOUCH_MOVE_VIOLATION) {
@@ -938,7 +947,21 @@ public class GameWebSocketServer extends WebSocketServer {
       sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error",
           response.restorePosition().orElse(room.getSession().getPositionBeforeTurn()));
     }
-    // INCOMPLETE_MOVE / repeated-offer warning — message has already been sent, no further action.
+    // INCOMPLETE_MOVE / repeated-offer warning — message has already been sent. An offer that is
+    // not valid because a draw cannot be agreed yet is also made known to the opponent.
+    room.getSession().consumeEarlyOfferOpponentInfo()
+        .ifPresent(info -> sendOpponentInfo(room, side.getOppositeSide(), info, false));
+  }
+
+  /** Passive information about what the other player did, for the info window below the clock. */
+  private void sendOpponentInfo(GameRoom room, Side recipient, String message, boolean clearArbiterMessage) {
+    final JsonObject info = new JsonObject();
+    info.addProperty("type", "opponentInfo");
+    info.addProperty("message", message);
+    if (clearArbiterMessage) {
+      info.addProperty("clearArbiterMessage", true);
+    }
+    room.sendToSide(recipient, GSON.toJson(info));
   }
 
   private void handleWrongTimeDrawOffer(GameRoom room, WebSocket conn, Side side) {
@@ -960,15 +983,10 @@ public class GameWebSocketServer extends WebSocketServer {
       // Per FIDE the offer is informational and the clock keeps running on whoever has the move.
     }
 
-    // A not-considered second offer: the opponent sees what happened passively (info window).
+    // An offer that was not considered or is not valid: the opponent sees what happened passively
+    // (info window).
     if (result.opponentInfo() != null) {
-      final JsonObject info = new JsonObject();
-      info.addProperty("type", "opponentInfo");
-      info.addProperty("message", result.opponentInfo());
-      if (result.clearOpponentArbiterMessage()) {
-        info.addProperty("clearArbiterMessage", true);
-      }
-      room.sendToSide(side.getOppositeSide(), GSON.toJson(info));
+      sendOpponentInfo(room, side.getOppositeSide(), result.opponentInfo(), result.clearOpponentArbiterMessage());
     }
 
     // Forward the offer to the opponent — only a REAL registered offer (the first wrong-time
@@ -1374,6 +1392,7 @@ public class GameWebSocketServer extends WebSocketServer {
           : "Position restored. Are you ready to continue?");
       room.sendToBoth(GSON.toJson(msg));
     }
+    sendBoardMarksIfChanged(room);
 
     if (room.getSession().isAutoResumeAfterRestore()) {
       clockExecutor.schedule(() -> resumeAfterRestorationDelay(room), 1500, TimeUnit.MILLISECONDS);
@@ -1544,6 +1563,28 @@ public class GameWebSocketServer extends WebSocketServer {
     }
   }
 
+  /**
+   * Sends both boards the squares the arbiter points at, when they changed: after a ruling on a clock press, after
+   * the restoration that takes an illegal move off the board, and when an accepted move ends the turn.
+   */
+  private void sendBoardMarksIfChanged(GameRoom room) {
+    room.takeChangedBoardMarks().ifPresent(marks -> room.sendToBoth(GSON.toJson(boardMarksMessage(marks))));
+  }
+
+  private static JsonObject boardMarksMessage(List<BoardMark> marks) {
+    final JsonArray squares = new JsonArray();
+    for (final BoardMark mark : marks) {
+      final JsonObject square = new JsonObject();
+      square.addProperty("square", mark.square().getName());
+      square.addProperty("color", mark.color().name().toLowerCase());
+      squares.add(square);
+    }
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "boardMarks");
+    msg.add("marks", squares);
+    return msg;
+  }
+
   private void sendRestoreInstructions(GameRoom room, Side side) {
     sendRestoreInstructions(room, side, "Please restore the position to the beginning of the move.", "info");
   }
@@ -1692,6 +1733,11 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     send(conn, msg);
 
+    // The circles of the arbiter's last ruling are part of what the board shows: a page that comes
+    // back has none, so it is sent the current ones.
+    if (!session.getBoardMarks().isEmpty()) {
+      room.sendToSide(side, GSON.toJson(boardMarksMessage(session.getBoardMarks())));
+    }
     sendRecoveryState(room, side, true);
     sendRecoveryState(room, side.getOppositeSide(), false);
 
@@ -2080,6 +2126,8 @@ public class GameWebSocketServer extends WebSocketServer {
           room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
     }
     room.sendToBoth(GSON.toJson(msg));
+    // The end of the game took the circles of an open ruling off the board.
+    sendBoardMarksIfChanged(room);
   }
 
   private void checkGameEnded(GameRoom room) {

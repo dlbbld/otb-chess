@@ -3,6 +3,157 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.3.0 — Board Circles and Early Draw Offers
+
+- [x] Scope: everything on `further-improvements` since `0.2.0` (sections below) - the circles for the
+  arbiter's rulings with the fixes from their two reviews, the reason of a repeated illegal move, and the draw
+  offer before both players have moved. `0.3.0` instead of `0.2.1`: the release adds a feature and changes how
+  an early draw offer is answered.
+- [x] Prepare version `0.3.0`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Board Circles and Early
+  Draw Offers** for the PR title and its opening heading, title the GitHub release `0.3.0`, and begin its notes
+  with the release name.
+- [x] Verification on macOS at the release commit: full Java suite, and `version.spec.ts` against the rebuilt
+  jar (`/api/version`, lobby and board show `v0.3.0`), and `TouchMoveOracle` (33,793 cases, 0 differences).
+  The full browser suite (228 passed, 1 skipped) and `RuleFuzzer` (20,000 games, 0 findings) passed at
+  `f77b893`; the release commit changes metadata only.
+- [x] Verified the release candidate `dfb41d4` through `start.bat` on Windows on 2026-11-23. The API, lobby
+  and both boards reported 0.3.0. Both players saw the early draw offer rejected without an Accept/Reject panel.
+  Both boards circled the touched g1 knight in green, showed g1 and g3 in red on the illegal move, restored green
+  after Revert and cleared the circles when Nf3 was accepted. The Windows Java and Playwright launcher tests passed.
+- [x] Ran both full suites on native Windows at `dfb41d4`. All 471 Java tests and all 229 Chromium Playwright
+  tests passed, with zero skips or retries. The rebuilt JAR reports 0.3.0. `RuleFuzzer` found no issues in
+  20,000 games and `TouchMoveOracle` found no differences across 33,793 cases.
+- [ ] Open, not part of this release: low contrast of the rings on dark squares, the rare reconnect race, the
+  castling attempt that is detected twice (see *Fixes after the board-circle reviews*); sounds (see *Planned
+  after the next release*).
+
+## Further improvements (after 0.2.0)
+
+- [x] Development continues on `further-improvements`, created from the released `main` (`9436251`).
+  `start.bat` serves this branch by default; `TestWindowsLauncher`, the README, `RELEASING.md` and the agent
+  instructions name it. Not run: the Windows-only launcher tests (they need the Windows machine).
+- [x] **Circles for the arbiter's rulings (2026-11-18).** With a ruling on a clock press, both boards circle the
+  squares it speaks of, in the style of Lichess. Green: the piece a touch obliges the player to move or capture
+  (the first touched own piece that can move; the first touched opponent piece that can be captured; own piece
+  and its capture together; king and rook for castling). Red: start and end square of an illegal move, when the
+  board shows exactly one move or a castling attempt. Green stays until the move is accepted, red until the
+  position is restored; a new ruling replaces them. `ArbiterResponse.boardMarks`, `ArbiterEngine.illegalMoveSquares`,
+  `GameSession.getBoardMarks`, message `boardMarks`, `ChessBoard.setMarks`.
+- [x] Decisions taken, for review: the circles are on both boards; own piece and the piece it must capture are
+  both marked, and so are king and rook for a castling obligation; a castling attempt is marked on the king's
+  squares; a reconnecting page gets the current circles; released-piece rulings and a moved opponent piece are
+  not marked.
+- [x] Tests: `TestBoardMarks` (15), `TestIllegalMoveSquares` (7), `TestBoardMarksServer` (5),
+  `board-marks.spec.ts` (4). Verification on macOS: `mvn -q package` runs 435 Java tests, 0 failures, 4 skipped
+  (Windows-only launcher tests); `CI=1 npx playwright test --retries=0`: 209 passed, 1 skipped (Windows-only);
+  `RuleFuzzer` 20,000 games, 0 findings; `TouchMoveOracle` 33,793 cases, 0 differences.
+
+### Board-circle review on Windows
+
+- [x] Tested `0c1c90d` on Windows on 2026-11-21. All 436 Java tests and all 210 repository Playwright tests
+  passed, including the four coloring scenarios. The rule fuzzer reported zero findings in 20,000 games and the
+  touch-move oracle reported zero differences in 33,793 cases. Separate two-player checks reproduced the issues below.
+- [x] Verified on both players' boards that a binding touch circles the piece in green, an illegal move circles its
+  endpoints in red, and the circles survive a board flip and reconnect. Checked the rendered colors through `start.bat`.
+- [x] Suppress misleading red circles when two pieces of the same kind have moved. From the starting position, drag
+  the g1 knight to g3, then the b1 knight to g1 and press the clock. Both boards circle b1 and g3 as a single move.
+  Fixed (see below): nothing is circled.
+- [x] Keep the king's red circles when an illegal castle is repeated after Revert. Castling out of check twice in the
+  same turn circles the king's squares the first time and loses them on the game-ending second attempt.
+  Fixed (see below): the second attempt is circled too.
+- [x] Resolve stale green circles when **Offer Draw** triggers an illegal-move ruling. Touch g1, play e2–e4, press the
+  clock and revert. Play g1–g3 and offer a draw. Both boards keep the green g1 circle while the arbiter orders a revert.
+  Fixed with the review fixes below: g1 and g3 are circled red, and g1 is green again after the Revert.
+- [ ] Review what green identifies during recovery. An unfinished castle can circle the empty king origin while the
+  king is already on g1. After an illegal move replaces green with red, Revert clears both colors even when the
+  original touch obligation still binds. The rings also have low contrast on dark squares (green 1.7:1, red 2.7:1).
+  The castling circle and the lost green circle are fixed with the review fixes below; the contrast is open.
+
+### Fixes after the board-circle reviews
+
+- [x] **Review of the circles (2026-11-21).** Four defects found by a review of `0c1c90d` and fixed:
+  - a ruling on the move shown with a draw offer (instead of a clock press) drew no circles — it is marked like
+    one on a clock press (`GameSession.markRuling`, sent by `handleCorrectTimeDrawOffer`);
+  - the green circle of a touched piece was lost with an illegal-move ruling although the obligation went on — it
+    stays, the red circles are added, and red covers green on a shared square until the position is restored;
+  - a king that was put on its castling square already (only the rook still to be moved) was circled on the empty
+    square it left — it is circled where it stands (`ArbiterResponse.castlingKingSquare`);
+  - circles of an open ruling stayed on the final boards when the game ended another way (resignation, flag fall,
+    ...) — the end of the game takes them off; only the illegal move that loses the game stays marked.
+- [x] Decision taken, for review: a game that ends while circles are shown loses them on both boards, also the red
+  ones of an illegal move that is still on the board (the opponent resigns during the restoration).
+- [ ] Left open from that review: a reconnect that overlaps a restoration by milliseconds can be sent circles that
+  were just removed (`resumeSeat` holds the room lock, `handleBoardEvent` / `handleRestorePosition` do not);
+  `ArbiterEngine.illegalMoveSquares` looks for the castling attempt a second time per illegal move.
+- [x] Tests: `TestBoardMarks` (24), `TestBoardMarksServer` (7), `board-marks.spec.ts` (13 — now also own piece
+  with its capture, both castling cases, the losing illegal move and the rematch in the browser, and the Offer
+  Draw journey of the Windows review replayed literally).
+  Verification on macOS: `mvn -o test` runs 446 Java tests, 0 failures, 4 skipped (Windows-only launcher tests);
+  `CI=1 npx playwright test --retries=0`: 217 passed, 1 skipped (Windows-only), before the Offer Draw journey
+  was added as a test; `board-marks.spec.ts` (13 passed) was run again with it. Not run: `RuleFuzzer`,
+  `TouchMoveOracle` (no rule is evaluated differently; only what is circled changed), and the launcher test
+  changed on Windows in `b3732a5` (Windows-only).
+- [x] **The two open circle issues of the Windows review (2026-11-21).**
+  - Two pieces of the same kind that both moved are no longer circled as one move:
+    `ArbiterEngine.illegalMoveSquares` follows every piece through the board events (drags, and the side area) and
+    marks a move only when every other piece stands on its own square. Events that do not lead to the position on
+    the board say nothing, and the position decides alone as before.
+  - An illegal castling repeated after the Revert is circled again: the circles look only at the events since the
+    board was last set back (`ActionSequence.markPositionRestored`, set by `GameSession.completeRestoration`).
+    What was touched is still taken from the whole turn.
+- [x] Seen while fixing: the *reason* of an illegal move ("Illegal move because ...") was inferred from all events
+  of the turn (`inferAttemptedMove`), so it was missing when the move was repeated after a Revert: Nb1-b3 was
+  answered "Illegal move: the knight cannot move in this way." the first time and "Illegal move." the second -
+  in a default game on the very ruling that loses the game. Fixed: the reason is read from the events since the
+  board was last set back, like the circles. An illegal castling repeated after the Revert and a different
+  illegal move after a Revert get their reason too. Tests: `TestArbiterEngine` (3), `TestGameSession` (1),
+  `rules-extra.spec.ts` (2, Nb1-b3 / Revert / Nb1-b3 replayed with and without losing the game).
+- [x] Tests: `TestBoardMarks` (27), `TestIllegalMoveSquares` (13), `board-marks.spec.ts` (15, both journeys of the
+  Windows review replayed literally). Verification on macOS: `mvn -o test` runs 455 Java tests, 0 failures,
+  4 skipped (Windows-only launcher tests); `CI=1 npx playwright test --retries=0`: 220 passed, 1 skipped
+  (Windows-only). Not run: `RuleFuzzer`, `TouchMoveOracle` (no ruling changed, only what is circled).
+
+### Draw offers before both players have moved (2026-11-23)
+
+- [x] **An offer before both players have made a move is declared not valid at once (FIDE 5.2.3).** Reported
+  journeys: (1) the game starts, White offers a draw, Black gets the Accept/Reject panel, and *Accept* is answered
+  "A draw can be agreed only after both players have made at least one move (FIDE 5.2.3)."; (2) the same after
+  White's first move when Black offers. The offer was passed on although it could never be accepted. Now the
+  arbiter intervenes when the offer is made: the offerer reads "The draw offer is not valid: a draw can be
+  agreed only ...", the opponent reads "Your opponent offered a draw. The offer is not valid: ..." in the info
+  window, no panel opens and nothing stays on the table. `DrawOfferManager.offerDrawTooEarly`,
+  `GameSession.rejectEarlyOffer`.
+- [x] Counting, as decided: early offers go on the same per-move ladder as the wrong-time offers - the second on
+  the same move is not considered and brings the warning, the third loses the game
+  (`WRONG_TIME_OFFER_GAME_LOST`); the count starts again with the next move. An early offer made the right way
+  (with the move, before the clock) counts too; the move itself stays and is completed with the clock press.
+  Black's first move with an offer is not early: both have then made a move.
+- [x] Same cause, also fixed: a **rejected draw claim** on the first move was passed on as a draw offer
+  (FIDE 9.5) with the same dead Accept button. Before both players have moved it is now rejected as usual (two
+  minutes, the claim of the move is used, a named move must be played) but is no offer; both players are told
+  "It does not count as a draw offer: ...". `DrawClaimManager.processClaim(..., drawCanBeAgreed)`,
+  `DrawClaimResult.rejectedBeforeDrawCanBeAgreed`.
+- [x] Decisions taken, for review: the opponent is informed passively (info window, nothing to answer); the game
+  result of the third early offer keeps the wording "... by repeatedly offering a draw at the wrong time"; an
+  early offer shown with an invalid move is ruled on as that move, as before; *Accept* and an answering offer
+  keep their own 5.2.3 check as a safeguard; in a game from a custom position the moves of this game count, as
+  before.
+- [x] Tests: `TestFinalPassRegressions` (9 on this rule), `TestFinalPassServerRegressions` (5), new
+  `early-draw-offer.spec.ts` (6, both reported journeys replayed literally), the old first-move journey in
+  `final-pass.spec.ts` rewritten. 33 Java tests and 18 browser tests that offered or claimed on the first move
+  now let both players move first (`DrawTestSupport.bothPlayersMove`, `bothPlayersMove`, `bothKingsMove` for
+  the king-and-rook positions). Verification on macOS: `mvn -o test` runs 470 Java tests, 0 failures, 4 skipped
+  (Windows-only launcher tests); `CI=1 npx playwright test --retries=0`: 228 passed, 1 skipped (Windows-only);
+  `RuleFuzzer` 20,000 games, 0 findings. Not run: `TouchMoveOracle` (no touch-move ruling changed) and the
+  Windows-only launcher tests.
+
+### Planned after the next release
+
+- [ ] **Sounds, in a release of their own.** A sound when a piece is released on a square (as on Lichess) and a
+  sound when the clock is pressed. Two options on the entry screen, each on or off, default on: sound for a
+  moved piece, sound for the clock press.
+
 ## 0.2.0 — Game Lifecycle and Draw Guards
 
 - [x] Scope: everything on `latest-ai-model-review` since `0.1.6` - the model review of `0.1.6`, its

@@ -3,8 +3,10 @@
 package io.github.dlbbld.otbchess.arbiter;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -744,15 +746,133 @@ public class ArbiterEngine {
     illegalMoveTracker.recordIllegalMove(sideToMove);
     final Optional<IllegalMoveReason> reason = explainSimpleIllegalMove(board, afterPosition, sequence);
     final int count = illegalMoveTracker.getIllegalMoveCount(sideToMove);
+    final List<Square> moveSquares = illegalMoveSquares(board, afterPosition, sequence);
     final IllegalMoveDetail detail = new IllegalMoveDetail(reason.map(IllegalMoveReason::playerReason),
         reason.map(IllegalMoveReason::opponentReason), sideToMove, count, illegalMoveTracker.getMaxIllegalMoves(),
-        illegalMoveTracker.isUnlimited(), false);
+        illegalMoveTracker.isUnlimited(), false, moveSquares.isEmpty() ? Square.NONE : moveSquares.get(0),
+        moveSquares.isEmpty() ? Square.NONE : moveSquares.get(1));
 
     if (illegalMoveTracker.isGameLost(sideToMove)) {
       return ArbiterResponse.illegalMoveGameLost(detail);
     }
 
     return ArbiterResponse.illegalMove(detail);
+  }
+
+  /**
+   * Where the illegal move started and ended, for the circles on the board - only when the board shows exactly one
+   * move: a castling attempt (the king's squares), or one own piece that left its square and stands on another one
+   * while nothing else changed. A pawn may stand there as the piece it was promoted to. Several displaced pieces
+   * give no squares: the arbiter does not guess which of them was "the move" - also not when two pieces of the same
+   * kind moved and the board merely looks like one move. Only what was done since the board was last set back by a
+   * restoration counts: an earlier attempt of the same turn is no longer on the board.
+   *
+   * @return the start and the end square, or an empty list
+   */
+  static List<Square> illegalMoveSquares(Board board, BitboardPosition afterPosition, ActionSequence sequence) {
+    final Side side = board.getSideToMove();
+    final List<BoardEvent> events = sequence.getEventsSincePositionRestored();
+    final Optional<CastlingAttemptDetector.Attempt> castling = CastlingAttemptDetector.findPhysicalAttempt(board,
+        afterPosition, events);
+    if (castling.isPresent()) {
+      // The square the king was actually put on, which need not be the castling square.
+      return List.of(castling.get().moveSpecification().castlingMove().kingFromSquare(side),
+          castling.get().kingReleaseSquare());
+    }
+    final BitboardPosition before = board.getBitboardPosition();
+    final List<Square> changed = new ArrayList<>();
+    for (final Square square : Square.values()) {
+      if (square != Square.NONE && before.get(square) != afterPosition.get(square)) {
+        changed.add(square);
+      }
+    }
+    if (changed.size() != 2) {
+      return List.of();
+    }
+    for (final Square from : changed) {
+      final Square to = changed.get(0) == from ? changed.get(1) : changed.get(0);
+      final Piece moved = before.get(from);
+      final Piece arrived = afterPosition.get(to);
+      if (moved == Piece.NONE || moved.getSide() != side || afterPosition.get(from) != Piece.NONE
+          || arrived == Piece.NONE || arrived.getSide() != side) {
+        continue;
+      }
+      final int lastRank = side == Side.WHITE ? 8 : 1;
+      final boolean promoted = moved.getPieceType() == PieceType.PAWN && to.getRank().getNumber() == lastRank
+          && arrived.getPieceType() != PieceType.PAWN && arrived.getPieceType() != PieceType.KING;
+      if (arrived == moved || promoted) {
+        return otherPiecesStayed(before, afterPosition, events, from, to) ? List.of(from, to) : List.of();
+      }
+    }
+    return List.of();
+  }
+
+  /** A piece on the board or in the side area, with the square it stood on before the events. */
+  private record TrackedPiece(Piece piece, Square origin) {
+  }
+
+  /**
+   * Whether every piece beside the move still stands on its own square, by following each piece through the events.
+   * Two pieces of the same kind that changed places leave the position as it was, and only the events tell. Events
+   * that do not lead from the one position to the other say nothing about it, and the positions decide alone.
+   */
+  private static boolean otherPiecesStayed(BitboardPosition before, BitboardPosition after, List<BoardEvent> events,
+      Square from, Square to) {
+    final Map<Square, TrackedPiece> onBoard = new EnumMap<>(Square.class);
+    for (final Square square : Square.values()) {
+      if (square != Square.NONE && before.get(square) != Piece.NONE) {
+        onBoard.put(square, new TrackedPiece(before.get(square), square));
+      }
+    }
+    final List<TrackedPiece> sideArea = new ArrayList<>();
+    for (final BoardEvent event : events) {
+      final TrackedPiece moving;
+      switch (event.type()) {
+        case CLICK -> {
+          continue;
+        }
+        case DRAG_MOVE, DRAG_CAPTURE, REMOVE -> {
+          moving = onBoard.remove(event.square());
+          if (moving == null || moving.piece() != event.piece()) {
+            return true;
+          }
+        }
+        case RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> {
+          final List<TrackedPiece> candidates = sideArea.stream().filter(piece -> piece.piece() == event.piece())
+              .toList();
+          // Which one of several pieces of a kind came back is not known - and neither is where a new piece is from.
+          moving = candidates.size() == 1 ? candidates.get(0) : new TrackedPiece(event.piece(), Square.NONE);
+          if (!candidates.isEmpty()) {
+            sideArea.remove(candidates.get(0));
+          }
+        }
+        default -> {
+          return true;
+        }
+      }
+      if (event.type() == BoardEventType.REMOVE) {
+        sideArea.add(moving);
+        continue;
+      }
+      if (event.targetSquare() == Square.NONE) {
+        return true;
+      }
+      final TrackedPiece displaced = onBoard.put(event.targetSquare(), moving);
+      if (displaced != null) {
+        sideArea.add(displaced);
+      }
+    }
+    for (final Square square : Square.values()) {
+      if (square == Square.NONE) {
+        continue;
+      }
+      final TrackedPiece piece = onBoard.get(square);
+      if ((piece == null ? Piece.NONE : piece.piece()) != after.get(square)) {
+        return true;
+      }
+    }
+    return onBoard.entrySet().stream().filter(entry -> entry.getKey() != from && entry.getKey() != to)
+        .allMatch(entry -> entry.getValue().origin() == entry.getKey());
   }
 
   /**
@@ -822,14 +942,19 @@ public class ArbiterEngine {
     return Optional.of(new IllegalMoveReason(reason, reason));
   }
 
+  /**
+   * The move the player made on the board, read from what was done since the board was last set back by a
+   * restoration: an earlier attempt of the same turn is no longer on the board, and counting its events would hide
+   * the move when it is repeated.
+   */
   private static Optional<AttemptedMove> inferAttemptedMove(Board board, BitboardPosition afterPosition,
       ActionSequence sequence) {
-    final Optional<AttemptedMove> castlingAttempt = inferPhysicalCastlingAttempt(board, afterPosition,
-        sequence.getEvents());
+    final List<BoardEvent> events = sequence.getEventsSincePositionRestored();
+    final Optional<AttemptedMove> castlingAttempt = inferPhysicalCastlingAttempt(board, afterPosition, events);
     if (castlingAttempt.isPresent()) {
       return castlingAttempt;
     }
-    return inferSimpleAttemptedMove(board, afterPosition, sequence);
+    return inferSimpleAttemptedMove(board, afterPosition, events);
   }
 
   private static Optional<AttemptedMove> inferPhysicalCastlingAttempt(Board board, BitboardPosition afterPosition,
@@ -872,10 +997,10 @@ public class ArbiterEngine {
   }
 
   private static Optional<AttemptedMove> inferSimpleAttemptedMove(Board board, BitboardPosition afterPosition,
-      ActionSequence sequence) {
+      List<BoardEvent> events) {
     BoardEvent moveEvent = null;
 
-    for (final BoardEvent event : sequence.getEvents()) {
+    for (final BoardEvent event : events) {
       if (event.type() == BoardEventType.CLICK) {
         continue;
       }

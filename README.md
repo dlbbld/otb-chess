@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.2.0 — Game Lifecycle and Draw Guards](CHANGELOG.md#020--game-lifecycle-and-draw-guards--2026-11-18)
+See [0.3.0 — Board Circles and Early Draw Offers](CHANGELOG.md#030--board-circles-and-early-draw-offers--2026-11-23)
 for this release.
 
 ## Documentation
@@ -46,7 +46,7 @@ On Windows, `start.bat` fetches the latest pushed commit of the testing branch a
 from `..\otb-chess-stable`. Push verified changes to that branch, restart `start.bat`, then test
 at http://localhost:8080 before merging the PR. The branch is taken from the `OTB_TEST_BRANCH`
 environment variable, else the first argument (`start.bat my/branch`), else the default
-`latest-ai-model-review`. Local uncommitted edits are excluded; use `start-dev.bat` to run those.
+`further-improvements`. Local uncommitted edits are excluded; use `start-dev.bat` to run those.
 A failed fetch stops startup instead of serving an older commit.
 
 ```bash

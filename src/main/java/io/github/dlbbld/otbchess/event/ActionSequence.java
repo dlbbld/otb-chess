@@ -16,11 +16,13 @@ public class ActionSequence {
   private final List<BoardEvent> events;
   private final Side sideToMove;
   private int releasedPieceRuleStartIndex;
+  private int positionRestoredIndex;
 
   public ActionSequence(Side sideToMove) {
     this.sideToMove = sideToMove;
     this.events = new ArrayList<>();
     this.releasedPieceRuleStartIndex = 0;
+    this.positionRestoredIndex = 0;
   }
 
   public void addEvent(BoardEvent event) {
@@ -39,6 +41,19 @@ public class ActionSequence {
     releasedPieceRuleStartIndex = events.size();
   }
 
+  /**
+   * The events since the board was last set back by a restoration - all of the turn's events when there was none.
+   * They are what led to the position that is on the board now; the earlier ones still say what was touched.
+   */
+  public List<BoardEvent> getEventsSincePositionRestored() {
+    return Collections.unmodifiableList(events.subList(positionRestoredIndex, events.size()));
+  }
+
+  /** The board has been set back by a restoration: what was done on it before no longer shows on it. */
+  public void markPositionRestored() {
+    positionRestoredIndex = events.size();
+  }
+
   public Side getSideToMove() {
     return sideToMove;
   }
@@ -46,6 +61,7 @@ public class ActionSequence {
   public void clear() {
     events.clear();
     releasedPieceRuleStartIndex = 0;
+    positionRestoredIndex = 0;
   }
 
   public boolean isEmpty() {

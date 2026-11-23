@@ -85,7 +85,14 @@ test('start.bat fetches the configured branch on each launch and serves its snap
       };
       delete env.OTB_TEST_BRANCH;
       if (!viaArgument) env.OTB_TEST_BRANCH = branch;
-      server = spawn('cmd.exe', ['/d', '/c', viaArgument ? `call start.bat ${branch}` : 'call start.bat'], {
+      // The launcher path must stay explicit: cmd.exe skips the current directory when
+      // NoDefaultCurrentDirectoryInExePath is set (agent and CI shells set it), so a bare
+      // `call start.bat` is not found. Keep it relative -- Node quotes spawn arguments by
+      // escaping embedded quotes as \", which cmd.exe does not understand, so an absolute
+      // path containing spaces cannot be passed this way. TestWindowsLauncher covers that
+      // absolute form, where Java's quoting leaves the quotes intact.
+      const launcher = String.raw`.\start.bat`;
+      server = spawn('cmd.exe', ['/d', '/c', viaArgument ? `call ${launcher} ${branch}` : `call ${launcher}`], {
         cwd: checkout,
         env,
         windowsHide: true,
