@@ -3,6 +3,27 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.3.0 — Board Circles and Early Draw Offers
+
+- [x] Scope: everything on `further-improvements` since `0.2.0` (sections below) - the circles for the
+  arbiter's rulings with the fixes from their two reviews, the reason of a repeated illegal move, and the draw
+  offer before both players have moved. `0.3.0` instead of `0.2.1`: the release adds a feature and changes how
+  an early draw offer is answered.
+- [x] Prepare version `0.3.0`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Board Circles and Early
+  Draw Offers** for the PR title and its opening heading, title the GitHub release `0.3.0`, and begin its notes
+  with the release name.
+- [x] Verification on macOS at the release commit: full Java suite, and `version.spec.ts` against the rebuilt
+  jar (`/api/version`, lobby and board show `v0.3.0`), and `TouchMoveOracle` (33,793 cases, 0 differences).
+  The full browser suite (228 passed, 1 skipped) and `RuleFuzzer` (20,000 games, 0 findings) passed at
+  `f77b893`; the release commit changes metadata only.
+- [ ] Before the merge: the manual test through `start.bat` on Windows (version, the circles, an early draw
+  offer on both boards), and the Windows-only launcher tests, which do not run on macOS. The full suites last
+  ran on the Windows machine at `0c1c90d`; the launcher test was changed there afterwards in `b3732a5`.
+- [ ] Open, not part of this release: low contrast of the rings on dark squares, the rare reconnect race, the
+  castling attempt that is detected twice (see *Fixes after the board-circle reviews*); sounds (see *Planned
+  after the next release*).
+
 ## Further improvements (after 0.2.0)
 
 - [x] Development continues on `further-improvements`, created from the released `main` (`9436251`).
