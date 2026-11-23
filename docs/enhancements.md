@@ -71,7 +71,15 @@ Companion: [`SPECIFICATION.md`](../SPECIFICATION.md) for current behaviour, [`fi
 Decided by the project owner on 2026-11-23:
 
 - **Both players hear both.** A player hears their own piece and clock, and the opponent's, as two people at one board would.
-- **The two samples are supplied by the project owner** (`piece_release.wav`, `clock_press.wav`). How they are stored is recorded in [`static/sounds/README.md`](../static/sounds/README.md). The Lichess sound files are not used: Lichess is published under the AGPL and this project under GPL-3.0 only.
+- **The two samples are supplied by the project owner** (`piece_release.wav`, `clock_press.wav`). How they are stored is recorded in [`static/sounds/README.md`](../static/sounds/README.md).
+
+The other sources that were considered: recordings under CC0 from a public sound library, sounds synthesised in code, and the Lichess sounds. On the last, Lichess is open source, but that does not cover all of its sounds. Its licence file (`COPYING.md` in `lichess-org/lila`, read on 2026-11-23) says:
+
+- The default sounds, the set `standard` that a visitor hears on Lichess, are not in its list of free files; the file names "the other sounds" under "Exceptions (non-free)". They cannot be used here.
+- The sets `sfx`, `piano`, `nes` and `futuristic` by Enigmahack are AGPLv3+. A file from them could be shipped with this GPL-3.0 project: it stays under the AGPL, the author is credited, and the source of the app must be offered to the users of the site, which the public repository does.
+- Lichess has no sound for a clock press.
+
+No Lichess file is used.
 
 Taken over from the review:
 
