@@ -45,7 +45,7 @@ Long e2e runtimes are explicitly acceptable when the change has behavioral risk,
 - `start.bat` fetches and serves the latest pushed commit of the testing branch from the
   `..\otb-chess-stable` worktree for manual testing before PR merge. The branch comes from the
   `OTB_TEST_BRANCH` environment variable, else the first argument, else the default
-  `further-improvements`; release preparation sets it instead of editing the launcher. A failed
+  `add-sounds`; release preparation sets it instead of editing the launcher. A failed
   fetch stops startup; uncommitted edits never reach it. `start-dev.bat` runs the working tree as-is.
 - Do not work in this working tree at the same time as another agent; sequential use only.
 - `tasks.md` is the live-planning source of truth: record completed work there (check items in

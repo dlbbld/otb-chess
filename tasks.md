@@ -3,6 +3,21 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## Sounds (after 0.3.0)
+
+- [x] Development continues on `add-sounds` (2026-11-23), created from the tip of `further-improvements`: the
+  released `main` plus the publication note of `0.3.0`. `further-improvements` is deleted on GitHub and locally.
+  `start.bat` serves `add-sounds` by default; `TestWindowsLauncher`, the README, `RELEASING.md` and the agent
+  instructions name it. Not run: the Windows-only launcher tests (they need the Windows machine).
+- [x] `RELEASING.md`: after the merge no commit goes on the release branch and nothing is recorded in
+  `tasks.md`; the release branch is checked and deleted when it is no longer needed; the next development
+  branch starts from the released `main`.
+- [x] Requirement and proposed implementation of the sounds written down as
+  [E-004](docs/enhancements.md#e-004--sounds-for-a-released-piece-and-for-the-clock-press).
+- [ ] Review of the E-004 proposal, and the decisions it asks for (where the two samples come from, the
+  points for the review).
+- [ ] Implement E-004 with tests at both levels, then release it on its own.
+
 ## 0.3.0 — Board Circles and Early Draw Offers
 
 - [x] Scope: everything on `further-improvements` since `0.2.0` (sections below) - the circles for the
@@ -25,9 +40,11 @@ release's tasks until it ships.
   tests passed, with zero skips or retries. The rebuilt JAR reports 0.3.0. `RuleFuzzer` found no issues in
   20,000 games and `TouchMoveOracle` found no differences across 33,793 cases.
 - [x] Published on 2026-11-23: PR #19 merged into `main` as `3f14e32`, tag `0.3.0` on that merge commit, GitHub
-  release `0.3.0` with the changelog entry as its notes. `further-improvements` continues from the released `main`.
-- [ ] Deploy `0.3.0` to the production host and verify the live version and a two-player flow
-  ([SETUP.md §12](SETUP.md#12-deploying-updates)). The host serves `0.2.0` until then.
+  release `0.3.0` with the changelog entry as its notes. `further-improvements` was replaced by `add-sounds` on
+  the same day (see *Sounds*).
+- [x] Deployed `0.3.0` to the production host on 2026-11-23 ([SETUP.md §12](SETUP.md#12-deploying-updates)).
+  The live version, the health endpoint, the WebSocket smoke test and a two-player early draw offer through
+  the public URL were verified.
 - [ ] Open, not part of this release: low contrast of the rings on dark squares, the rare reconnect race, the
   castling attempt that is detected twice (see *Fixes after the board-circle reviews*); sounds (see *Planned
   after the next release*).
@@ -156,7 +173,9 @@ release's tasks until it ships.
 
 - [ ] **Sounds, in a release of their own.** A sound when a piece is released on a square (as on Lichess) and a
   sound when the clock is pressed. Two options on the entry screen, each on or off, default on: sound for a
-  moved piece, sound for the clock press.
+  moved piece, sound for the clock press. Requirement and proposal:
+  [E-004](docs/enhancements.md#e-004--sounds-for-a-released-piece-and-for-the-clock-press); tracked under
+  *Sounds (after 0.3.0)*.
 
 ## 0.2.0 — Game Lifecycle and Draw Guards
 
