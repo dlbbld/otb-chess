@@ -24,6 +24,10 @@ release's tasks until it ships.
 - [x] Ran both full suites on native Windows at `dfb41d4`. All 471 Java tests and all 229 Chromium Playwright
   tests passed, with zero skips or retries. The rebuilt JAR reports 0.3.0. `RuleFuzzer` found no issues in
   20,000 games and `TouchMoveOracle` found no differences across 33,793 cases.
+- [x] Published on 2026-11-23: PR #19 merged into `main` as `3f14e32`, tag `0.3.0` on that merge commit, GitHub
+  release `0.3.0` with the changelog entry as its notes. `further-improvements` continues from the released `main`.
+- [ ] Deploy `0.3.0` to the production host and verify the live version and a two-player flow
+  ([SETUP.md §12](SETUP.md#12-deploying-updates)). The host serves `0.2.0` until then.
 - [ ] Open, not part of this release: low contrast of the rings on dark squares, the rare reconnect race, the
   castling attempt that is detected twice (see *Fixes after the board-circle reviews*); sounds (see *Planned
   after the next release*).
