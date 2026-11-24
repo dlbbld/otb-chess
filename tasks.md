@@ -25,10 +25,13 @@ release's tasks until it ships.
   way round. No defect found: the board with the sounds on plays both players' pieces and clock presses, as
   decided, and two windows on one computer share the loudspeaker. `sounds.spec.ts` now replays the journey both
   ways round, per board (14 tests): the board with the sounds off opens no audio output and plays nothing.
-- [ ] Before the merge, on Windows through `start.bat`: the version on the lobby and both boards, and both
-  sounds by ear on both boards. Also by ear on an iPhone, including after locking and reopening the phone.
-  No automated test hears anything, and nobody has listened to the sounds in the app yet.
-- [ ] Before the merge: the Windows-only launcher tests (4 Java, 1 browser), which run on the ThinkPad only.
+- [x] Manual test by the owner on Windows on 2026-11-24, before the merge: both sounds heard in the app, in
+  Chrome and in Edge. With the sounds on in one browser and off in the other, muting the browser with the
+  sounds on in the Windows volume mixer left silence, and muting the other one changed nothing - both ways
+  round. The owner then asked for the release.
+- [ ] Not done before the release: listening on an iPhone, including after locking and reopening the phone.
+- [ ] Not run for this release: the Windows-only launcher tests (4 Java, 1 browser) and the full suites on
+  Windows. The launcher and its tests are unchanged since `ee98572`, where the launcher tests passed on Windows.
 - Publication (merge, tag, GitHub release) and deployment are reported in the conversation, not here
   (`RELEASING.md`, *Manual test and publish*, step 5).
 
@@ -66,8 +69,8 @@ release's tasks until it ships.
 - [x] Piece sample replaced (2026-11-24): `piece.wav` is now the owner's recording of a piece set down on a wood
   board (`piece_release - wood.wav`, stereo, 24 kHz, 0.07 s, stored unchanged); the first one was of an
   alabaster board. `TestStaticFileHandler` accepts mono or stereo.
-- [ ] By ear, before the release: both sounds on the Windows machine and on an iPhone, also after locking and
-  reopening the phone. Carried in the `0.4.0` section above.
+- [x] By ear, before the release: both sounds on the Windows machine - done, see the `0.4.0` section above. The
+  iPhone is open there.
 - [x] The sounds with the browser's own Web Audio, verified on this Mac on 2026-11-24. At first the test browser
   needed 20 s to open the audio output here (`new AudioContext()` blocked that long; the default output is the
   virtual device of the remote desktop) and suspended it again after 10 s, so `sounds.spec.ts` ran with its
