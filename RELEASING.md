@@ -38,7 +38,7 @@ The Maven project version and Git tag also contain only `VERSION`.
    version to catch any other pin. Verify `/api/version` and the visible version on both the lobby
    and board pages.
 6. No launcher edit is needed: `start.bat` serves whatever branch `OTB_TEST_BRANCH` names, falling
-   back to its first argument and then to the default `further-improvements`. When the release
+   back to its first argument and then to the default `add-sounds`. When the release
    branch is not the default, run it as `start.bat <release-branch>` (or set `OTB_TEST_BRANCH`) in
    step 1 of the manual test below.
 7. Run the full Java suite. Run the full Playwright suite for gameplay, shared state, or common UI
@@ -61,7 +61,14 @@ The Maven project version and Git tag also contain only `VERSION`.
    it is updated. Move the production checkout (`/Users/chess-server/Claude/otb-chess` on the iMac)
    to the new tag, rebuild, and restart the app daemon using
    [SETUP.md §12](SETUP.md#12-deploying-updates) — the restart needs an administrator password
-   because the daemon is installed system-wide. Then verify the live health endpoint, version, and
-   a two-player flow. A restart ends running games, so deploy when the site is idle.
-5. Record publication and deployment in `tasks.md`, then delete obsolete remote development
-   branches. Start the next branch from the newly released `main` or rebase it onto that commit.
+   because the daemon is installed system-wide, unless the operator has the scoped grant described
+   there. Then verify the live health endpoint, version, and a two-player flow. A restart ends
+   running games, so deploy when the site is idle.
+5. Add no commit to the release branch after the merge, and report publication and deployment in
+   the conversation instead of `tasks.md`: a commit made after the merge is on no release and
+   keeps the branch from being deleted.
+6. Deleting the release branch is not part of this procedure. It is a manual task after the
+   release, done by hand when the branch is no longer needed.
+7. Start the next development branch from the newly released `main`. When it replaces the default
+   testing branch of `start.bat`, change that default in `start.bat`, `TestWindowsLauncher`, the
+   README, this file, `CLAUDE.md` and `AGENTS.md` in the same commit.

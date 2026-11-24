@@ -3,6 +3,87 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.4.0 — Piece and Clock Sounds
+
+- [x] Scope: everything on `add-sounds` since `0.3.0` (section below) - the sound for a piece set down and the
+  sound for a clock press, on both boards, with the two options on the start screen; the creator's board in a
+  browser that refuses storage. `0.4.0` instead of `0.3.1`: the release adds a feature and a server message.
+- [x] Prepare version `0.4.0`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Piece and Clock Sounds**
+  for the PR title and its opening heading, title the GitHub release `0.4.0`, and begin its notes with the
+  release name.
+- [x] Verification on macOS at the release commit: full Java suite (502 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), and `version.spec.ts` and `sounds.spec.ts` against the rebuilt jar
+  (`/api/version`, lobby and board show `v0.4.0`; the 12 sounds tests in each audio mode). The full browser
+  suite (240 passed, 1 skipped) and `RuleFuzzer` (20,000 games, 0 findings) passed at `d7dc180`; since then
+  only the piece sample, the helper of the sounds tests, documents and release metadata changed.
+  `TouchMoveOracle` not run: no ruling changed.
+- [x] Full browser suite at the release commit `4154c4d` on macOS: 240 passed, 1 skipped (the Windows-only
+  launcher test), no retries, `sounds.spec.ts` in audio mode `'real'`.
+- [x] Reported from the manual test on Windows (2026-11-24): with the sounds on in the window that creates the
+  game and off in an incognito window that joins, the sounds of both players are heard, and the same the other
+  way round. No defect found: the board with the sounds on plays both players' pieces and clock presses, as
+  decided, and two windows on one computer share the loudspeaker. `sounds.spec.ts` now replays the journey both
+  ways round, per board (14 tests): the board with the sounds off opens no audio output and plays nothing.
+- [x] Manual test by the owner on Windows on 2026-11-24, before the merge: both sounds heard in the app, in
+  Chrome and in Edge. With the sounds on in one browser and off in the other, muting the browser with the
+  sounds on in the Windows volume mixer left silence, and muting the other one changed nothing - both ways
+  round. The owner then asked for the release.
+- [ ] Not done before the release: listening on an iPhone, including after locking and reopening the phone.
+- [ ] Not run for this release: the Windows-only launcher tests (4 Java, 1 browser) and the full suites on
+  Windows. The launcher and its tests are unchanged since `ee98572`, where the launcher tests passed on Windows.
+- Publication (merge, tag, GitHub release) and deployment are reported in the conversation, not here
+  (`RELEASING.md`, *Manual test and publish*, step 5).
+
+## Sounds (after 0.3.0)
+
+- [x] Development continues on `add-sounds` (2026-11-23), created from the tip of `further-improvements`: the
+  released `main` plus the publication note of `0.3.0`. `further-improvements` is deleted on GitHub and locally.
+  `start.bat` serves `add-sounds` by default; `TestWindowsLauncher`, the README, `RELEASING.md` and the agent
+  instructions name it. Not run: the Windows-only launcher tests (they need the Windows machine).
+- [x] `RELEASING.md`: after the merge no commit goes on the release branch and nothing is recorded in
+  `tasks.md`; the release branch is checked and deleted when it is no longer needed; the next development
+  branch starts from the released `main`.
+- [x] Requirement and proposed implementation of the sounds written down as
+  [E-004](docs/enhancements.md#e-004--sounds-for-a-released-piece-and-for-the-clock-press).
+- [x] Review of the E-004 proposal (Codex, 2026-11-23) and the decisions it asked for: the two samples are
+  supplied by the project owner, and both players hear both players' pieces and clock. From the review: the
+  clock sound waits for the server also for the own press, `clockPressHeard` goes to both players, the audio
+  output is woken on every gesture, the tests observe the audio output. Recorded in E-004.
+- [x] **Sounds implemented (2026-11-24).** A piece set down on the board and a clock lever pressed down are
+  heard on both boards; two options on the entry screen, saved in the browser, both on by default.
+  `static/js/sounds.js`, `static/sounds/`, `ChessBoard.onPiecePlaced`, `GameSession.consumeClockPressRegistered`,
+  message `clockPressHeard`, `.wav` served as `audio/wav`. Also from the review: the creator's board is set up
+  when the browser refuses storage (the `lastGameId` write is guarded). `SPECIFICATION.md` (*Sounds*),
+  `MANUAL.md` and E-004 describe it.
+- [x] The clock sample is stored without its first 0.14 s (room noise and lever travel before the click), so
+  that the click is not heard late; the piece sample is stored as supplied (`static/sounds/README.md`).
+- [x] Tests: `TestClockPressRegistered` (12), `TestClockPressHeardServer` (15), `TestStaticFileHandler` (5),
+  `sounds.spec.ts` (12). `TestBoardMarksServer` now expects `clockPressHeard` before the ruling. The other
+  browser tests start with both sounds off (`playwright.config.ts`).
+- [x] Verification on macOS at the commit: `mvn test` runs 502 Java tests, 0 failures, 4 skipped (Windows-only
+  launcher tests); `CI=1 npx playwright test --retries=0` against the rebuilt jar: 240 passed, 1 skipped
+  (Windows-only); `RuleFuzzer` 20,000 games, 0 findings. The storage test fails without the `lastGameId` guard.
+  Not run: `TouchMoveOracle` (no ruling changed). The entry screen with the Sounds section was looked at in a
+  browser.
+- [x] Piece sample replaced (2026-11-24): `piece.wav` is now the owner's recording of a piece set down on a wood
+  board (`piece_release - wood.wav`, stereo, 24 kHz, 0.07 s, stored unchanged); the first one was of an
+  alabaster board. `TestStaticFileHandler` accepts mono or stereo.
+- [x] By ear, before the release: both sounds on the Windows machine - done, see the `0.4.0` section above. The
+  iPhone is open there.
+- [x] The sounds with the browser's own Web Audio, verified on this Mac on 2026-11-24. At first the test browser
+  needed 20 s to open the audio output here (`new AudioContext()` blocked that long; the default output is the
+  virtual device of the remote desktop) and suspended it again after 10 s, so `sounds.spec.ts` ran with its
+  stand-in audio context only. The spec now has a third mode, `'no-device'`: the browser's own Web Audio opened
+  without an output device, which opens at once and keeps running. All 12 tests pass in each of the three
+  modes (`'real'` chosen by itself in the last run, where the default device opened at once; `'no-device'` and
+  `'stand-in'` forced with `OTB_E2E_AUDIO`). `launcher.spec.ts` (Windows-only, a server of its own) still opens
+  its page with sounds on.
+- [x] From the same review, not part of the sounds: the cleanup commands of `RELEASING.md` step 6 (delete the
+  release branch by name after a check) had gaps. Dropped instead of repaired: the procedure no longer deletes the
+  branch at all; that is a manual task after the release. Step 6 now says only that.
+- [x] Release the sounds on their own, when asked: asked on 2026-11-24, see `0.4.0` above.
+
 ## 0.3.0 — Board Circles and Early Draw Offers
 
 - [x] Scope: everything on `further-improvements` since `0.2.0` (sections below) - the circles for the
@@ -24,6 +105,12 @@ release's tasks until it ships.
 - [x] Ran both full suites on native Windows at `dfb41d4`. All 471 Java tests and all 229 Chromium Playwright
   tests passed, with zero skips or retries. The rebuilt JAR reports 0.3.0. `RuleFuzzer` found no issues in
   20,000 games and `TouchMoveOracle` found no differences across 33,793 cases.
+- [x] Published on 2026-11-23: PR #19 merged into `main` as `3f14e32`, tag `0.3.0` on that merge commit, GitHub
+  release `0.3.0` with the changelog entry as its notes. `further-improvements` was replaced by `add-sounds` on
+  the same day (see *Sounds*).
+- [x] Deployed `0.3.0` to the production host on 2026-11-23 ([SETUP.md §12](SETUP.md#12-deploying-updates)).
+  The live version, the health endpoint, the WebSocket smoke test and a two-player early draw offer through
+  the public URL were verified.
 - [ ] Open, not part of this release: low contrast of the rings on dark squares, the rare reconnect race, the
   castling attempt that is detected twice (see *Fixes after the board-circle reviews*); sounds (see *Planned
   after the next release*).
@@ -152,7 +239,9 @@ release's tasks until it ships.
 
 - [ ] **Sounds, in a release of their own.** A sound when a piece is released on a square (as on Lichess) and a
   sound when the clock is pressed. Two options on the entry screen, each on or off, default on: sound for a
-  moved piece, sound for the clock press.
+  moved piece, sound for the clock press. Requirement and proposal:
+  [E-004](docs/enhancements.md#e-004--sounds-for-a-released-piece-and-for-the-clock-press); tracked under
+  *Sounds (after 0.3.0)*.
 
 ## 0.2.0 — Game Lifecycle and Draw Guards
 

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { soundsOff } from './tests/e2e/helpers/sounds-off';
 
 /**
  * Playwright E2E config for the OTB Chess web app.
@@ -26,6 +27,8 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://localhost:18080',
+    // Both sounds off, as a player would have set them on the entry screen: see soundsOff.
+    storageState: soundsOff('http://localhost:18080'),
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
     screenshot: 'only-on-failure',

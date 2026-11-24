@@ -32,6 +32,7 @@ class ChessBoard {
     this.dragging = null;
     this.floatingPiece = null;
     this.eventCallback = null;
+    this.placedCallback = null;
     this.enabled = false;
     // Squares the arbiter points at: squareName -> 'green' | 'red' (see setMarks).
     this.marks = {};
@@ -160,6 +161,20 @@ class ChessBoard {
     this.eventCallback = callback;
   }
 
+  /**
+   * Registers what happens when a held piece is set down on a square of the board - by this player
+   * or, mirrored, by the opponent: a piece moved to another square, with or without a capture, or
+   * brought back from the side. Not a piece touched or put back where it stood, not a piece taken
+   * off the board, and not a position the server sets.
+   */
+  onPiecePlaced(callback) {
+    this.placedCallback = callback;
+  }
+
+  piecePlaced() {
+    if (this.placedCallback) this.placedCallback();
+  }
+
   emitEvent(eventType, square, targetSquare, piece, displacedPiece) {
     if (this.eventCallback) {
       this.eventCallback({
@@ -279,10 +294,12 @@ class ChessBoard {
       if (targetPiece === 'NONE') {
         this.squares[targetSquare].piece = fromPiece;
         this.renderSquare(targetSquare);
+        this.piecePlaced();
         this.emitEvent('RESTORE_TO_EMPTY', 'NONE', targetSquare, fromPiece, 'NONE');
       } else {
         this.squares[targetSquare].piece = fromPiece;
         this.renderSquare(targetSquare);
+        this.piecePlaced();
         this.emitEvent('RESTORE_TO_OCCUPIED', 'NONE', targetSquare, fromPiece, targetPiece);
         if (window.game) window.game.addToSideArea(targetPiece, targetSquare);
       }
@@ -312,6 +329,7 @@ class ChessBoard {
             this.squares[targetSquare].piece = fromPiece;
             this.renderSquare(fromSquare);
             this.renderSquare(targetSquare);
+            this.piecePlaced();
             this.emitEvent('DRAG_MOVE', fromSquare, targetSquare, fromPiece, 'NONE');
           } else {
             // DRAG_CAPTURE
@@ -319,6 +337,7 @@ class ChessBoard {
             this.squares[targetSquare].piece = fromPiece;
             this.renderSquare(fromSquare);
             this.renderSquare(targetSquare);
+            this.piecePlaced();
             this.emitEvent('DRAG_CAPTURE', fromSquare, targetSquare, fromPiece, targetPiece);
             if (window.game) window.game.addToSideArea(targetPiece, targetSquare);
           }
@@ -421,6 +440,7 @@ class ChessBoard {
           this.squares[targetSquare].piece = piece;
           this.renderSquare(square);
           this.renderSquare(targetSquare);
+          this.piecePlaced();
         }
         break;
       }
@@ -432,6 +452,7 @@ class ChessBoard {
           this.squares[targetSquare].piece = piece;
           this.renderSquare(square);
           this.renderSquare(targetSquare);
+          this.piecePlaced();
         }
         break;
       }
@@ -448,6 +469,7 @@ class ChessBoard {
         if (targetSquare !== 'NONE' && this.squares[targetSquare]) {
           this.squares[targetSquare].piece = piece;
           this.renderSquare(targetSquare);
+          this.piecePlaced();
         }
         break;
       }
@@ -456,6 +478,7 @@ class ChessBoard {
         if (targetSquare !== 'NONE' && this.squares[targetSquare]) {
           this.squares[targetSquare].piece = piece;
           this.renderSquare(targetSquare);
+          this.piecePlaced();
         }
         break;
       }

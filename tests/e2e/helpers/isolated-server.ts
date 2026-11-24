@@ -2,6 +2,7 @@ import { APIRequestContext, Browser, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
+import { soundsOff } from './sounds-off';
 
 async function freePort(): Promise<number> {
   const listener = createServer(); listener.listen(0, '127.0.0.1');
@@ -32,7 +33,7 @@ export async function startIsolatedServer(request: APIRequestContext, env: Recor
     }, {timeout:15000}).toBe(200);
   } catch (error) { await stop(); throw error; }
   return {stop, async context(browser: Browser) {
-    const context = await browser.newContext({baseURL});
+    const context = await browser.newContext({baseURL, storageState: soundsOff(baseURL)});
     await context.addInitScript(port => {
       const NativeWebSocket = window.WebSocket;
       window.WebSocket = class extends NativeWebSocket {

@@ -165,8 +165,8 @@ class TestBoardMarksServer {
 
     assertEquals(List.of("g1:green"), white.marks());
     assertEquals(List.of("g1:green"), black.marks());
-    // The circle comes with the ruling, before the request to restore.
-    assertEquals(List.of("touch_move_violation", "boardMarks", "restoreRequired"),
+    // The circle comes with the ruling, before the request to restore; the lever is heard before both.
+    assertEquals(List.of("clockPressHeard", "touch_move_violation", "boardMarks", "restoreRequired"),
         white.types().subList(before, white.messages.size()));
 
     // The restoration changes nothing about the obligation: no second message.

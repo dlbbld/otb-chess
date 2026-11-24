@@ -3,6 +3,8 @@ class Game {
   constructor() {
     this.board = null;
     this.ws = new GameWebSocket();
+    // The piece and clock sounds, as the player set them on the entry screen.
+    this.sounds = new GameSounds();
     this.side = null; // 'white' or 'black'
     // Whether the player turned the board with Flip board (the opponent's colour is at the bottom).
     this.boardTurnedByPlayer = false;
@@ -48,6 +50,9 @@ class Game {
       this.side || 'white'
     );
     this.board.onEvent((event) => this.onBoardEvent(event));
+    // A piece set down on the board is heard at once: the own one at the release, the opponent's
+    // when this board shows it. A position the server sets makes no sound.
+    this.board.onPiecePlaced(() => this.sounds.play('piece'));
 
     // Surface reconnection to the player; the resync handler clears it once state is restored.
     this.ws.onReconnecting = () => this.showArbiterMessage('Connection lost — reconnecting…');
@@ -283,7 +288,11 @@ class Game {
       if (this.side === 'black' && !this.board.flipped) {
         this.board.flip();
       }
-      localStorage.setItem('lastGameId', data.gameId);
+      try {
+        localStorage.setItem('lastGameId', data.gameId);
+      } catch (e) {
+        /* storage unavailable: the board is set up all the same */
+      }
       this.board.setPosition(data.board);
       this.board.renderAll();
       this.updateClockLabels();
@@ -565,6 +574,13 @@ class Game {
 
     this.ws.on('opponentClockPressed', (data) => {
       this.showArbiterMessage(data.message, 'error');
+    });
+
+    // A lever that was up went down - the own one or the opponent's, pressed by either player.
+    // Only the server knows that a press registered, so the clock sound waits for this message
+    // also for the player's own press; no other message makes it.
+    this.ws.on('clockPressHeard', () => {
+      this.sounds.play('clock');
     });
 
     // The squares the arbiter points at with its ruling, the same on both boards. The server

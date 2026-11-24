@@ -84,9 +84,28 @@
       <input type="text" id="gameCodeInput" placeholder="Enter game code">
       <button id="joinGameBtn" class="primary-btn">Join Game</button>
     </div>
+
+    <!-- The player's own options, kept in this browser (localStorage) and never sent to the server.
+         A section of their own: they hold for creating, joining and returning to a game alike. -->
+    <div class="lobby-section">
+      <h2>Sounds</h2>
+      <div class="checkbox-group">
+        <label><input type="checkbox" id="soundPieceOption" checked> Sound for a moved piece</label>
+        <label><input type="checkbox" id="soundClockOption" checked> Sound for the clock press</label>
+      </div>
+      <p class="lobby-hint">Saved in this browser, for every game you create, join or return to.</p>
+    </div>
   </div>
 
+  <script src="js/sounds.js"></script>
   <script>
+    // The two sound options: shown as saved, saved on every change.
+    for (const [kind, id] of [['piece', 'soundPieceOption'], ['clock', 'soundClockOption']]) {
+      const box = document.getElementById(id);
+      box.checked = OtbSoundSettings.isOn(kind);
+      box.addEventListener('change', () => OtbSoundSettings.set(kind, box.checked));
+    }
+
     // Running game in this browser? localStorage survives new tabs (and browser restarts), so
     // the saved session is the way back into the game — game.html resumes it via the secret
     // seat token. A stale session (server restarted, game gone) resolves on the game page with

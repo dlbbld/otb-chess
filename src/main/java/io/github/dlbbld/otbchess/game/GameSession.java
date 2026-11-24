@@ -118,6 +118,9 @@ public class GameSession {
   // A clock press of the side to move ended the automatic restoration pause itself. The server
   // announces that resume, because the delayed resume then finds nothing left to do.
   private boolean resumedByClockPress;
+  // The last press of the own lever was the press of a lever that was up: the clock was running for
+  // the player and the arbiter ruled on the move. The server lets both players hear such a press.
+  private boolean clockPressRegistered;
   private BitboardPosition restorationTargetPosition;
   // True when the current restoration was caused by a released-piece (FIDE 4.7) violation. While set,
   // completeRestoration() preserves the released-piece rule window so the committed move stays final
@@ -280,6 +283,7 @@ public class GameSession {
    * @return the arbiter response
    */
   public synchronized ArbiterResponse pressClockButton(Side side, BitboardPosition afterPosition) {
+    clockPressRegistered = false;
     return markRuling(ruleOnClockPress(side, afterPosition));
   }
 
@@ -335,6 +339,8 @@ public class GameSession {
     if (checkFlagFall().isPresent()) {
       return ArbiterResponse.incompleteMove("Your time has expired.");
     }
+    // From here on the arbiter rules on the move: the lever was up and went down.
+    clockPressRegistered = true;
 
     // Special case: must execute specified move (after rejected draw claim)
     if (mustExecuteMove != null) {
@@ -436,6 +442,7 @@ public class GameSession {
         if (!clock.switchClock()) {
           board.unmove();
           checkFlagFall();
+          clockPressRegistered = false;
           return ArbiterResponse.incompleteMove("Your time has expired.");
         }
 
@@ -502,6 +509,7 @@ public class GameSession {
       if (!clock.switchClock()) {
         board.unmove();
         checkFlagFall();
+        clockPressRegistered = false;
         return ArbiterResponse.incompleteMove("Your time has expired.");
       }
       mustExecuteMove = null;
@@ -1486,6 +1494,17 @@ public class GameSession {
     final boolean resumed = resumedByClockPress;
     resumedByClockPress = false;
     return resumed;
+  }
+
+  /**
+   * @return and clears whether the last press of the own lever registered: the clock was running for the player and
+   *         the arbiter ruled on the move, whatever the ruling. A press that is not ruled on - the game is over, it is
+   *         not the player's turn, the game is paused, the time has expired - does not register.
+   */
+  public synchronized boolean consumeClockPressRegistered() {
+    final boolean registered = clockPressRegistered;
+    clockPressRegistered = false;
+    return registered;
   }
 
   /**

@@ -43,6 +43,7 @@ playwright.config.ts     # runner config + auto-start of the Java server
 tests/e2e/
   helpers/app.ts         # createGame(), joinGame(), startTwoPlayerGame()
   helpers/board.ts       # dragPiece(), pressClock(), expectPiece(), expectEmpty()
+  helpers/sounds.ts      # entry-screen create/join, the observer on the audio output
   smoke.spec.ts          # create -> join -> white e2-e4 -> black sees it
 ```
 
@@ -52,5 +53,16 @@ tests/e2e/
   Each test creates its own game and reads the code from the DOM (`.game-code-value`), so
   games stay isolated.
 - The board is a custom mouse-drag widget, so `dragPiece` drives real `page.mouse` events.
+- **Sounds are off in every test** except `sounds.spec.ts`: `playwright.config.ts` starts each
+  browser context with both sound options switched off, so a game page opens no audio output. A
+  test with a server of its own passes `soundsOff(origin)` (`helpers/sounds-off.ts`) to its contexts.
+  `sounds.spec.ts` starts its contexts as first-time visitors (`helpers/sounds.ts`) and reads what
+  each page really started on its audio output. It prints the audio mode it runs in:
+  `'real'` is the browser's own Web Audio on the default output device. `'no-device'` is the
+  browser's own Web Audio opened without an output device (`sinkId: { type: 'none' }`), chosen
+  where the default device makes the browser wait for seconds (a virtual output device can block
+  `new AudioContext()` for 20 s). `'stand-in'` is a stand-in audio context with the same rules,
+  for a browser that can do neither. `OTB_E2E_AUDIO=real`, `=no-device` or `=stand-in` decides it
+  by hand.
 - Use a **custom FEN** (`createGame({ fen })`) to start rule scenarios one move away from the
   thing under test — short scenarios are fast and stable.

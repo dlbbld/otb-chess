@@ -773,6 +773,10 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private void pressClock(GameRoom room, Side side, BitboardPosition afterPosition) {
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
+    // First of all, so that the lever is heard before the arbiter speaks.
+    if (room.getSession().consumeClockPressRegistered()) {
+      sendClockPressHeard(room);
+    }
     // The press ended the automatic restoration pause while the turn goes on: announce the resume
     // here, because the delayed resume will find nothing left to do. Sent before the arbiter's
     // answer so that answer stays on top. An accepted move needs no announcement - it hands the
@@ -1476,6 +1480,18 @@ public class GameWebSocketServer extends WebSocketServer {
    * the third press. After the admonishment pause ({@code OTB_WRONG_CLOCK_PAUSE_MS}) the interrupted clock restarts.
    * Presses while the opponent's lever is already down are physical no-ops — silence, like the real thing.
    */
+  /**
+   * A clock lever that was up was pressed down. Both players hear it, each on their own board; the message says
+   * nothing about the rules and is not repeated to a player who was away when it happened. It is the only source of
+   * the clock sound: the other messages that can follow a press - a ruling, a resumed game, a clock update - also
+   * arrive without one.
+   */
+  private void sendClockPressHeard(GameRoom room) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "clockPressHeard");
+    room.sendToBoth(GSON.toJson(msg));
+  }
+
   private void handleOpponentClockPressed(WebSocket conn) {
     final GameRoom room = getRoom(conn);
     if (room == null) {
@@ -1493,6 +1509,8 @@ public class GameWebSocketServer extends WebSocketServer {
       checkGameEnded(room);
       return;
     }
+    // The lever was up and went down: heard on both boards, also when this press ends the game.
+    sendClockPressHeard(room);
 
     if (outcome.gameLost()) {
       // Third press: the game is over. The personalised messages travel via gameEnded (actor).

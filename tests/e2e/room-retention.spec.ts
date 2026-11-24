@@ -1,4 +1,5 @@
 import { test, expect, BrowserContext } from '@playwright/test';
+import { soundsOff } from './helpers/sounds-off';
 import { spawn, ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
@@ -30,7 +31,7 @@ test('completed disconnected rooms release capacity while connected players can 
       try { return (await request.get(`${base}/api/health`)).status(); } catch { return 0; }
     }).toBe(200);
     for (let i = 0; i < 3; i++) {
-      const context = await browser.newContext();
+      const context = await browser.newContext({ storageState: soundsOff(base) });
       // The application uses /ws for arbitrary HTTP ports. This isolated server has
       // no reverse proxy, so route its sockets directly to its dedicated WS port.
       await context.addInitScript(port => {
