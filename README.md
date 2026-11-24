@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.3.0 — Board Circles and Early Draw Offers](CHANGELOG.md#030--board-circles-and-early-draw-offers--2026-11-23)
+See [0.4.0 — Piece and Clock Sounds](CHANGELOG.md#040--piece-and-clock-sounds--2026-11-24)
 for this release.
 
 ## Documentation

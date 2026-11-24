@@ -2,6 +2,48 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.4.0 — Piece and Clock Sounds — 2026-11-24
+
+The board and the clock can now be heard, as at a real board: a piece set down on a square, and a
+clock lever pressed down. Both players hear both. The change has Java tests and browser tests of
+its journeys.
+
+### Added
+
+- **A sound when a piece is set down on a square**, on both boards. The player's own board plays
+  it at the release, the opponent's board when it shows the same piece set down.
+  - Heard: a move, a capture, a piece brought back from the side, a piece put back by hand while
+    a position is restored. Castling makes two sounds.
+  - Silent: a piece that is only touched or put back on its own square, a piece taken off the
+    board, and a position set by the server (Revert, a reconnect, a rematch).
+- **A sound when a clock lever is pressed down**, on both boards, at the moment the server has
+  registered the press - also for the player's own press.
+  - Heard: the own lever whenever the arbiter rules on the move (accepted, illegal, no move made,
+    incomplete), and the opponent's lever pressed by mistake while their clock is running.
+  - Silent: a lever that is already down, a press while the game is paused or over, and the clock
+    restarted by the arbiter.
+- **Two options on the start screen**, under *Sounds*: *Sound for a moved piece* and *Sound for
+  the clock press*. Both are on at first. They are saved in the browser, apply to every game the
+  player creates, joins or returns to, and do not change what the opponent hears.
+
+### Changed
+
+- The server sends the new message `clockPressHeard` to both players for every clock press that is
+  heard, before anything else the press causes.
+- `.wav` files are served as `audio/wav`.
+
+### Fixed
+
+- The creator's board is set up also in a browser that refuses to store data for the page.
+  Before, creating a game there left the creator without a board.
+
+### Known limits
+
+- A browser plays sounds on a page only after the player has clicked or touched it. The
+  opponent's first move can therefore be silent for a player who has not yet touched the game
+  page, and a phone can be silent after its screen was locked until the page is touched again.
+- There is no volume setting and no switch during the game.
+
 ## 0.3.0 — Board Circles and Early Draw Offers — 2026-11-23
 
 The arbiter now points at the squares it rules on, and it rules on a draw offer that comes too

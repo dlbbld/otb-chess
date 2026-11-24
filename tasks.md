@@ -3,6 +3,28 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.4.0 — Piece and Clock Sounds
+
+- [x] Scope: everything on `add-sounds` since `0.3.0` (section below) - the sound for a piece set down and the
+  sound for a clock press, on both boards, with the two options on the start screen; the creator's board in a
+  browser that refuses storage. `0.4.0` instead of `0.3.1`: the release adds a feature and a server message.
+- [x] Prepare version `0.4.0`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Piece and Clock Sounds**
+  for the PR title and its opening heading, title the GitHub release `0.4.0`, and begin its notes with the
+  release name.
+- [x] Verification on macOS at the release commit: full Java suite (502 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), and `version.spec.ts` and `sounds.spec.ts` against the rebuilt jar
+  (`/api/version`, lobby and board show `v0.4.0`; the 12 sounds tests in each audio mode). The full browser
+  suite (240 passed, 1 skipped) and `RuleFuzzer` (20,000 games, 0 findings) passed at `d7dc180`; since then
+  only the piece sample, the helper of the sounds tests, documents and release metadata changed.
+  `TouchMoveOracle` not run: no ruling changed.
+- [ ] Before the merge, on Windows through `start.bat`: the version on the lobby and both boards, and both
+  sounds by ear on both boards. Also by ear on an iPhone, including after locking and reopening the phone.
+  No automated test hears anything, and nobody has listened to the sounds in the app yet.
+- [ ] Before the merge: the Windows-only launcher tests (4 Java, 1 browser), which run on the ThinkPad only.
+- Publication (merge, tag, GitHub release) and deployment are reported in the conversation, not here
+  (`RELEASING.md`, *Manual test and publish*, step 5).
+
 ## Sounds (after 0.3.0)
 
 - [x] Development continues on `add-sounds` (2026-11-23), created from the tip of `further-improvements`: the
@@ -38,17 +60,19 @@ release's tasks until it ships.
   board (`piece_release - wood.wav`, stereo, 24 kHz, 0.07 s, stored unchanged); the first one was of an
   alabaster board. `TestStaticFileHandler` accepts mono or stereo.
 - [ ] By ear, before the release: both sounds on the Windows machine and on an iPhone, also after locking and
-  reopening the phone. No automated test hears anything, and nobody has listened to the sounds in the app yet.
-- [ ] Not verified: the sounds with the browser's own Web Audio. On this Mac the test browser needs 20 s to open
-  the audio output (`new AudioContext()` blocks that long; the default output is a virtual device) and suspends
-  it again by itself after 10 s, so `sounds.spec.ts` ran here with its stand-in audio context only
-  (`tests/e2e/README.md`). Run the full suites on Windows, where the spec should print `audio mode 'real'`.
-  Whether a normal browser on this Mac shows the same 20 s is not checked. `launcher.spec.ts` (Windows-only,
-  a server of its own) still opens its page with sounds on.
+  reopening the phone. Carried in the `0.4.0` section above.
+- [x] The sounds with the browser's own Web Audio, verified on this Mac on 2026-11-24. At first the test browser
+  needed 20 s to open the audio output here (`new AudioContext()` blocked that long; the default output is the
+  virtual device of the remote desktop) and suspended it again after 10 s, so `sounds.spec.ts` ran with its
+  stand-in audio context only. The spec now has a third mode, `'no-device'`: the browser's own Web Audio opened
+  without an output device, which opens at once and keeps running. All 12 tests pass in each of the three
+  modes (`'real'` chosen by itself in the last run, where the default device opened at once; `'no-device'` and
+  `'stand-in'` forced with `OTB_E2E_AUDIO`). `launcher.spec.ts` (Windows-only, a server of its own) still opens
+  its page with sounds on.
 - [x] From the same review, not part of the sounds: the cleanup commands of `RELEASING.md` step 6 (delete the
   release branch by name after a check) had gaps. Dropped instead of repaired: the procedure no longer deletes the
   branch at all; that is a manual task after the release. Step 6 now says only that.
-- [ ] Release the sounds on their own, when asked.
+- [x] Release the sounds on their own, when asked: asked on 2026-11-24, see `0.4.0` above.
 
 ## 0.3.0 — Board Circles and Early Draw Offers
 
