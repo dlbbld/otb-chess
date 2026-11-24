@@ -42,9 +42,9 @@ release's tasks until it ships.
   (`tests/e2e/README.md`). Run the full suites on Windows, where the spec should print `audio mode 'real'`.
   Whether a normal browser on this Mac shows the same 20 s is not checked. `launcher.spec.ts` (Windows-only,
   a server of its own) still opens its page with sounds on.
-- [ ] Open from the same review, not part of the sounds: `RELEASING.md` step 6 deletes the release branch by
-  name after the check (a push in between escapes it, an open PR that targets the branch escapes `--head`,
-  `git branch -d` fails while the branch is checked out); the review proposes a lease on the verified commit.
+- [x] From the same review, not part of the sounds: the cleanup commands of `RELEASING.md` step 6 (delete the
+  release branch by name after a check) had gaps. Dropped instead of repaired: the procedure no longer deletes the
+  branch at all; that is a manual task after the release. Step 6 now says only that.
 - [ ] Release the sounds on their own, when asked.
 
 ## 0.3.0 — Board Circles and Early Draw Offers

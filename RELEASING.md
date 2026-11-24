@@ -67,17 +67,8 @@ The Maven project version and Git tag also contain only `VERSION`.
 5. Add no commit to the release branch after the merge, and report publication and deployment in
    the conversation instead of `tasks.md`: a commit made after the merge is on no release and
    keeps the branch from being deleted.
-6. Delete the release branch when it is no longer needed. Check first, then delete it on GitHub
-   and locally:
-   ```bash
-   git fetch --prune origin
-   git log --oneline origin/main..origin/<release-branch>   # must print nothing
-   gh pr list --head <release-branch> --state open          # must list nothing
-   git push origin --delete <release-branch>
-   git branch -d <release-branch>
-   ```
-   A branch that still holds commits which are not on `main` is not deleted as it is: create the
-   next development branch from it first, so that those commits move there, then delete it.
+6. Deleting the release branch is not part of this procedure. It is a manual task after the
+   release, done by hand when the branch is no longer needed.
 7. Start the next development branch from the newly released `main`. When it replaces the default
    testing branch of `start.bat`, change that default in `start.bat`, `TestWindowsLauncher`, the
    README, this file, `CLAUDE.md` and `AGENTS.md` in the same commit.
