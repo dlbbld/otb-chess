@@ -71,7 +71,7 @@ Companion: [`SPECIFICATION.md`](../SPECIFICATION.md) for current behaviour, [`fi
 Decided by the project owner on 2026-11-23:
 
 - **Both players hear both.** A player hears their own piece and clock, and the opponent's, as two people at one board would.
-- **The two samples are supplied by the project owner** (`piece_release.wav`, `clock_press.wav`). How they are stored is recorded in [`static/sounds/README.md`](../static/sounds/README.md).
+- **The two samples are supplied by the project owner** (`piece_release - wood.wav`, `clock_press.wav`). The piece sample is of a wood board; it replaced a first one of an alabaster board on 2026-11-24. How they are stored is recorded in [`static/sounds/README.md`](../static/sounds/README.md).
 
 The other sources that were considered: recordings under CC0 from a public sound library, sounds synthesised in code, and the Lichess sounds. On the last, Lichess is open source, but that does not cover all of its sounds. Its licence file (`COPYING.md` in `lichess-org/lila`, read on 2026-11-23) says:
 
@@ -124,7 +124,7 @@ A touched piece stays silent although a piece lifted and put back makes a sound 
 **Playback: Web Audio API, two short recorded samples.**
 
 - `static/js/sounds.js`: `OtbSoundSettings` (the two options) and `GameSounds`. `GameSounds` creates one `AudioContext`, fetches and decodes the samples the player has switched on into `AudioBuffer`s when the game page loads, and plays one by starting a new `AudioBufferSourceNode`. This starts within a few milliseconds and lets sounds overlap; an `<audio>` element is slower to start and cuts itself off when retriggered. With both options off, no audio context is created and nothing is fetched.
-- `static/sounds/piece.wav` and `static/sounds/clock.wav`: mono 16-bit PCM, 0.07 s and 0.15 s, 1.4 KB and 14 KB. WAV has no decoder delay or padding and every browser decodes it; at this length compression gains nothing.
+- `static/sounds/piece.wav` and `static/sounds/clock.wav`: 16-bit PCM, stereo and mono, 0.07 s and 0.15 s, 7 KB and 14 KB. WAV has no decoder delay or padding and every browser decodes it; at this length compression gains nothing.
 - `StaticFileHandler.guessContentType`: `.wav` → `audio/wav`.
 - **Browser autoplay rule.** A page may not start audio before the user has acted on it; until then the `AudioContext` is suspended. The module calls `resume()` inside the handler of every gesture a browser accepts (`pointerdown`, `pointerup`, `mousedown`, `touchend`, `keydown`, `click`), and again when the page returns to the foreground. A sound requested before the first gesture, or while a sample is still being decoded, is dropped, not queued. A sound requested while the output is waking up is played if the output is there within 250 ms and dropped otherwise. So the opponent's first move can be silent for a player who has not yet touched the game page, and after a phone was locked the first sound may be missing until the player touches the page. This is accepted and stated in the manual.
 - A failure to create the audio output, to load a sample or to play a sound never affects the game: errors are caught and the game goes on silently.

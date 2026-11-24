@@ -34,6 +34,9 @@ release's tasks until it ships.
   (Windows-only); `RuleFuzzer` 20,000 games, 0 findings. The storage test fails without the `lastGameId` guard.
   Not run: `TouchMoveOracle` (no ruling changed). The entry screen with the Sounds section was looked at in a
   browser.
+- [x] Piece sample replaced (2026-11-24): `piece.wav` is now the owner's recording of a piece set down on a wood
+  board (`piece_release - wood.wav`, stereo, 24 kHz, 0.07 s, stored unchanged); the first one was of an
+  alabaster board. `TestStaticFileHandler` accepts mono or stereo.
 - [ ] By ear, before the release: both sounds on the Windows machine and on an iPhone, also after locking and
   reopening the phone. No automated test hears anything, and nobody has listened to the sounds in the app yet.
 - [ ] Not verified: the sounds with the browser's own Web Audio. On this Mac the test browser needs 20 s to open

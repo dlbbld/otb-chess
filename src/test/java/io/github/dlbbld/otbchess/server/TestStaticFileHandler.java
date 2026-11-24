@@ -50,10 +50,10 @@ class TestStaticFileHandler {
     }
   }
 
-  /** Short, mono, uncompressed: a sample starts at once and every browser decodes it. */
+  /** Short and uncompressed, mono or stereo: a sample starts at once and every browser decodes it. */
   @ParameterizedTest
   @ValueSource(strings = { "piece.wav", "clock.wav" })
-  void theSamplesAreShortMonoPcm(String name) throws Exception {
+  void theSamplesAreShortPcm(String name) throws Exception {
     final byte[] bytes = Files.readAllBytes(Path.of("static", "sounds", name));
     final ByteBuffer header = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
 
@@ -61,7 +61,8 @@ class TestStaticFileHandler {
     assertEquals("WAVE", new String(bytes, 8, 4, StandardCharsets.US_ASCII));
     assertEquals("fmt ", new String(bytes, 12, 4, StandardCharsets.US_ASCII));
     assertEquals(1, header.getShort(20), "PCM");
-    assertEquals(1, header.getShort(22), "mono");
+    final int channels = header.getShort(22);
+    assertTrue(channels == 1 || channels == 2, name + " has " + channels + " channels");
     assertEquals(16, header.getShort(34), "16 bit");
     assertEquals("data", new String(bytes, 36, 4, StandardCharsets.US_ASCII));
     final double seconds = header.getInt(40) / (double) header.getInt(28);
