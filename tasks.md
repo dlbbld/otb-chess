@@ -18,6 +18,13 @@ release's tasks until it ships.
   suite (240 passed, 1 skipped) and `RuleFuzzer` (20,000 games, 0 findings) passed at `d7dc180`; since then
   only the piece sample, the helper of the sounds tests, documents and release metadata changed.
   `TouchMoveOracle` not run: no ruling changed.
+- [x] Full browser suite at the release commit `4154c4d` on macOS: 240 passed, 1 skipped (the Windows-only
+  launcher test), no retries, `sounds.spec.ts` in audio mode `'real'`.
+- [x] Reported from the manual test on Windows (2026-11-24): with the sounds on in the window that creates the
+  game and off in an incognito window that joins, the sounds of both players are heard, and the same the other
+  way round. No defect found: the board with the sounds on plays both players' pieces and clock presses, as
+  decided, and two windows on one computer share the loudspeaker. `sounds.spec.ts` now replays the journey both
+  ways round, per board (14 tests): the board with the sounds off opens no audio output and plays nothing.
 - [ ] Before the merge, on Windows through `start.bat`: the version on the lobby and both boards, and both
   sounds by ear on both boards. Also by ear on an iPhone, including after locking and reopening the phone.
   No automated test hears anything, and nobody has listened to the sounds in the app yet.

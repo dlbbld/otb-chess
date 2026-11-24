@@ -1,5 +1,5 @@
 import { test, expect, BrowserContext } from '@playwright/test';
-import { clickRestore, expectGameResult, expectGameResumed } from './helpers/app';
+import { clickRestore, colorOf, expectGameResult, expectGameResumed } from './helpers/app';
 import {
   clickSquare,
   dragFromSideArea,
@@ -264,6 +264,47 @@ test('each option silences its own sound for that player only, is kept in the br
   await expectHeard(white, 0, 1);
   await expectHeard(black, 2, 0);
 });
+
+// Reported on 2026-11-24 from a manual test with two windows on one computer: "sounds enabled in
+// the window that creates the game, disabled in the window that joins, and I hear the sounds for
+// both players" - and the same the other way round. The journey, per board: the board with the
+// sounds on plays both players' pieces and clock presses, the board with the sounds off plays
+// nothing. Two windows on one computer share the loudspeaker, so there one hears every sound.
+for (const silent of ['joiner', 'creator'] as const) {
+  test(`with both sounds off for the ${silent} only, that board is silent and the other plays both players' sounds`, async ({
+    browser,
+  }) => {
+    contexts = [await newListeningContext(browser), await newListeningContext(browser)];
+    const creator = await contexts[0].newPage();
+    const joiner = await contexts[1].newPage();
+    const off = { piece: false, clock: false };
+
+    const gameId = await createFromEntryScreen(creator, silent === 'creator' ? off : {});
+    await joinFromEntryScreen(joiner, gameId, silent === 'joiner' ? off : {});
+    await expectStarted(creator);
+    await expectStarted(joiner);
+    const [loud, quiet] = silent === 'joiner' ? [creator, joiner] : [joiner, creator];
+    await unlockAudio(loud);
+    // The same gesture on the silent board: it has opened no audio output and opens none.
+    await quiet.mouse.click(4, 4);
+    expect(await audioState(quiet)).toBe('none');
+
+    const [white, black] = (await colorOf(creator)) === 'white' ? [creator, joiner] : [joiner, creator];
+    await dragPiece(white, 'e2', 'e4');
+    await expectPiece(black, 'e4', 'WHITE_PAWN');
+    await pressClock(white);
+    await expect(arbiter(black)).toContainText('Your turn');
+    await dragPiece(black, 'e7', 'e5');
+    await expectPiece(white, 'e5', 'BLACK_PAWN');
+    await pressClock(black);
+    await expect(arbiter(white)).toContainText('Your turn');
+
+    // Two pieces set down and two clock presses, one of each by either player.
+    await expectHeard(loud, 2, 2);
+    await expectHeard(quiet, 0, 0);
+    expect(await audioState(quiet)).toBe('none');
+  });
+}
 
 test('a player who has not yet touched the game page hears nothing, the game goes on, and after a touch they hear', async ({
   browser,
