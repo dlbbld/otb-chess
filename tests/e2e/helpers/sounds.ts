@@ -11,14 +11,18 @@ import { colorOf } from './app';
  * of its own audio context, and that context is running at that moment. Anything else that was
  * started is counted as `unheard` and fails the comparison.
  *
- * Two modes, chosen once per run (see audioMode):
- *  - 'real': the browser's own Web Audio. The observer wraps the two calls every sound goes
- *    through, AudioNode.connect and AudioBufferSourceNode.start.
- *  - 'stand-in': where the browser needs seconds to open the audio output (a virtual output device
- *    can block `new AudioContext()` for 20 s), the page gets a stand-in audio context with the same
- *    rules: suspended until the page has had a real user gesture, samples decoded from the WAV
- *    bytes the page fetched, a source that is connected and started. Gestures, fetches, the module
- *    and the game are real in both modes.
+ * Three modes, chosen once per run (see audioMode):
+ *  - 'real': the browser's own Web Audio on the default output device. The observer wraps the two
+ *    calls every sound goes through, AudioNode.connect and AudioBufferSourceNode.start.
+ *  - 'no-device': the browser's own Web Audio, opened without an output device
+ *    (`sinkId: { type: 'none' }`). For a machine whose default output device makes the browser wait
+ *    for seconds (a virtual output device can block `new AudioContext()` for 20 s and suspend it
+ *    again later). The browser's rule about a user gesture, its decoder, its sources and its clock
+ *    are the real ones; only the way to the loudspeaker is left out. Same observer as 'real'.
+ *  - 'stand-in': for a browser that can do neither, the page gets a stand-in audio context with the
+ *    same rules: suspended until the page has had a real user gesture, samples decoded from the WAV
+ *    bytes the page fetched, a source that is connected and started.
+ * Gestures, fetches, the module and the game are real in every mode.
  */
 export interface Heard {
   piece: number;
@@ -32,7 +36,7 @@ interface Start {
   toOutput: boolean;
 }
 
-export type AudioMode = 'real' | 'stand-in';
+export type AudioMode = 'real' | 'no-device' | 'stand-in';
 
 /** Generous: with real audio on a slow output device a game page takes 20 s to open. */
 const PAGE_TIMEOUT = 60_000;
@@ -49,30 +53,51 @@ function sampleMs(name: string): number {
 const PIECE_MS = sampleMs('piece.wav');
 const CLOCK_MS = sampleMs('clock.wav');
 
+/** The option of `new AudioContext()` for no output device. */
+const NO_DEVICE = { sinkId: { type: 'none' } };
+
 let mode: Promise<AudioMode> | undefined;
 
+/** Whether a browser opens an audio context with these options within three seconds. */
+async function opensQuickly(options: object): Promise<boolean> {
+  // A browser of its own: if its page is stuck opening the audio output, closing it ends that.
+  const probe = await chromium.launch();
+  try {
+    const page = await probe.newPage();
+    return await Promise.race([
+      page.evaluate((given) => { new AudioContext(given as AudioContextOptions); return true; }, options)
+        .catch(() => false),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3_000)),
+    ]);
+  } finally {
+    await probe.close();
+  }
+}
+
 /**
- * 'real' when the browser opens its audio output at once, 'stand-in' when that takes seconds.
- * OTB_E2E_AUDIO=real or =stand-in decides it by hand.
+ * 'real' when the browser opens its audio output at once; 'no-device' when that takes seconds but
+ * it opens at once without an output device; 'stand-in' when neither does.
+ * OTB_E2E_AUDIO=real, =no-device or =stand-in decides it by hand.
  */
 export function audioMode(): Promise<AudioMode> {
   mode ??= (async () => {
     const forced = process.env.OTB_E2E_AUDIO;
-    if (forced === 'real' || forced === 'stand-in') return forced;
-    // A browser of its own: if its page is stuck opening the audio output, closing it ends that.
-    const probe = await chromium.launch();
-    try {
-      const page = await probe.newPage();
-      const quick = await Promise.race([
-        page.evaluate(() => { new AudioContext(); return true; }).catch(() => false),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3_000)),
-      ]);
-      return quick ? 'real' : 'stand-in';
-    } finally {
-      await probe.close();
-    }
+    if (forced === 'real' || forced === 'no-device' || forced === 'stand-in') return forced;
+    if (await opensQuickly({})) return 'real';
+    if (await opensQuickly(NO_DEVICE)) return 'no-device';
+    return 'stand-in';
   })();
   return mode;
+}
+
+/** Makes every audio context of the page one without an output device. Runs before the observer. */
+function openWithoutOutputDevice(options: object): void {
+  const Real = window.AudioContext;
+  (window as any).AudioContext = class extends Real {
+    constructor(given?: AudioContextOptions) {
+      super({ ...given, ...options } as AudioContextOptions);
+    }
+  };
 }
 
 function observeRealAudio(): void {
@@ -156,7 +181,9 @@ function installStandInAudio(): void {
 
 /** Installs the observer on every page of the context, before any script of the page runs. */
 export async function observeAudio(context: BrowserContext): Promise<void> {
-  await context.addInitScript((await audioMode()) === 'real' ? observeRealAudio : installStandInAudio);
+  const chosen = await audioMode();
+  if (chosen === 'no-device') await context.addInitScript(openWithoutOutputDevice, NO_DEVICE);
+  await context.addInitScript(chosen === 'stand-in' ? installStandInAudio : observeRealAudio);
 }
 
 /** A browser context of a first-time visitor (no stored options), with the audio observer. */
