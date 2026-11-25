@@ -20,7 +20,7 @@ import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
 
 /**
- * The move that replaces an illegal move has to be made with the touched piece. Reported journey (2026-11-25): 1. e4,
+ * The touch-move rule comes before the legality of a move made with another piece. Reported journey (2026-11-25): 1. e4,
  * then Black plays the knight from g8 to g6 - an illegal move - and reverts; the knight from b8 to b6 with the clock
  * was then ruled a second illegal move, which lost the game. The knight on g8 was touched first and can move: the
  * ruling is a touch-move violation, and the arbiter asks for a move of that knight.
@@ -76,6 +76,34 @@ class TestTouchMoveAfterRestoration {
     assertTrue(whiteTime > 600000 && whiteTime <= 600000 + 120000, "White has " + whiteTime + " ms");
 
     revertAndResume(session, second);
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, blackKnight(session, Square.G8, Square.F6).type());
+  }
+
+  /**
+   * Decided on 2026-11-25: the same holds before the arbiter has ruled on the turn. Black touches the knight on g8,
+   * then plays the knight from b8 to b6 and presses the clock: a touch-move violation, as the knight on g8 was
+   * touched first and has legal moves. The illegal move as such does not count.
+   */
+  @Test
+  void anIllegalMoveOfAnotherPieceAfterAMereTouchIsATouchMoveViolationAndNoIllegalMove() {
+    final var session = afterE4();
+    session.recordEvent(Side.BLACK, BoardEvent.click(Square.G8, Piece.BLACK_KNIGHT, ++time));
+
+    final ArbiterResponse ruling = blackKnight(session, Square.B8, Square.B6);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, ruling.type());
+    assertTrue(ruling.renderedPlayerMessage().contains("You first touched the knight on g8"),
+        ruling.renderedPlayerMessage());
+    assertEquals(List.of(BoardMark.green(Square.G8)), session.getBoardMarks());
+    assertTrue(session.getClock().getRemainingTimeMs(Side.WHITE) <= 600000, "no penalty time for White");
+
+    // Nothing was counted: after the Revert an illegal move of the knight is the 1st, not the 2nd.
+    revertAndResume(session, ruling);
+    final ArbiterResponse illegal = blackKnight(session, Square.G8, Square.G6);
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, illegal.type());
+    assertTrue(illegal.renderedPlayerMessage().contains("This is your 1st illegal move."),
+        illegal.renderedPlayerMessage());
+    revertAndResume(session, illegal);
     assertEquals(ArbiterResponseType.MOVE_ACCEPTED, blackKnight(session, Square.G8, Square.F6).type());
   }
 

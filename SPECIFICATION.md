@@ -356,7 +356,11 @@ The opponent is told:
 
 Touch-move obligations persist across arbiter interventions and restorations. If a player touched a piece, made an illegal move, restored the position, and resumed -- the touch-move obligation from the original touch still applies.
 
-**The move that replaces one the arbiter took off the board** has to honour that obligation ([A-011](docs/fide-deviations.md#a-011--another-piece-moved-in-place-of-an-illegal-move)). If the player moves another piece instead - the touched piece was not moved since the restoration, or the piece that has to be captured was not taken - the ruling is a **touch-move violation**, whether or not the other move would have been legal: nothing is counted, and the arbiter asks again for the touched piece. Example: 1. e4, Black plays the knight from g8 to g6 (illegal move, 1st), reverts, plays the knight from b8 to b6 and presses the clock - touch-move violation for the knight on g8, not a 2nd illegal move. An illegal move of the touched piece itself (g8 to g5) is an illegal move as before, and before the arbiter has ruled on the turn the legality of the move comes first (see *Two-Layer Evaluation at Clock Press*).
+**The touch came first, so the touch-move rule comes first** ([A-011](docs/fide-deviations.md#a-011--another-piece-moved-instead-of-the-touched-one-illegally)). If the player moves another piece than the one a touch obliges them to move - the touched piece stands where it was touched, or the piece that has to be captured was not taken - the ruling is a **touch-move violation**, whether or not the other move would have been legal: no illegal move is counted, no time is added, and the arbiter asks for the touched piece. Examples, after 1. e4:
+- Black touches the knight on g8, plays the knight from b8 to b6 and presses the clock - touch-move violation for the knight on g8.
+- Black plays the knight from g8 to g6 (illegal move, 1st), reverts, plays the knight from b8 to b6 and presses the clock - touch-move violation for the knight on g8, not a 2nd illegal move.
+
+An illegal move of the touched piece itself (g8 to g6, or to g5 after the Revert) is an illegal move. So is an illegal move after a touch that binds to nothing, because the touched piece cannot move. The touched piece is followed through the board events of the turn: picked up and put back, it stands where it was touched; moved away, it does not, also when another piece of the same kind was put on its square.
 
 ### Released-piece rule (FIDE 4.7)
 
@@ -500,7 +504,7 @@ Opponent-side castling-start notices are passive information only. They are show
 
 - If a touch-move obligation exists, the matched move must satisfy it.
 - If not satisfied -> touch-move violation (not counted as illegal move).
-- One case reaches this layer although no legal move matches: the move that replaces one the arbiter took off the board, made with another piece than the touched one (see *Persistence across interventions*). It is a touch-move violation, not an illegal move.
+- **The touch-move obligation is looked at first when no legal move matches**: if the piece that has to be moved stands where it was touched (or the piece that has to be captured was not taken), another piece was moved, and the ruling is a touch-move violation - the illegal move as such is not counted (see *Persistence across interventions*). Layer 1 decides "illegal move" only when no obligation exists or the touched piece itself was moved.
 
 ### Touch-move safety net (fail closed)
 

@@ -258,13 +258,12 @@ public class ArbiterEngine {
       if (obligation.isPresent() && ruling.overruledReleasePosition().filter(afterPosition::equals).isPresent()) {
         return handleTouchMoveViolation(obligation.get());
       }
-      // The move that replaces one the arbiter has taken off the board has to honour the touch-move obligation
-      // (FIDE 7.5.1: Articles 4.3 and 4.7 apply to it). When the player moves something else instead - the piece
-      // they have to move was not moved since the restoration, or the piece they have to capture was not taken -
-      // that is a touch-move violation, whether or not the other move would have been legal: the arbiter asks
-      // again for the touched piece and does not count an illegal move. Before the first ruling on the turn the
-      // legality of the move comes first, as it does for the touched piece itself at any time.
-      if (obligation.isPresent() && sequence.hasPositionBeenRestored()
+      // The touch came first, so the touch-move rule comes first (FIDE 4.3; 7.5.1 for the move that replaces an
+      // illegal one). When the player moved something else - the piece they have to move stands where it was
+      // touched, or the piece they have to capture was not taken - that is a touch-move violation, whether or
+      // not the other move would have been legal: the arbiter asks for the touched piece and does not count an
+      // illegal move. An illegal move of the touched piece itself is an illegal move.
+      if (obligation.isPresent()
           && leavesObligationUntouched(obligation.get(), afterPosition, sequence.getEventsSincePositionRestored())) {
         return handleTouchMoveViolation(obligation.get());
       }
@@ -291,12 +290,12 @@ public class ArbiterEngine {
   }
 
   /**
-   * @param events what was done on the board since it was last set back
-   * @return whether the player did not even try to honour the obligation: the own piece they have to move still
-   *         stands where it was touched and was not moved, or the opponent's piece they have to capture is still on
-   *         its square and was not taken. The events are asked as well as the position, because another piece of
-   *         the same kind can stand on the square of one that was moved away. A castling obligation is ruled on by
-   *         its own rules.
+   * @param events what was done on the board since it was last set back - all of the turn when it never was
+   * @return whether the player did not honour the obligation with what is on the board: the own piece they have to
+   *         move stands where it was touched, or the opponent's piece they have to capture is still on its square.
+   *         The piece is followed through the events, because another piece of the same kind can stand on the
+   *         square of one that was moved away; a piece that was picked up and put back stands where it was. A
+   *         castling obligation is ruled on by its own rules.
    */
   private static boolean leavesObligationUntouched(TouchMoveObligation obligation, BitboardPosition afterPosition,
       List<BoardEvent> events) {
@@ -314,9 +313,40 @@ public class ArbiterEngine {
     if (square == Square.NONE || afterPosition.get(square) != piece) {
       return false;
     }
-    // Taken from the square, or something put on it: the piece was moved, or captured.
-    return events.stream().noneMatch(event -> event.type() != BoardEventType.CLICK
-        && (event.square() == square || event.targetSquare() == square));
+    // Where the piece that stood on the square is now; NONE once it left the board.
+    Square at = square;
+    for (final BoardEvent event : events) {
+      switch (event.type()) {
+        case DRAG_MOVE, DRAG_CAPTURE -> {
+          if (at != Square.NONE && event.square() == at) {
+            at = event.targetSquare();
+          } else if (at != Square.NONE && event.targetSquare() == at) {
+            at = Square.NONE; // something was put on it: it is off the board
+          }
+        }
+        case REMOVE -> {
+          if (at != Square.NONE && event.square() == at) {
+            at = Square.NONE;
+          }
+        }
+        case RESTORE_TO_OCCUPIED -> {
+          // Pushed off the board by a piece set down from the side.
+          if (at != Square.NONE && event.targetSquare() == at) {
+            at = Square.NONE;
+          }
+        }
+        case RESTORE_TO_EMPTY -> {
+          // Taken off the board and set down again where it stood: it is back.
+          if (at == Square.NONE && event.targetSquare() == square && event.piece() == piece) {
+            at = square;
+          }
+        }
+        default -> {
+          // A click moves nothing.
+        }
+      }
+    }
+    return at == square;
   }
 
   private Optional<ArbiterResponse> evaluateOpponentCaptureTouchBeforeRelease(Board board,

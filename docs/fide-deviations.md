@@ -243,14 +243,17 @@ While the admonishment pause lasts nothing is adjudicated, as in a restoration p
 
 **Where in code**: `ArbiterEngine.findReleaseRuling` / `findBindingObligation`, `GameSession.isRestoredMoveFinal`. Pinned by `TestFourthPassRegressions` and `fourth-pass.spec.ts`; `RuleFuzzer` checks on random games that every instruction of the arbiter is accepted when followed.
 
-### A-011 — Another piece moved in place of an illegal move
+### A-011 — Another piece moved instead of the touched one, illegally
 
-**FIDE**: Article 7.5.1 — after an illegal move the position before it is reinstated, and "Articles 4.3 and 4.7 apply to the move replacing the illegal move". Article 7.5.5 — the second completed illegal move loses the game. The Laws do not say which of the two comes first when the replacing move is made with another piece than the touched one *and* is itself not a legal move: it breaks 4.3, and with the clock pressed it is also a completed illegal move.
+**FIDE**: Article 4.3 — the first touched piece that can be moved must be moved. Article 7.5.1 — an illegal move is completed once the clock is pressed; the position before it is reinstated, and "Articles 4.3 and 4.7 apply to the move replacing the illegal move". Article 7.5.5 — the second completed illegal move loses the game. The Laws do not rank the two when a player touches one piece and then completes an illegal move with another: the move breaks 4.3, and with the clock pressed it is also a completed illegal move.
 
-**The case**: 1. e4, Black plays the knight from g8 to g6 and presses the clock (illegal move, 1st). The position is restored. Black now plays the knight from b8 to b6 and presses the clock.
+**The cases**, after 1. e4:
 
-**Our policy** (decided by the project owner on 2026-11-25): the touch-move rule comes first. The knight on g8 was touched first and can move, so the replacing move has to be made with it; a move of another piece is a **touch-move violation**, whether or not it would have been legal. It is not counted as an illegal move, costs no time, and the arbiter asks again for the knight on g8. Until then such a move was counted as a further illegal move, which lost a default game.
+1. Black touches the knight on g8, plays the knight from b8 to b6 and presses the clock.
+2. Black plays the knight from g8 to g6 and presses the clock (illegal move, 1st). The position is restored. Black now plays the knight from b8 to b6 and presses the clock.
 
-**Limits**: the rule applies to the move that replaces one the arbiter has taken off the board in the same turn. An illegal move of the touched piece itself is an illegal move. Before the arbiter has ruled on the turn - a piece merely touched, then an illegal move of another piece - the legality of the move comes first and the illegal move is counted; the touched piece is owed afterwards. Whether a fresh illegal attempt in the same turn counts separately is not affected: it does (two presses without a move, or an illegal move of the touched piece repeated after the restoration).
+**Our policy** (decided by the project owner on 2026-11-25): the touch came first, so the touch-move rule comes first. The knight on g8 was touched first and can move; a move of another piece is a **touch-move violation**, whether or not it would have been legal. The illegal move as such does not count: no illegal move is recorded, no time is added, and the arbiter asks for the knight on g8, which is circled in green. Until then both cases were counted as an illegal move - in case 2 the second one, which lost a default game.
 
-**Where in code**: `ArbiterEngine.evaluateClockPress` (`leavesObligationUntouched`), `ActionSequence.hasPositionBeenRestored`. Pinned by `TestArbiterEngine`, `TestTouchMoveAfterRestoration`, `TestBoardMarks` and `touch-move-after-revert.spec.ts`.
+**Limits**: an illegal move of the touched piece itself is an illegal move. A touch that binds to nothing - the touched piece has no legal move - leaves the legality of the move to decide. Whether a fresh illegal attempt in the same turn counts separately is not affected: it does (two presses without a move, or an illegal move of the touched piece repeated after the restoration).
+
+**Where in code**: `ArbiterEngine.evaluateClockPress` (`leavesObligationUntouched`). Pinned by `TestArbiterEngine`, `TestTouchMoveAfterRestoration`, `TestBoardMarks` and `touch-move-after-revert.spec.ts`.

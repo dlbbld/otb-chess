@@ -78,6 +78,6 @@ The arbiter intervenes when a supported rule requires it. If the position must b
 
 **Pressing the clock without a move** is an illegal move (FIDE 7.5.3). The arbiter stops the clock, tells you so, and restarts the clock after a few seconds; with confirmation switched on, both players confirm that they are ready instead. A double click on the clock counts once. Once the clock runs again, the next press without a move is the next illegal move.
 
-**After an illegal move** you have to move the piece you touched first, if it can move. If you move another piece instead, the arbiter rules a touch-move violation - whether or not that move would have been legal - and asks again for the touched piece. This is not counted as an illegal move.
+**Touch-move comes first.** You have to move the piece you touched first, if it can move - also after an illegal move was taken back. If you move another piece instead, the arbiter rules a touch-move violation, whether or not that move would have been legal, and asks for the touched piece. This is not counted as an illegal move. An illegal move with the touched piece itself is an illegal move.
 
 **Circles on the board** show what the arbiter's ruling is about, on both boards: green for the piece you have to move or capture, red for the start and end square of an illegal move, blue for the start and end square of a move you had already made when you changed the position again.

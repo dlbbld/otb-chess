@@ -34,8 +34,12 @@ and after the game. No script error, no lost connection and no game that could n
   journey: 1. e4, Black Ng8-g6 (illegal), Revert, Nb8-b6 with the clock was a 2nd illegal move and lost the
   game. Now a touch-move violation for the knight on g8: the move that replaces one the arbiter took off the
   board has to be made with the touched piece, and another piece moved instead is not counted as an illegal
-  move. Unchanged: an illegal move of the touched piece itself, and an illegal move of another piece before the
-  arbiter has ruled on the turn.
+  move. Unchanged: an illegal move of the touched piece itself.
+- [x] **The same before any ruling on the turn** (decided by the owner on 2026-11-25): Black touches the knight
+  on g8, plays the knight from b8 to b6 and presses the clock - a touch-move violation, green circle on g8, and
+  no illegal move is counted. Before, this was the 1st illegal move. The touched piece is followed through the
+  board events: picked up and put back it stands where it was touched; a touch of a piece that cannot move binds
+  to nothing.
 - [x] **Blue circles for the move that was already made** (2026-11-25): a released-piece ruling circles the
   start and end square of the move that was completed with the release, on both boards, until the position is
   restored.
@@ -43,11 +47,11 @@ and after the game. No script error, no lost connection and no game that could n
   that is the game this browser is already in, changes nothing, and points to a private window or another
   browser and to the manual (`MANUAL.md`, *Playing both sides yourself*). Client only: the server cannot tell
   two tabs of one browser from two players, so there is no Java test for it.
-- [x] Verification on macOS at the last of these commits: full Java suite (524 run, 0 failures, 4 skipped: the
+- [x] Verification on macOS with all of the above: full Java suite (527 run, 0 failures, 4 skipped: the
   Windows-only launcher tests), `TouchMoveOracle` (33,793 cases, 0 differences), `RuleFuzzer` (20,000 games,
-  0 findings), full browser suite (249 passed, 1 skipped; the one test that still expected the old ruling was
-  changed and its file rerun). Not run: anything on Windows; the launcher's default branch was changed in
-  `start.bat` and `TestWindowsLauncher`, whose tests run on Windows only.
+  0 findings), full browser suite (250 passed, 1 skipped, no retries). Not run: anything on Windows; the
+  launcher's default branch was changed in `start.bat` and `TestWindowsLauncher`, whose tests run on Windows
+  only.
 - [ ] Still open, not asked for: creating or joining a *different* game in a second tab of the same browser
   replaces the stored seat of the first tab; after a reload that tab is in the other game.
 - Not broken: presses before the opponent joined and after the game (ignored), during the pause to restore a
