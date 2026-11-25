@@ -200,7 +200,7 @@ The same rule in other words: only the centre of the piece and its distance to t
 In this order:
 
 1. **A piece in an unclear placement**: the move is not made and the clock press is not accepted. The arbiter names the squares the inner circle lies on and asks the player to decide and to place the piece properly: *"It is not clear on which square your bishop is. Place it on c4 or on d4, and place your pieces more carefully."* The player may choose only one of these squares. They decide by placing the piece there, clearly, and pressing the clock again; the move is then ruled on as any other (accepted, illegal move, touch-move, …).
-   - This counts on a ladder of its own, per player for the whole game *(reading: the ladder decided before the inner circle still applies)*: admonition, then the warning that the next time loses the game, then **loss of the game**. Entry-screen option for the number: 3 by default, 1 to 10, or unlimited (same form as *Number of illegal moves causing game loss*).
+   - This counts on a ladder of its own, per player for the whole game (confirmed by the owner for the inner circle on 2026-11-25): admonition, then the warning that the next time loses the game, then **loss of the game**. Entry-screen option for the number: 3 by default, 1 to 10, or unlimited (same form as *Number of illegal moves causing game loss*).
 2. **Every piece is clear**: the move is ruled on as today.
 
 ### Captures and overlapping pieces
