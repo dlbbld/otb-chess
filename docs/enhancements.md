@@ -308,15 +308,17 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 
 ### Open points
 
-2. **The player puts the piece on a square outside the inner circle and presses the clock**, before or after the arbiter named the squares: proposed a released-piece violation as today, without penalty: the piece is put back where it lay unclear and the instruction is repeated.
-3. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
-4. **Clocks during this ruling**: proposed that nothing is paused and the player's clock keeps running, because nothing has to be restored and the delay is the player's own.
-5. **Which pieces J'adoube may adjust**: proposed own and opponent's pieces (FIDE 4.2.1 says "one or more pieces").
-6. **When in the own time**: proposed at any moment while no piece is held, also after a piece was touched or moved in this turn. An armed J'adoube that was not used ends with the clock press. Not available while the game is paused for a ruling.
+In the order of their importance.
+
+1. **Which pieces J'adoube may adjust**: proposed own and opponent's pieces (FIDE 4.2.1 says "one or more pieces").
+2. **Clocks during this ruling**: proposed that nothing is paused and the player's clock keeps running, because nothing has to be restored and the delay is the player's own.
+3. **The player puts the piece on a square outside the inner circle and presses the clock**, before or after the arbiter named the squares: proposed a released-piece violation as today, without penalty: the piece is put back where it lay unclear and the instruction is repeated.
+4. **When in the own time**: proposed at any moment while no piece is held, also after a piece was touched or moved in this turn. An armed J'adoube that was not used ends with the clock press. Not available while the game is paused for a ruling.
+5. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
+6. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
 7. **Is the wrong-time J'adoube ladder fixed at three** like the other ladders, or does it follow the new option?
 8. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
-9. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
-10. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
+9. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
 
 ### Not part of this
 
