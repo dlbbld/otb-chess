@@ -258,6 +258,15 @@ public class ArbiterEngine {
       if (obligation.isPresent() && ruling.overruledReleasePosition().filter(afterPosition::equals).isPresent()) {
         return handleTouchMoveViolation(obligation.get());
       }
+      // The touch came first, so the touch-move rule comes first (FIDE 4.3; 7.5.1 for the move that replaces an
+      // illegal one). When the player moved something else - the piece they have to move stands where it was
+      // touched, or the piece they have to capture was not taken - that is a touch-move violation, whether or
+      // not the other move would have been legal: the arbiter asks for the touched piece and does not count an
+      // illegal move. An illegal move of the touched piece itself is an illegal move.
+      if (obligation.isPresent()
+          && leavesObligationUntouched(obligation.get(), afterPosition, sequence.getEventsSincePositionRestored())) {
+        return handleTouchMoveViolation(obligation.get());
+      }
       // No legal move produces this position
       return handleIllegalMove(board, afterPosition, sequence, sideToMove);
     }
@@ -278,6 +287,66 @@ public class ArbiterEngine {
 
     // Move accepted
     return ArbiterResponse.moveAccepted(matchedMove);
+  }
+
+  /**
+   * @param events what was done on the board since it was last set back - all of the turn when it never was
+   * @return whether the player did not honour the obligation with what is on the board: the own piece they have to
+   *         move stands where it was touched, or the opponent's piece they have to capture is still on its square.
+   *         The piece is followed through the events, because another piece of the same kind can stand on the
+   *         square of one that was moved away; a piece that was picked up and put back stands where it was. A
+   *         castling obligation is ruled on by its own rules.
+   */
+  private static boolean leavesObligationUntouched(TouchMoveObligation obligation, BitboardPosition afterPosition,
+      List<BoardEvent> events) {
+    return switch (obligation.type()) {
+      case OWN_PIECE, OPPONENT_PIECE -> stillStandsUntouched(obligation.square(), obligation.piece(), afterPosition,
+          events);
+      case SPECIFIC_CAPTURE -> stillStandsUntouched(obligation.square(), obligation.piece(), afterPosition, events)
+          || stillStandsUntouched(obligation.toSquare(), obligation.capturedPiece(), afterPosition, events);
+      case CASTLING -> false;
+    };
+  }
+
+  private static boolean stillStandsUntouched(Square square, Piece piece, BitboardPosition afterPosition,
+      List<BoardEvent> events) {
+    if (square == Square.NONE || afterPosition.get(square) != piece) {
+      return false;
+    }
+    // Where the piece that stood on the square is now; NONE once it left the board.
+    Square at = square;
+    for (final BoardEvent event : events) {
+      switch (event.type()) {
+        case DRAG_MOVE, DRAG_CAPTURE -> {
+          if (at != Square.NONE && event.square() == at) {
+            at = event.targetSquare();
+          } else if (at != Square.NONE && event.targetSquare() == at) {
+            at = Square.NONE; // something was put on it: it is off the board
+          }
+        }
+        case REMOVE -> {
+          if (at != Square.NONE && event.square() == at) {
+            at = Square.NONE;
+          }
+        }
+        case RESTORE_TO_OCCUPIED -> {
+          // Pushed off the board by a piece set down from the side.
+          if (at != Square.NONE && event.targetSquare() == at) {
+            at = Square.NONE;
+          }
+        }
+        case RESTORE_TO_EMPTY -> {
+          // Taken off the board and set down again where it stood: it is back.
+          if (at == Square.NONE && event.targetSquare() == square && event.piece() == piece) {
+            at = square;
+          }
+        }
+        default -> {
+          // A click moves nothing.
+        }
+      }
+    }
+    return at == square;
   }
 
   private Optional<ArbiterResponse> evaluateOpponentCaptureTouchBeforeRelease(Board board,

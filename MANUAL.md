@@ -51,6 +51,19 @@ A browser plays sounds on a page only after you have clicked or touched that pag
 
 The game starts when both players are connected.
 
+## Playing both sides yourself
+
+To try OTB Chess alone, open it twice, once for each player. Two tabs or two windows of the same browser are enough:
+
+1. Create the game in the first tab and copy the code.
+2. Open the start page in a second tab, enter the code, and select **Join Game**.
+
+Each tab keeps its own side, also after a reload of the page. A private (incognito) window, a second browser, or a second device work as well, but are not needed.
+
+While the game is open in a tab, the start page does not offer **Return to game** for it: there is nothing to return to. It offers it once the tab with the game is closed.
+
+Both boards of a computer use the same loudspeaker. If the sounds are on in one of them, you hear the pieces and clock presses of both players from it. Two tabs of the same browser share the sound options, so with the sounds on each sound is played by both tabs.
+
 ## Playing
 
 Move pieces on the board as if using a physical chessboard. Your opponent sees your board actions in real time.
@@ -64,3 +77,9 @@ Important differences from most online chess sites:
 - Draw offers, draw claims, resignations, and clock presses are part of the procedure, not just UI shortcuts.
 
 The arbiter intervenes when a supported rule requires it. If the position must be restored, follow the arbiter message and restore the board.
+
+**Pressing the clock without a move** is an illegal move (FIDE 7.5.3). The arbiter stops the clock, tells you so, and restarts the clock after a few seconds; with confirmation switched on, both players confirm that they are ready instead. A double click on the clock counts once. Once the clock runs again, the next press without a move is the next illegal move.
+
+**Touch-move comes first.** You have to move the piece you touched first, if it can move - also after an illegal move was taken back. If you move another piece instead, the arbiter rules a touch-move violation, whether or not that move would have been legal, and asks for the touched piece. This is not counted as an illegal move. An illegal move with the touched piece itself is an illegal move.
+
+**Circles on the board** show what the arbiter's ruling is about, on both boards: green for what you have to play - the piece you have to move or capture, or the start and end square of a move you had already made when you changed the position again - and red for the start and end square of an illegal move.

@@ -11,11 +11,75 @@ release's tasks until it ships.
 - [x] Replace the measure by the owner's inner circle (2026-11-25): a circle of 20% of the piece area around
   its centre must lie inside one square; the "sloppy" placement in between is gone.
 - [x] Owner decides the open points of E-005 (2026-11-25, recorded in E-005 one by one).
+- [x] Merge the released `main` (0.5.1, `ef4fda7`) into `jadoube` (2026-11-25), so that the code starts from
+  the current release.
 - [ ] Implementation plan for review.
 
-## Clock pressed twice (after 0.4.0)
+## 0.5.1 — Quick Restart
 
-Development continues on `jadoube` (2026-11-25), created from the released `main` (`1f5c17a`).
+Branch `quick-restart` (2026-11-25), created from the released `main` (`06c4f8f`). The default branch of
+`start.bat` is unchanged (`fixes-and-improvements`, which is 0.5.0); this branch is served by
+`start.bat quick-restart`.
+
+- [x] Scope: the one fix below. `0.5.1`: a fix for the host, no feature, no change for the players
+  (version asked for by the owner on 2026-11-25).
+- [x] Prepare version `0.5.1`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Quick Restart** for the
+  PR title and its opening heading, title the GitHub release `0.5.1`, and begin its notes with the release
+  name.
+- [x] Verification on macOS at the release commit: full Java suite (539 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests); against the rebuilt jar, which reports `0.5.1`, `version.spec.ts`,
+  `server-restart.spec.ts` and `smoke.spec.ts` (3 passed). The full browser suite (261 passed, 1 skipped)
+  passed at the commit of the fix (`1f76ebe`); since then only the version, the pins and documents changed.
+- [ ] Merge the PR, tag `0.5.1` on the merge commit, publish the GitHub release, deploy by `SETUP.md` §12.
+  Publication and deployment are reported in the conversation, not here. No manual test through `start.bat`:
+  the fix is not active on Windows.
+
+- [x] **The restarted server binds its port at once** (2026-11-25). Found at the deployment of 0.5.0: after
+  `launchctl kickstart -k` the site answered 502 for about 50 seconds. The new process could not bind the
+  WebSocket port (`Address already in use`) while the connections of the killed process were expiring, gave up
+  after 10 seconds, and was started again by launchd until it succeeded. The WebSocket library switches
+  `SO_REUSEADDR` off unless asked; the server now asks for it, except on Windows, where a port with expiring
+  connections can be bound anyway and the option would let a second server bind a port in use. Reproduced
+  with the released jar by `tests/e2e/server-restart.spec.ts` (a real server process killed with two players
+  connected and started again on the same ports: not up within 8 seconds before, up at once now, three runs);
+  `TestQuickRestart` pins the option. An orderly stop inside one JVM does not reproduce it.
+- [x] Verification on macOS: full Java suite (539 run, 0 failures, 4 skipped: the Windows-only launcher
+  tests), full browser suite against the rebuilt jar (261 passed, 1 skipped, no retries). Not run: anything
+  on Windows, where the option is left off and nothing changes; `RuleFuzzer` and `TouchMoveOracle` (no rule
+  and no message handling changed).
+- Measured on test ports with a connected client and the process killed: released 0.5.0 restarted as
+  0.5.0 is not up within 12 seconds; released 0.5.0 restarted as the fixed build is up after about 0.1
+  seconds, and so is the fixed build restarted as itself. The fix is in the process that is started, so the
+  restart that deploys it is already quick; a roll back to 0.5.0 or older is the slow one again.
+
+## 0.5.0 — Two-Tab Play and Fairer Rulings
+
+- [x] Scope: everything on `fixes-and-improvements` since `0.4.0` (section below) - the pause after a clock
+  press without a move, touch-move before an illegal move of another piece, green circles for the move that
+  was already made, the finished game after a reload, both sides from two tabs of one browser, Ashlar Chess
+  22.2.0. `0.5.0` instead of `0.4.1` (decided with the owner on 2026-11-25): two-tab play and the finished
+  game on reload are features, the server has a new message (`resumeEnded`), and the seat a browser stores
+  has a new form.
+- [x] Prepare version `0.5.0`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Two-Tab Play and Fairer
+  Rulings** for the PR title and its opening heading, title the GitHub release `0.5.0`, and begin its notes
+  with the release name.
+- [x] Verification on macOS at the release commit: full Java suite (537 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), `TouchMoveOracle` (33,793 cases, 0 differences), `RuleFuzzer` (20,000 games,
+  0 findings), full browser suite against the rebuilt jar (260 passed, 1 skipped, no retries, `sounds.spec.ts`
+  in audio mode `'real'`); the jar reports `0.5.0` (`version.properties`, manifest, and `version.spec.ts` for
+  `/api/version`, lobby and board). Not run: anything on Windows; no browser other than Chromium.
+- [x] Manual test by the owner before the merge (2026-11-25): passed, release approved. Asked to check
+  through `start.bat` (default branch `fixes-and-improvements`): version `0.5.0`, two tabs of one browser with
+  a reload of each, a reload after the game, a double click on the clock without a move.
+- [ ] Merge the PR, tag `0.5.0` on the merge commit, publish the GitHub release, deploy by `SETUP.md` §12.
+  Publication and deployment are reported in the conversation, not here.
+
+## Fixes and improvements (after 0.4.0)
+
+Development continues on `fixes-and-improvements` (2026-11-25), created from the released `main` (`1f5c17a`);
+it is the default branch of `start.bat`. `jadoube` is kept for another purpose.
 
 Feedback from a tester on the live site (0.4.0, 2026-11-25): "Everything seems to break if I press the clock
 twice." Not reproducible by the owner on a local server. 42 combinations of clock presses were played through
@@ -25,19 +89,98 @@ move, an illegal move or only a touched piece on the board, before the opponent 
 restore a position, right after Revert, during the pause after a wrong clock press, by both players together,
 and after the game. No script error, no lost connection and no game that could not be continued. Findings:
 
-- [ ] Two presses of the own lever without a move end the game at once in a default game: each is an illegal
-  move (FIDE 7.5.3), the second loses. There is no pause between them, so a double click is enough. As
-  implemented and specified; the most likely thing the tester saw. To decide: leave, or soften.
-- [ ] After an illegal move and Revert, during "Position restored. Restarting the clock shortly.", the board
-  is disabled and no move can be made, but a press of the own lever is ruled on as a press without a move:
-  the 2nd illegal move, which loses a default game. One of these rulings reads only "Illegal move. White loses
-  the game." without the reason. To decide: should a press in this delay only restart the clock?
-- [ ] A second press of the own lever that is sent before the answer to the first has arrived (a double click
-  over the internet; never on a local server) is answered with "It is not your turn.", which replaces "Move
-  accepted. Opponent's turn." on that board. The move is accepted and the game goes on.
-- [ ] Not about the clock, found on the way: two tabs of the same browser (not incognito, not two browsers)
-  share the stored session. Create in one tab, join in the other, reload the first: it comes back in the seat
-  of the second, the second is told "This game is now open in another window", and one colour has no player.
+- [x] **Pause after a clock press without a move** (2026-11-25). The arbiter stops the clock for the ruling as
+  for every other one: with automatic resume the clock restarts after the arbiter's pause
+  (`OTB_WRONG_CLOCK_PAUSE_MS`, 5 s) and the ruling stays in view with its last sentence changed; without it both
+  players are asked whether they are ready. A press in the pause is not ruled on and not answered, so a double
+  click is one illegal move. After the restart a further press without a move is the next illegal move, as
+  before.
+- [x] Decided 2026-11-25 (Codex's reading of FIDE 7.5.1-7.5.5 and of the Arbiters' Manual, taken as
+  authoritative): illegal moves made in the same turn add up. Two presses without a move lose a default game,
+  and so does a press without a move after the Revert of an illegal move, also in the short delay before the
+  clock restarts. Nothing was changed here.
+- [x] **A late second press is not answered** (2026-11-25): a press that reaches the server when the player's
+  lever is down (not their turn, or the game is over) gets no answer, so "It is not your turn." no longer
+  replaces "Move accepted. Opponent's turn." The page takes two clicks on the same lever within 400 ms as one
+  press, unless the player did something else in between.
+- [x] **Touch-move before a further illegal move** (2026-11-25, A-011 in `docs/fide-deviations.md`). Reported
+  journey: 1. e4, Black Ng8-g6 (illegal), Revert, Nb8-b6 with the clock was a 2nd illegal move and lost the
+  game. Now a touch-move violation for the knight on g8: the move that replaces one the arbiter took off the
+  board has to be made with the touched piece, and another piece moved instead is not counted as an illegal
+  move. Unchanged: an illegal move of the touched piece itself.
+- [x] **The same before any ruling on the turn** (decided by the owner on 2026-11-25): Black touches the knight
+  on g8, plays the knight from b8 to b6 and presses the clock - a touch-move violation, green circle on g8, and
+  no illegal move is counted. Before, this was the 1st illegal move. The touched piece is followed through the
+  board events: picked up and put back it stands where it was touched; a touch of a piece that cannot move binds
+  to nothing.
+- [x] **Blue circles for the move that was already made** (2026-11-25): a released-piece ruling circles the
+  start and end square of the move that was completed with the release, on both boards, until the position is
+  restored.
+- [x] **Green instead of blue** (decided by the owner on 2026-11-25: no third colour). The circles of the move
+  that was already made are green, like the touched piece: one colour for what the player has to play. They
+  therefore stay as green does - through the Revert, on the start and end square of the move that is on the
+  board again, until the clock press accepts it (as blue they went at the Revert; confirmed by the owner). `BoardMark.Color.BLUE`, the
+  style and the page's third colour are removed. Verified on macOS: full Java suite (537 run, 0 failures, 4
+  skipped), and the eleven browser specs about circles, touch-move and released pieces against the rebuilt jar
+  (109 passed, no retries); the full browser suite was not rerun for this.
+- [x] **The own game cannot be joined from the same browser** (2026-11-25; removed again the same day, see
+  *Two tabs of one browser can play each other* below): the start screen refuses a code
+  that is the game this browser is already in, changes nothing, and points to a private window or another
+  browser and to the manual (`MANUAL.md`, *Playing both sides yourself*). Client only: the server cannot tell
+  two tabs of one browser from two players, so there is no Java test for it.
+- [x] Verification on macOS with all of the above: full Java suite (527 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), `TouchMoveOracle` (33,793 cases, 0 differences), `RuleFuzzer` (20,000 games,
+  0 findings), full browser suite (250 passed, 1 skipped, no retries). Not run: anything on Windows; the
+  launcher's default branch was changed in `start.bat` and `TestWindowsLauncher`, whose tests run on Windows
+  only.
+- [x] **Ashlar Chess 22.2.0** (2026-11-25, from 20.0.0; the latest release). The app's code needed no change.
+  What a player can notice, from the library's releases 21.0.0 to 22.2.0: a custom starting FEN is checked more
+  strictly - a check no single move can create (two rooks, three checkers), more promoted pieces than missing
+  pawns, split empty-square runs (`44`), and leading zeros in the two counters are refused with the library's
+  reason (`TestStartingFenStrictness`, `lobby.spec.ts`); the draw instead of a loss on flag fall or resignation
+  (the opponent cannot checkmate) comes from the library's new unwinnability engine, written from the FUN 2022
+  paper; the lenient SAN of a draw claim keeps the named piece and origin.
+- [x] **The restated king-in-check reasons stay** (decided by the owner on 2026-11-25). Asked for: remove the workaround, since the
+  wording was fixed in the library. It is not: 22.2.0, and the library's `main` after it, still say "it would
+  leave the own king in check" and "it would expose the own king to check" (`ValidateNewMove.kingSafetyMessage`),
+  so `illegal-move-reasons.properties` still turns them into "it leaves ..." and "it exposes ...". Without the
+  pairs the arbiter's ruling would speak of a move that "would leave" the king in check again.
+  `TestIllegalMoveReasons.theLibraryStillWordsTheseReasonsConditionally` now pins the library's own text, so the
+  upgrade that rewords it fails that test and names the file to clean up.
+- [x] Verification on macOS with Ashlar Chess 22.2.0: full Java suite (533 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), `TouchMoveOracle` (33,793 cases, 0 differences), `RuleFuzzer` (20,000 games,
+  0 findings), full browser suite against the rebuilt jar, whose manifest names `ashlar-chess-22.2.0.jar`
+  (251 passed, 1 skipped, no retries). Not run: anything on Windows.
+- [x] **A reload after the game shows the finished game** (2026-11-25). Second report from the tester: "I
+  clicked the clock during my turn, twice and the board bugged and all the pieces disappeared from it."
+  Reproduced on a local server: the game ends (in 0.4.0 two presses without a move lose at once), the player
+  who joined reloads the page - empty board, "This game has already ended." That the tester reloaded is an
+  assumption. The creator's page created a new game on such a reload. Now the server answers a `resume` into
+  an ended game with `resumeEnded` (board as it stood, final times, the result as announced) instead of
+  refusing it; no seat is given back, so nothing can be done from that page and no rematch offered. Also for
+  the leaver of an abandoned game who returns ("You left the game and lose." with the board, before an empty
+  board). The page keeps its seat after the game, marked as ended. Not covered: a game the server has already
+  removed (30 minutes after the end, both players gone) still comes back as "no longer available" with an
+  empty board.
+- [x] **Two tabs of one browser can play each other** (asked for by the owner on 2026-11-25; replaces the
+  refusal above, which is removed with its message, style and tests). Each page notes its own seat in its
+  history entry, so a reload takes exactly that seat; the browser's seats are a list in `localStorage`
+  (`otbSeats`, before one `otbSession`); a page holds a Web Lock per seat, so the start screen and a newly
+  opened page know which games are open in a tab (`static/js/seats.js`, SPECIFICATION *Joining*). "Return to
+  game" is offered only for a running game that no tab has open - in a second tab beside the creator's it no
+  longer appears, and the code joins the game as the opponent. Two separate browsers behave as before
+  (reload, lost tab and return by the start screen or by the code, second window takes the seat over).
+  Client only: the server cannot tell two tabs from two players, so there is no Java test for this part.
+  Known: both tabs share the sound options, so with the sounds on each sound is played by both tabs. Without
+  the Locks API (page served neither over HTTPS nor from localhost) no seat counts as held: a second tab
+  then takes the creator's seat over instead of joining.
+- [x] Creating or joining a *different* game in a second tab of the same browser no longer replaces the
+  seat of the first tab (same change; `same-browser.spec.ts`).
+- [x] Verification on macOS with the two changes above: full Java suite (537 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), `RuleFuzzer` (20,000 games, 0 findings), full browser suite against the
+  rebuilt jar (260 passed, 1 skipped, no retries). `TouchMoveOracle` not run: no ruling changed. Not run:
+  anything on Windows, and no browser other than Chromium - the page's own seat and the locks are browser
+  features, so Firefox and Safari are untested.
 - Not broken: presses before the opponent joined and after the game (ignored), during the pause to restore a
   position ("please restore the position", no penalty), during the pause after a wrong clock press ("please
   wait"), several fast presses of the opponent's lever (counted once per pause), both players pressing together.

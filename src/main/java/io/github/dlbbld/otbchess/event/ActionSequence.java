@@ -17,6 +17,7 @@ public class ActionSequence {
   private final Side sideToMove;
   private int releasedPieceRuleStartIndex;
   private int positionRestoredIndex;
+  private boolean positionRestored;
 
   public ActionSequence(Side sideToMove) {
     this.sideToMove = sideToMove;
@@ -52,6 +53,15 @@ public class ActionSequence {
   /** The board has been set back by a restoration: what was done on it before no longer shows on it. */
   public void markPositionRestored() {
     positionRestoredIndex = events.size();
+    positionRestored = true;
+  }
+
+  /**
+   * @return whether the board was set back by a restoration in this turn: the arbiter has ruled on the turn at least
+   *         once, and what is on the board now replaces what it took off
+   */
+  public boolean hasPositionBeenRestored() {
+    return positionRestored;
   }
 
   public Side getSideToMove() {
@@ -62,6 +72,7 @@ public class ActionSequence {
     events.clear();
     releasedPieceRuleStartIndex = 0;
     positionRestoredIndex = 0;
+    positionRestored = false;
   }
 
   public boolean isEmpty() {

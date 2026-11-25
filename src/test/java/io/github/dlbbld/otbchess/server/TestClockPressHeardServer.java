@@ -374,7 +374,8 @@ class TestClockPressHeardServer {
   // ----- what follows a press, or looks like one, makes no sound -----
 
   @Test
-  void aPressDuringTheDelayBeforeTheGameResumesIsHeardOnceAndTheDelayedResumeIsSilent() throws Exception {
+  void aPressDuringTheDelayBeforeTheGameResumesIsHeardOnceAndTheRestartsAreSilent() throws Exception {
+    setLong("wrongClockPauseMs", 40);
     final var white = new Client();
     final var black = new Client();
     final String id = start(white, black);
@@ -385,20 +386,26 @@ class TestClockPressHeardServer {
     assertHeard(1, white, black);
     final int whiteBefore = white.messages.size();
 
-    // The clock shows a pause, but this press counts: it restarts the clock and is ruled on.
+    // The clock shows a pause, but this press counts: it ends the pause and is ruled on - as a press without
+    // a move, for which the arbiter stops the clock once more.
     clock(white);
 
-    assertEquals(Side.WHITE, room(id).getSession().getClock().getRunningFor());
     assertHeard(2, white, black);
-    // The lever first, then the clock that runs again, then the arbiter.
-    final List<String> after = white.typesFrom(whiteBefore);
-    assertEquals(List.of(HEARD, "gameResumed"), after.subList(0, 2));
-    assertTrue(after.indexOf("illegal_move") > 1, after.toString());
+    // The lever first, then the arbiter.
+    assertEquals(List.of(HEARD, "illegal_move"), white.typesFrom(whiteBefore).subList(0, 2));
 
-    // The delayed resume finds the game resumed.
+    // The delayed resume finds the restoration pause over, and the arbiter restarts the clock: no press.
     final var method = GameWebSocketServer.class.getDeclaredMethod("resumeAfterRestorationDelay", GameRoom.class);
     method.setAccessible(true);
     method.invoke(server, room(id));
+    await("the clock restarts", () -> {
+      try {
+        return room(id).getSession().getClock().getRunningFor() == Side.WHITE;
+      } catch (final Exception e) {
+        throw new IllegalStateException(e);
+      }
+    });
+    assertEquals(1, white.typesFrom(whiteBefore).stream().filter("gameResumed"::equals).count());
     assertHeard(2, white, black);
   }
 

@@ -2,6 +2,83 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.5.1 — Quick Restart — 2026-11-25
+
+A maintenance release for the host: the server is back within seconds after a restart. Nothing
+changes for the players during a game. The change has a Java test and a browser test that kills
+and restarts a real server.
+
+### Fixed
+
+- **The restarted server takes its port over at once.** At the deployment of 0.5.0 the site
+  answered 502 for about 50 seconds: the new process could not open its WebSocket port ("Address
+  already in use") while the connections of the stopped process were still expiring, gave up
+  after 10 seconds, and was started again until it succeeded. The server now asks to reuse its
+  address. On Windows nothing changes: the problem does not exist there, and the option would
+  let a second server open a port that is in use.
+
+### Known limits
+
+- Games live in the server's memory. A restart ends the running games; the pages say that the
+  game is no longer available and lead back to the start screen.
+
+## 0.5.0 — Two-Tab Play and Fairer Rulings — 2026-11-25
+
+Both sides of a game can be played from two tabs of one browser, a page that is reloaded after the
+game shows how it ended, and three rulings of the arbiter are fairer than before. The release
+answers the first feedback from a tester on the live site. The changes have Java tests and browser
+tests of their journeys.
+
+### Added
+
+- **Both sides from two tabs of one browser.** Create the game in one tab, open the start page in
+  a second tab, enter the code and join. Each tab keeps its own side, also after a reload and
+  through a rematch. A private window or a second browser is no longer needed to try the app
+  alone. Two games in two tabs of one browser do not disturb each other either.
+- **The finished game after a reload.** A player who reloads the page after the game sees the
+  board as it stood, the final times and the result, with a way back to the start screen. So does
+  a player who left and comes back after the game was decided.
+- **Green circles for a move that was already made.** A player who completes a move, changes the
+  position again and presses the clock is told that the move was already made; its start and end
+  square are circled on both boards until the clock press accepts it.
+
+### Changed
+
+- **A pause after a clock press without a move.** The press is still an illegal move
+  (FIDE 7.5.3), but the arbiter now stops the clock for the ruling, as for every other one. The
+  clock restarts after a few seconds, or both players confirm that they are ready, depending on
+  the game's setting. A press during the pause is not ruled on, so a double click no longer loses
+  the game at once. A further press after the pause still is the next illegal move.
+- **Touch-move comes first.** A player who touches a piece that can move and then plays another
+  piece gets a touch-move violation for the touched piece, also when that other move is illegal
+  and also after an illegal move was taken back. No illegal move is counted for it. Before, this
+  was an illegal move, and after a Revert a second one, which lost the game. An illegal move of
+  the touched piece itself is an illegal move as before.
+- **"Return to game" on the start screen** is offered only for a running game that is not open in
+  any tab of the browser.
+- **A custom starting position is checked more strictly**, by Ashlar Chess 22.2.0 (before:
+  20.0.0): a double check that no single move can create, split runs of empty squares (`44`)
+  and leading zeros in the two counters are refused, with the library's reason. The draw on flag fall or resignation when the opponent cannot
+  checkmate comes from the library's new unwinnability engine.
+
+### Fixed
+
+- A second press of the clock that arrives after the move was accepted no longer replaces
+  "Move accepted. Opponent's turn." with "It is not your turn."
+- A page reloaded after the game no longer comes back with an empty board (the player who
+  joined) or silently creates a new game (the player who created it).
+- In two tabs of one browser, a reload no longer gives a tab the seat of the other tab.
+
+### Known limits
+
+- Both tabs of one browser share the sound options: with the sounds on, each sound is played by
+  both tabs.
+- Two-tab play needs a page served over HTTPS or from localhost. On a page reached over plain
+  HTTP from another device, a second tab takes the first tab's seat over instead of joining.
+- A finished game is shown again until the server removes it: 30 minutes after the end, once
+  both players have left. After that the page says that the game is no longer available.
+- Two-tab play and the reload after the game are tested in Chromium only.
+
 ## 0.4.0 — Piece and Clock Sounds — 2026-11-24
 
 The board and the clock can now be heard, as at a real board: a piece set down on a square, and a

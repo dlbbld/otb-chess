@@ -82,8 +82,9 @@ test('a new tab in the same browser finds its way back into the running game via
 }) => {
   const game = await startTwoPlayerGame(browser);
   try {
-    // The player "loses" the game tab and opens a NEW tab in the same browser (same context =
+    // The player loses the game tab and opens a NEW tab in the same browser (same context =
     // same localStorage): the lobby must offer the way back, not strand them.
+    await game.creator.close();
     const newTab = await game.contexts[0].newPage();
     await newTab.goto('/');
     await expect(newTab.locator('#gameInProgress')).toBeVisible();
@@ -111,6 +112,18 @@ test('an invalid starting FEN is rejected on the start screen, not on the board'
   // The reason is shown in place and the player stays on the lobby — they are never sent to a board.
   await expect(page.locator('#fenError')).toContainText('Invalid FEN');
   await expect(page.locator('#startingFen')).toBeVisible(); // the FEN input only exists on the lobby
+});
+
+test('a starting position no game can reach is rejected with the chess library\'s reason', async ({ page }) => {
+  await page.goto('/');
+  // Two rooks check the black king at once: no single move can create that (refused since Ashlar Chess 21).
+  await page.locator('#startingFen').fill('R3k2R/8/8/8/8/8/8/4K3 b - - 0 1');
+  await page.locator('#createGameBtn').click();
+
+  await expect(page.locator('#fenError')).toHaveText(
+    'Invalid FEN: the black king is in a double check that no single move could create',
+  );
+  await expect(page.locator('#startingFen')).toBeVisible();
 });
 
 test('a valid starting FEN proceeds to the board', async ({ page }) => {

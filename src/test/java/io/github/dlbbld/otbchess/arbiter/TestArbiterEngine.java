@@ -738,12 +738,15 @@ class TestArbiterEngine {
     final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/4R3/1N2K3 w - - 0 1");
     final ActionSequence sequence = new ActionSequence(Side.WHITE);
 
-    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0));
-    engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
-        .createChangedPosition(Square.B1, Piece.NONE).createChangedPosition(Square.B3, Piece.WHITE_KNIGHT).build(),
+    // The rook shields the king from the black rook on e8; along the e-file it can move.
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.G3, Piece.WHITE_ROOK, 0));
+    final ArbiterResponse first = engine.evaluateClockPress(board,
+        BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.E2, Piece.NONE)
+            .createChangedPosition(Square.G3, Piece.WHITE_ROOK).build(),
         sequence);
+    assertEquals("the rook cannot move in this way", first.illegalMoveDetail().get().playerReason().get());
     sequence.markPositionRestored();
-    // The rook shields the king from the black rook on e8.
+    // The same rook again, now off the file.
     sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.D2, Piece.WHITE_ROOK, 1));
     final ArbiterResponse second = engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
         .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.D2, Piece.WHITE_ROOK).build(),
@@ -751,6 +754,112 @@ class TestArbiterEngine {
 
     assertEquals("because it exposes the own king to check",
         second.illegalMoveDetail().get().playerReason().get());
+  }
+
+  /**
+   * The move that replaces an illegal one has to be made with the touched piece (FIDE 7.5.1, 4.3). An illegal move of
+   * another piece is then ruled on as what comes first: a touch-move violation. It is not counted as an illegal move.
+   */
+  @Test
+  void testIllegalMoveOfAnotherPieceAfterRestorationIsATouchMoveViolation() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/4R3/1N2K3 w - - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0));
+    final ArbiterResponse first = engine.evaluateClockPress(board,
+        BitboardPositions.from(board.getBitboardPosition()).createChangedPosition(Square.B1, Piece.NONE)
+            .createChangedPosition(Square.B3, Piece.WHITE_KNIGHT).build(),
+        sequence);
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
+    sequence.markPositionRestored();
+    // The rook leaves the e-file and exposes the king: no legal move - but not the knight's move either.
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.D2, Piece.WHITE_ROOK, 1));
+    final ArbiterResponse second = engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.D2, Piece.WHITE_ROOK).build(),
+        sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, second.type());
+    assertTrue(second.message().contains("the knight on b1"), second.message());
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  /**
+   * The same before the arbiter has ruled on the turn at all: the knight was touched and left standing, another
+   * piece was moved. The touch came first, so the touch-move rule does - the illegal move as such does not count.
+   */
+  @Test
+  void testIllegalMoveOfAnotherPieceAfterAMereTouchIsATouchMoveViolation() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/4R3/1N2K3 w - - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    sequence.addEvent(BoardEvent.click(Square.B1, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.D2, Piece.WHITE_ROOK, 1));
+    final ArbiterResponse ruling = engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.D2, Piece.WHITE_ROOK).build(),
+        sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, ruling.type());
+    assertTrue(ruling.message().contains("the knight on b1"), ruling.message());
+    assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  /** The touched knight is picked up, put on a square it cannot go to and put back; then another piece is moved. */
+  @Test
+  void testTouchedPiecePutBackAndAnotherPieceMovedIllegallyIsATouchMoveViolation() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = Board.fromFenStrict("k3r3/8/8/8/8/8/4R3/1N2K3 w - - 0 1");
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B3, Square.B1, Piece.WHITE_KNIGHT, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.E2, Square.D2, Piece.WHITE_ROOK, 2));
+    final ArbiterResponse ruling = engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.E2, Piece.NONE).createChangedPosition(Square.D2, Piece.WHITE_ROOK).build(),
+        sequence);
+
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, ruling.type());
+    assertEquals(0, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  /** A piece that cannot move binds to nothing: the illegal move of another piece is then an illegal move. */
+  @Test
+  void testIllegalMoveAfterTouchingAPieceWithoutLegalMovesIsAnIllegalMove() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    // The rook on a1 has no move in the starting position.
+    sequence.addEvent(BoardEvent.click(Square.A1, Piece.WHITE_ROOK, 0));
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.B3, Piece.WHITE_KNIGHT, 1));
+    final ArbiterResponse ruling = engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B1, Piece.NONE).createChangedPosition(Square.B3, Piece.WHITE_KNIGHT).build(),
+        sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, ruling.type());
+    assertEquals(1, engine.getIllegalMoveTracker().getIllegalMoveCount(Side.WHITE));
+  }
+
+  /** Two knights: the touched one was moved away and the other one stands on its square. That is not "untouched". */
+  @Test
+  void testTouchedPieceMovedAwayAfterRestorationIsStillAnIllegalMove() {
+    final ArbiterEngine engine = new ArbiterEngine();
+    final Board board = new Board();
+    final ActionSequence sequence = new ActionSequence(Side.WHITE);
+
+    sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 0));
+    engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.G1, Piece.NONE).createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build(),
+        sequence);
+    sequence.markPositionRestored();
+    sequence.addEvent(BoardEvent.dragMove(Square.G1, Square.G3, Piece.WHITE_KNIGHT, 1));
+    sequence.addEvent(BoardEvent.dragMove(Square.B1, Square.G1, Piece.WHITE_KNIGHT, 2));
+    final ArbiterResponse second = engine.evaluateClockPress(board, BitboardPositions.from(board.getBitboardPosition())
+        .createChangedPosition(Square.B1, Piece.NONE).createChangedPosition(Square.G3, Piece.WHITE_KNIGHT).build(),
+        sequence);
+
+    assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, second.type());
   }
 
   @Test
