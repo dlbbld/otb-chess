@@ -204,12 +204,13 @@ test('the green circle of a touched piece outlives an illegal move made after it
   await expectPiece(black, 'g1', 'WHITE_KNIGHT');
   for (const page of [white, black]) await expectMarks(page, ['g1:green']);
 
-  // An illegal move of another piece leaves the green circle beside the red ones.
+  // An illegal move of another piece is no illegal move here: the knight on g1 is owed, so this is
+  // a touch-move violation. Only the green circle is on the board, and nothing is circled red.
   await expectGameResumed(white);
   await dragPiece(white, 'b1', 'b3');
   await pressClock(white);
-  await expect(arbiter(white)).toContainText('Illegal move');
-  for (const page of [white, black]) await expectMarks(page, ['b1:red', 'b3:red', 'g1:green']);
+  await expect(arbiter(white)).toContainText('Touch-move violation: You first touched the knight on g1');
+  for (const page of [white, black]) await expectMarks(page, ['g1:green']);
 });
 
 test('an illegal move shown with a draw offer is circled red like one shown with a clock press', async ({ browser }) => {

@@ -319,8 +319,12 @@ class TestBoardMarks {
     assertEquals(red(Square.B1, Square.B3), session.getBoardMarks());
   }
 
+  /**
+   * After a restoration the touched piece has to be moved. An illegal move of another piece is then a touch-move
+   * violation like a legal one: only the piece that is owed is pointed at, and no illegal move is marked.
+   */
   @Test
-  void theTouchedPieceStaysMarkedThroughAnIllegalMoveOfAnotherPiece() {
+  void theTouchedPieceStaysMarkedAloneThroughAnIllegalMoveOfAnotherPiece() {
     final var session = session(null);
     click(session, Piece.WHITE_KNIGHT, Square.G1);
     revertAndResume(session, pawnToE4AndClock(session));
@@ -330,9 +334,8 @@ class TestBoardMarks {
     final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
         moved(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3));
 
-    assertEquals(ArbiterResponseType.ILLEGAL_MOVE, ruling.type());
-    assertEquals(List.of(BoardMark.green(Square.G1), BoardMark.red(Square.B1), BoardMark.red(Square.B3)),
-        session.getBoardMarks());
+    assertEquals(ArbiterResponseType.TOUCH_MOVE_VIOLATION, ruling.type());
+    assertEquals(green(Square.G1), session.getBoardMarks());
 
     revertAndResume(session, ruling);
     assertEquals(green(Square.G1), session.getBoardMarks());
@@ -451,13 +454,14 @@ class TestBoardMarks {
     session.startGame();
     click(session, Piece.WHITE_KNIGHT, Square.G1);
     revertAndResume(session, pawnToE4AndClock(session));
-    drag(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3);
+    // The touched knight itself, moved as no knight moves.
+    drag(session, Piece.WHITE_KNIGHT, Square.G1, Square.G3);
 
     final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
-        moved(session, Piece.WHITE_KNIGHT, Square.B1, Square.B3));
+        moved(session, Piece.WHITE_KNIGHT, Square.G1, Square.G3));
 
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, ruling.type());
-    assertEquals(red(Square.B1, Square.B3), session.getBoardMarks(), "no move is owed any more");
+    assertEquals(red(Square.G1, Square.G3), session.getBoardMarks(), "no move is owed any more");
   }
 
   // ----- what leaves the marks as they are -----
