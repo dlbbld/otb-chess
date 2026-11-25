@@ -12,6 +12,10 @@ export interface CreateOptions {
   autoResume?: boolean;
   /** The illegal move that loses the game (1..10, -1 = unlimited); the server default is 2. */
   maxIllegal?: number;
+  /** Free placement of the pieces (E-005): a piece stays where it is let go. Off unless set. */
+  free?: boolean;
+  /** With free placement: the unclear placement that loses the game (1..10, -1 = unlimited); default 3. */
+  maxUnclear?: number;
 }
 
 /** Navigates `page` to a freshly created game and returns the game code shown on the board page. */
@@ -23,6 +27,8 @@ export async function createGame(page: Page, opts: CreateOptions = {}): Promise<
   if (opts.fen) url += `&fen=${encodeURIComponent(opts.fen)}`;
   if (opts.autoResume === false) url += `&autoResumeAfterRestore=false`;
   if (opts.maxIllegal !== undefined) url += `&maxIllegal=${opts.maxIllegal}`;
+  if (opts.free) url += `&free=true`;
+  if (opts.maxUnclear !== undefined) url += `&maxUnclear=${opts.maxUnclear}`;
   await page.goto(url);
 
   // game.js appends the code element only after the server's `gameCreated` message.

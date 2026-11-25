@@ -19,6 +19,7 @@ import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.board.MoveSpecification;
 import io.github.dlbbld.ashlarchess.pgn.PgnCreate;
+import io.github.dlbbld.otbchess.placement.PlacementBoard.PlacedPiece;
 import io.github.dlbbld.otbchess.arbiter.ArbiterEngine;
 import io.github.dlbbld.otbchess.arbiter.ArbiterResponse;
 import io.github.dlbbld.otbchess.arbiter.BoardMark;
@@ -284,8 +285,20 @@ public class GameSession {
    * @return the arbiter response
    */
   public synchronized ArbiterResponse pressClockButton(Side side, BitboardPosition afterPosition) {
+    return pressClockButton(side, afterPosition, List.of());
+  }
+
+  /**
+   * The clock press of a game with free placement (E-005).
+   *
+   * @param afterPosition the position the rules look at: every piece on the square it counts on
+   * @param unclearPieces the pieces that lie in an unclear placement; with any, the arbiter makes the call for
+   *                      them and does not rule on the move
+   */
+  public synchronized ArbiterResponse pressClockButton(Side side, BitboardPosition afterPosition,
+      List<PlacedPiece> unclearPieces) {
     clockPressRegistered = false;
-    return markRuling(ruleOnClockPress(side, afterPosition));
+    return markRuling(ruleOnClockPress(side, afterPosition, unclearPieces));
   }
 
   /**
@@ -316,7 +329,8 @@ public class GameSession {
     return boardMarks.stream().filter(mark -> mark.color() == color).toList();
   }
 
-  private ArbiterResponse ruleOnClockPress(Side side, BitboardPosition afterPosition) {
+  private ArbiterResponse ruleOnClockPress(Side side, BitboardPosition afterPosition,
+      List<PlacedPiece> unclearPieces) {
     if (state != GameState.IN_PROGRESS) {
       return ArbiterResponse.incompleteMove("The game is not in progress.");
     }
@@ -342,6 +356,11 @@ public class GameSession {
     }
     // From here on the arbiter rules on the move: the lever was up and went down.
     clockPressRegistered = true;
+
+    // Free placement: a piece that lies unclear comes before everything else - there is no move to rule on.
+    if (!unclearPieces.isEmpty()) {
+      return ruleOnUnclearPlacement(side, unclearPieces);
+    }
 
     // Special case: must execute specified move (after rejected draw claim)
     if (mustExecuteMove != null) {
@@ -432,6 +451,104 @@ public class GameSession {
     return Optional.of(ArbiterResponse.moveAccepted(matchedMove));
   }
 
+  // ===== Free placement (E-005): the call for an unclear placement =====
+
+  /** Number of unclear placements at a clock press that lose the game, when the game is created without one. */
+  public static final int DEFAULT_MAX_UNCLEAR_PLACEMENTS = 3;
+  /** No number of unclear placements loses the game. */
+  public static final int UNLIMITED_UNCLEAR_PLACEMENTS = -1;
+
+  private int maxUnclearPlacements = DEFAULT_MAX_UNCLEAR_PLACEMENTS;
+  private final Map<Side, Integer> unclearPlacementCounts = new EnumMap<>(Side.class);
+  // The arbiter's short pause is the one for an unclear placement: the board cannot be used until the clock
+  // restarts, because the player corrects the placement on their own running clock.
+  private boolean unclearPlacementPause;
+
+  /** Sets the number of unclear placements that lose the game: 1 or more, or unlimited. */
+  public synchronized void setMaxUnclearPlacements(int maxUnclearPlacements) {
+    if (maxUnclearPlacements != UNLIMITED_UNCLEAR_PLACEMENTS && maxUnclearPlacements < 1) {
+      throw new IllegalArgumentException("maxUnclearPlacements must be >= 1 or unlimited");
+    }
+    this.maxUnclearPlacements = maxUnclearPlacements;
+  }
+
+  public synchronized int getUnclearPlacementCount(Side side) {
+    return unclearPlacementCounts.getOrDefault(side, 0);
+  }
+
+  /**
+   * A draw offer by the player to move while a piece lies in an unclear placement: ruled on like a clock press
+   * with one. Outside play - a pause, a clock that has run out - nothing is ruled on.
+   */
+  public synchronized ArbiterResponse offerDrawWithUnclearPlacement(Side side, List<PlacedPiece> unclearPieces) {
+    if (state != GameState.IN_PROGRESS || side != board.getSideToMove() || waitingForRestoration || waitingForReady
+        || restorationResumePending || clock.getRunningFor() == Side.NONE || checkFlagFall().isPresent()) {
+      return ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts.");
+    }
+    return ruleOnUnclearPlacement(side, unclearPieces);
+  }
+
+  /** @return whether the board is locked because the arbiter is making the call for an unclear placement */
+  public synchronized boolean isUnclearPlacementPause() {
+    return unclearPlacementPause && (pressWithoutMovePause || waitingForReady);
+  }
+
+  /**
+   * Every clock press with a piece in an unclear placement is a step on a ladder of its own, per player for the
+   * whole game: the call, the call with a warning before the last step, the loss of the game. The arbiter stops the
+   * clock for the call and restarts it as after a clock press without a move.
+   */
+  private ArbiterResponse ruleOnUnclearPlacement(Side side, List<PlacedPiece> unclearPieces) {
+    final int count = unclearPlacementCounts.merge(side, 1, Integer::sum);
+    final boolean limited = maxUnclearPlacements != UNLIMITED_UNCLEAR_PLACEMENTS;
+    final String call = unclearPlacementCall(side, unclearPieces);
+    if (limited && count >= maxUnclearPlacements) {
+      terminationActor = side;
+      endGame(new GameResult(GameResultType.UNCLEAR_PLACEMENT_GAME_LOST, side.getOppositeSide(),
+          sideName(side) + " loses the game by repeatedly placing pieces unclearly."));
+      return ArbiterResponse.unclearPlacementGameLost(call);
+    }
+    clock.stopClock();
+    wrongClockPressPausedFor = null; // this call supersedes an admonishment pause
+    unclearPlacementPause = true;
+    if (autoResumeAfterRestore) {
+      pressWithoutMovePause = true;
+      pressWithoutMovePauseId++;
+    } else {
+      waitingForReady = true;
+      whiteReady = false;
+      blackReady = false;
+    }
+    final boolean warned = limited && count == maxUnclearPlacements - 1;
+    final String opponentInfo = "Your opponent pressed the clock while a piece was not clearly on a square"
+        + (warned ? " and has been warned: the next time loses them the game." : ".");
+    return ArbiterResponse.unclearPlacement(
+        call + (warned ? " Warning: the next time you press the clock with a piece placed unclearly, you lose"
+            + " the game." : ""),
+        opponentInfo);
+  }
+
+  /**
+   * What the arbiter says about the pieces that lie unclear. An opponent's piece that stood on a square was set
+   * down while it was being taken: it is to be put back or taken off. Which squares a player's own piece
+   * is bound to is not ruled on yet (the binding of E-005 is the next step of the implementation).
+   */
+  private static String unclearPlacementCall(Side side, List<PlacedPiece> unclearPieces) {
+    final StringBuilder call = new StringBuilder();
+    for (final PlacedPiece unclear : unclearPieces) {
+      final boolean own = unclear.piece().getSide() == side;
+      final String name = unclear.piece().getPieceType().name().toLowerCase();
+      call.append("It is not clear on which square your ").append(own ? "" : "opponent's ").append(name)
+          .append(" is.");
+      if (!own && unclear.origin() != Square.NONE) {
+        call.append(" Put it back on ").append(unclear.origin().getName())
+            .append(" or take it off the board.");
+      }
+      call.append(' ');
+    }
+    return call.append("Place your pieces more carefully.").toString();
+  }
+
   private ArbiterResponse handleArbiterResponse(ArbiterResponse response, Side side, boolean keepDrawOffer) {
     // Safety net: stop before any state change if the arbiter asks for an unjustifiable restore.
     response.restorePosition().ifPresent(target -> RestoreTargetInvariant.verify(board, target));
@@ -472,6 +589,7 @@ public class GameSession {
         clock.stopClock();
         if (noMoveMade) {
           wrongClockPressPausedFor = null; // this ruling supersedes an admonishment pause
+          unclearPlacementPause = false;
           if (autoResumeAfterRestore) {
             pressWithoutMovePause = true;
             pressWithoutMovePauseId++;
@@ -1226,6 +1344,7 @@ public class GameSession {
       return false;
     }
     pressWithoutMovePause = false;
+    unclearPlacementPause = false;
     if (state != GameState.IN_PROGRESS || waitingForRestoration || waitingForReady || restorationResumePending
         || clock.getRunningFor() != Side.NONE) {
       return false;
@@ -1375,6 +1494,7 @@ public class GameSession {
     this.boardMarks = List.of();
     this.wrongClockPressPausedFor = null;
     this.pressWithoutMovePause = false;
+    this.unclearPlacementPause = false;
     this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
@@ -1589,6 +1709,7 @@ public class GameSession {
     }
     if (whiteReady && blackReady) {
       waitingForReady = false;
+      unclearPlacementPause = false;
       if (state == GameState.IN_PROGRESS) {
         clock.startClock(board.getSideToMove());
       }

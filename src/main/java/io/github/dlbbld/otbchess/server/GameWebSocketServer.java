@@ -29,6 +29,7 @@ import com.google.gson.JsonObject;
 
 import io.github.dlbbld.ashlarchess.bitboard.BitboardPosition;
 import io.github.dlbbld.ashlarchess.board.Board;
+import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 import io.github.dlbbld.ashlarchess.board.MoveSpecification;
@@ -43,6 +44,7 @@ import io.github.dlbbld.otbchess.game.model.GameResult;
 import io.github.dlbbld.otbchess.game.model.GameResultType;
 import io.github.dlbbld.otbchess.game.model.GameState;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
+import io.github.dlbbld.otbchess.placement.PlacementBoard;
 import io.github.dlbbld.otbchess.server.message.MessageConverter;
 import io.github.dlbbld.otbchess.server.model.GameRoom;
 
@@ -401,6 +403,21 @@ public class GameWebSocketServer extends WebSocketServer {
     final boolean autoResumeAfterRestore = !(json.has("autoResumeAfterRestore")
         && json.get("autoResumeAfterRestore").isJsonPrimitive()) || json.get("autoResumeAfterRestore").getAsBoolean();
 
+    // Free placement of the pieces (E-005). A message without the field creates a game of today, so that every
+    // existing client and tool keeps the game it knows.
+    final boolean freePlacement = json.has("freePlacement") && json.get("freePlacement").isJsonPrimitive()
+        && json.get("freePlacement").getAsBoolean();
+    // maxUnclearPlacements: 1..10 = limit, -1 = unlimited, missing = 3
+    final Integer maxUnclearBoxed = json.has("maxUnclearPlacements") ? optInt(json, "maxUnclearPlacements")
+        : Integer.valueOf(GameSession.DEFAULT_MAX_UNCLEAR_PLACEMENTS);
+    if (maxUnclearBoxed == null || maxUnclearBoxed != GameSession.UNLIMITED_UNCLEAR_PLACEMENTS
+        && (maxUnclearBoxed < 1 || maxUnclearBoxed > 10)) {
+      sendError(conn, "createGame maxUnclearPlacements is out of range.");
+      recordViolation(conn);
+      return;
+    }
+    final int maxUnclearPlacements = maxUnclearBoxed;
+
     // Optional FEN — when supplied, the game starts from that position. Validation goes
     // through Ashlar Chess so the player gets the chess library's specific reason. The
     // creator's side is overridden to the side-to-move from the FEN, so the creator can
@@ -437,7 +454,8 @@ public class GameWebSocketServer extends WebSocketServer {
     GameRoom room;
     do {
       gameId = generateJoinCode();
-      room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
+      room = new GameRoom(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard,
+          freePlacement, maxUnclearPlacements);
       if ("white".equals(creatorSide)) {
         room.setWhitePlayer(conn);
       } else {
@@ -457,7 +475,7 @@ public class GameWebSocketServer extends WebSocketServer {
     response.addProperty("gameId", gameId);
     response.addProperty("side", creatorSide);
     response.addProperty("token", token);
-    response.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingBoard.getBitboardPosition())));
+    addBoard(response, room, startingBoard.getBitboardPosition());
     response.addProperty("havingMove", startingBoard.getSideToMove().name().toLowerCase());
     // Display label like "5+3 • Blitz" — time control plus FIDE discipline (see TimeControl).
     response.addProperty("timeControlLabel", timeControl.displayLabel());
@@ -568,7 +586,7 @@ public class GameWebSocketServer extends WebSocketServer {
     joinResponse.addProperty("gameId", gameId);
     joinResponse.addProperty("side", side);
     joinResponse.addProperty("token", token);
-    joinResponse.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(startingPosition)));
+    addBoard(joinResponse, room, startingPosition);
     joinResponse.addProperty("havingMove", havingMove.name().toLowerCase());
     joinResponse.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     if (!send(conn, joinResponse)) {
@@ -630,6 +648,12 @@ public class GameWebSocketServer extends WebSocketServer {
       recordViolation(conn);
       return;
     }
+    if (room.isFreePlacement()) {
+      synchronized (room) {
+        handleFreeBoardEvent(conn, room, side, eventData, eventType);
+      }
+      return;
+    }
 
     // Cosmetic drag-in-progress events (DRAG_START, DRAG_HOVER) are display-only.
     // Forward them to the opponent so they can mirror the dragging player's hand,
@@ -688,7 +712,184 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    final Optional<ArbiterResponse> midPlayResponse = room.getSession().recordEvent(side, event);
+    ruleOnBoardEvent(conn, room, side, Optional.of(event), eventData, optionalBoardState(json));
+  }
+
+  /**
+   * A release in a game with free placement (E-005): the page says which piece was let go and where; the server
+   * works out what that is for the rules. The piece in the hand ({@code DRAG_START}, {@code DRAG_HOVER}) is only
+   * shown to the opponent, as in every game.
+   */
+  private void handleFreeBoardEvent(WebSocket conn, GameRoom room, Side side, JsonObject eventData,
+      String eventType) {
+    final GameSession session = room.getSession();
+    final PlacementBoard placements = room.getPlacements();
+    // The board cannot be used in the short pauses before the arbiter restarts the clock.
+    final boolean boardLocked = session.isRestorationResumePending() || session.isUnclearPlacementPause();
+    if ("DRAG_START".equals(eventType) || "DRAG_HOVER".equals(eventType)) {
+      if (!boardLocked) {
+        forwardBoardEventToOpponent(room, side, eventData);
+      }
+      return;
+    }
+    final Integer id = optInt(eventData, "id");
+    final Integer x = optInt(eventData, "x");
+    final Integer y = optInt(eventData, "y");
+    final String fromSidePiece = optString(eventData, "fromSide");
+    if (!"RELEASE".equals(eventType) || id == null || x == null || y == null
+        || Math.abs(x) > 4 * PlacementBoard.MAX_COORDINATE || Math.abs(y) > 4 * PlacementBoard.MAX_COORDINATE) {
+      sendError(conn, "Malformed boardEvent.");
+      recordViolation(conn);
+      sendPlacements(room, side);
+      return;
+    }
+    if (boardLocked) {
+      sendPlacements(room, side); // the page moved the piece; it lies where it lay
+      return;
+    }
+    if (!session.isWaitingForRestoration() && session.isTurnEventLimitReached()) {
+      sendError(conn, "Too many piece movements in one move. Further movements are not recorded.");
+      recordViolation(conn);
+      sendPlacements(room, side);
+      return;
+    }
+
+    final PlacementBoard.Release release;
+    try {
+      release = fromSidePiece == null ? placements.release(side, id, x, y)
+          : placements.placeFromSide(side, id, Piece.valueOf(fromSidePiece), x, y);
+    } catch (final RuntimeException e) {
+      // A piece number the board does not have, or one in use: a malformed frame, not a crash.
+      sendError(conn, "Malformed boardEvent.");
+      recordViolation(conn);
+      sendPlacements(room, side);
+      return;
+    }
+    final BitboardPosition counted = placements.countedPosition();
+    room.setPhysicalPosition(counted);
+
+    // What the opponent's board shows: the piece exactly where it was let go.
+    final JsonObject mirror = new JsonObject();
+    mirror.addProperty("eventType", "RELEASE");
+    mirror.addProperty("id", release.id());
+    mirror.addProperty("piece", release.piece().name());
+    mirror.addProperty("x", release.x());
+    mirror.addProperty("y", release.y());
+    mirror.addProperty("offBoard", release.offBoard());
+    mirror.addProperty("capturedId", release.capturedId());
+    // Whether the release changed where the piece lies: only then it is heard (a click is not).
+    mirror.addProperty("fromSide", fromSidePiece != null);
+
+    // The rules never look at a position with a piece in an unclear placement: no restoration is complete and
+    // no game ends while one lies there.
+    final BitboardPosition ruledPosition = placements.hasUnclearPiece() ? null : counted;
+
+    if (session.isWaitingForRestoration()) {
+      forwardBoardEventToOpponent(room, side, mirror);
+      if (ruledPosition != null && session.isRestoredPosition(ruledPosition)) {
+        completeRestoration(room);
+      }
+      return;
+    }
+    ruleOnBoardEvent(conn, room, side, release.event(), mirror, ruledPosition);
+    announceHalfRemovedPiece(room, side, release.id());
+  }
+
+  /**
+   * An opponent's piece that the player set down halfway through taking it (E-005, capture-first): the arbiter
+   * says at once that it is still on the board, and the opponent is told. No clock stops and nothing is counted.
+   * The instruction ends when the piece is taken off, put back, or ruled on otherwise.
+   */
+  private void announceHalfRemovedPiece(GameRoom room, Side side, int releasedId) {
+    final GameSession session = room.getSession();
+    final int before = room.getHalfRemovedPieceId();
+    if (session.getState() != GameState.IN_PROGRESS || session.isWaitingForRestoration()) {
+      room.setHalfRemovedPieceId(0); // another ruling has taken over; its message stays
+      return;
+    }
+    final Optional<PlacementBoard.PlacedPiece> halfRemoved = room.getPlacements().halfRemovedPiece(side);
+    if (halfRemoved.isPresent() && halfRemoved.get().id() == releasedId) {
+      room.setHalfRemovedPieceId(releasedId);
+      sendHalfRemovedPieceNotice(room, side, halfRemoved.get());
+    } else if (before != 0 && halfRemoved.map(piece -> piece.id() != before).orElse(true)) {
+      room.setHalfRemovedPieceId(halfRemoved.map(PlacementBoard.PlacedPiece::id).orElse(0));
+      if (halfRemoved.isPresent()) {
+        sendHalfRemovedPieceNotice(room, side, halfRemoved.get());
+      } else {
+        final JsonObject cleared = new JsonObject();
+        cleared.addProperty("type", "placementNotice");
+        cleared.addProperty("message", "");
+        room.sendToBoth(GSON.toJson(cleared));
+      }
+    }
+  }
+
+  private void sendHalfRemovedPieceNotice(GameRoom room, Side side, PlacementBoard.PlacedPiece piece) {
+    final String colour = side == Side.WHITE ? "Black" : "White";
+    final String name = piece.piece().getPieceType().name().toLowerCase();
+    final String square = piece.origin().getName();
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "placementNotice");
+    msg.addProperty("message", colour + "'s " + name + " is still on the board. To capture it, take it off the"
+        + " board. Otherwise put it back on " + square + ".");
+    room.sendToSide(side, GSON.toJson(msg));
+    msg.addProperty("message", "Your opponent lifted your " + name + " on " + square
+        + " and set it down between squares. It is still on the board.");
+    room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
+  }
+
+  /** Sends a player where every piece lies, when their page may show something else. */
+  private void sendPlacements(GameRoom room, Side side) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "placementsSync");
+    addBoard(msg, room, room.getPlacements().countedPosition());
+    room.sendToSide(side, GSON.toJson(msg));
+  }
+
+  /**
+   * Adds the position to a message; in a game with free placement also where every piece lies, the one on top
+   * last, and the radius of the inner circle.
+   */
+  private static void addBoard(JsonObject msg, GameRoom room, BitboardPosition position) {
+    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
+    final PlacementBoard placements = room.getPlacements();
+    if (placements == null) {
+      return;
+    }
+    final JsonArray pieces = new JsonArray();
+    for (final PlacementBoard.PlacedPiece placed : placements.pieces()) {
+      final JsonObject piece = new JsonObject();
+      piece.addProperty("id", placed.id());
+      piece.addProperty("piece", placed.piece().name());
+      piece.addProperty("x", placed.x());
+      piece.addProperty("y", placed.y());
+      pieces.add(piece);
+    }
+    msg.add("placements", pieces);
+    msg.addProperty("placementRadius", placements.radius());
+  }
+
+  /**
+   * A position the arbiter sets up is centred (E-005). The pieces stay where they lie only when they already show
+   * exactly this position, every one in a clear placement - a move that was accepted, a position restored by hand.
+   */
+  private static void centreUnlessShown(GameRoom room, BitboardPosition position) {
+    final PlacementBoard placements = room.getPlacements();
+    if (placements != null && !placements.showsClearly(position)) {
+      placements.reset(position);
+    }
+    room.setHalfRemovedPieceId(0);
+  }
+
+  /**
+   * Rules on what the player to move did on the board: the event for the rules, if it is one, what the opponent's
+   * board is shown of it, and the position to look at for an end of the game without a clock press - {@code null}
+   * when the position is not to be looked at.
+   */
+  private void ruleOnBoardEvent(WebSocket conn, GameRoom room, Side side, Optional<BoardEvent> boardEvent,
+      JsonObject eventData, BitboardPosition position) {
+    final Optional<ArbiterResponse> midPlayResponse = boardEvent.isEmpty() ? Optional.empty()
+        : room.getSession().recordEvent(side, boardEvent.get());
 
     // recordEvent may find an expired clock before processing the event. Announce that result
     // even when this frame omitted boardState (and therefore would skip the auto-end check).
@@ -725,9 +926,11 @@ public class GameWebSocketServer extends WebSocketServer {
     // the recipient has actually MADE THE MOVE — i.e. completed a legal release per
     // FIDE 4.7 (released-piece rule).
     final var drawMgr = room.getSession().getDrawOfferManager();
-    if (drawMgr.isDrawOffered() && drawMgr.getOfferingSide() != side && !drawMgr.hasOpponentTouchedPiece()) {
+    if (boardEvent.isPresent() && drawMgr.isDrawOffered() && drawMgr.getOfferingSide() != side
+        && !drawMgr.hasOpponentTouchedPiece()) {
 
-      final boolean correctTimeTouchInvalidation = drawMgr.wasOfferedAtCorrectTime() && isTouchPieceEvent(event);
+      final boolean correctTimeTouchInvalidation = drawMgr.wasOfferedAtCorrectTime()
+          && isTouchPieceEvent(boardEvent.get());
       final boolean wrongTimeReleaseInvalidation = !drawMgr.wasOfferedAtCorrectTime()
           && room.getSession().hasReleasedPieceCommitment();
 
@@ -751,7 +954,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
     // Auto-end on game-ending moves (checkmate, stalemate, dead position, fivefold, 75-move):
     // accept the move and end the game without waiting for a clock press.
-    final BitboardPosition autoEndPosition = midPlayResponse.isEmpty() ? optionalBoardState(json) : null;
+    final BitboardPosition autoEndPosition = midPlayResponse.isEmpty() ? position : null;
     if (autoEndPosition != null) {
       final Optional<ArbiterResponse> autoEndResponse = room.getSession().evaluateForAutoEnd(side, autoEndPosition);
       if (autoEndResponse.isPresent()) {
@@ -769,15 +972,17 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
-    final BitboardPosition afterPosition = parseBoardState(conn, json);
-    if (afterPosition == null) {
+    // In a game with free placement the server knows where the pieces lie; the page reports no position.
+    final BitboardPosition reportedPosition = room.isFreePlacement() ? null : parseBoardState(conn, json);
+    if (reportedPosition == null && !room.isFreePlacement()) {
       return; // malformed boardState — parseBoardState already sent a clean error + counted it
     }
 
     // One room transaction: a press can end the automatic restoration pause, and a reconnecting
     // player must not be sent that pause after the messages that ended it.
     synchronized (room) {
-      pressClock(room, room.getSide(conn), afterPosition);
+      pressClock(room, room.getSide(conn),
+          room.isFreePlacement() ? room.getPlacements().countedPosition() : reportedPosition);
     }
   }
 
@@ -792,7 +997,8 @@ public class GameWebSocketServer extends WebSocketServer {
       checkGameEnded(room);
       return;
     }
-    final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
+    final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition,
+        room.isFreePlacement() ? room.getPlacements().unclearPieces() : List.of());
     // First of all, so that the lever is heard before the arbiter speaks.
     if (room.getSession().consumeClockPressRegistered()) {
       sendClockPressHeard(room);
@@ -803,8 +1009,11 @@ public class GameWebSocketServer extends WebSocketServer {
     // turn over.
     final boolean pressWithoutMove = response.type() == ArbiterResponseType.ILLEGAL_MOVE
         && response.illegalMoveDetail().map(d -> d.noMoveMade()).orElse(false);
-    final boolean restartsByItself = pressWithoutMove && pressedSession.isPressWithoutMovePause();
-    final boolean waitsForReady = pressWithoutMove && pressedSession.isWaitingForReady();
+    // The call for an unclear placement (E-005) pauses the game in the same way: nothing is restored.
+    final boolean unclearPlacement = response.type() == ArbiterResponseType.UNCLEAR_PLACEMENT;
+    final boolean pausedWithoutRestoration = pressWithoutMove || unclearPlacement;
+    final boolean restartsByItself = pausedWithoutRestoration && pressedSession.isPressWithoutMovePause();
+    final boolean waitsForReady = pausedWithoutRestoration && pressedSession.isWaitingForReady();
     // A press without a move stops the clock again at once: the resume is then announced when the pause after
     // that ruling is over, not here.
     final boolean endedRestorationDelay = room.getSession().consumeResumedByClockPress();
@@ -821,6 +1030,8 @@ public class GameWebSocketServer extends WebSocketServer {
       sendClockUpdate(room);
       // Note: opponentMoved (sent by sendArbiterResponse) already includes the board state.
       // Do NOT also send boardUpdate here, as it can overwrite the opponent's in-progress moves.
+    } else if (unclearPlacement) {
+      announceUnclearPlacementPause(room, side, response, restartsByItself, waitsForReady);
     } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
       if (pressWithoutMove) {
         // FIDE 7.5.3 press-without-move: the board is still at the turn start - nothing to restore. The arbiter
@@ -861,6 +1072,20 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     checkGameEnded(room);
+  }
+
+  /**
+   * The pause for the call for an unclear placement: both boards are locked until the arbiter restarts the clock,
+   * by itself or once both players are ready. The player then corrects the placement on their own running clock.
+   */
+  private void announceUnclearPlacementPause(GameRoom room, Side side, ArbiterResponse response,
+      boolean restartsByItself, boolean waitsForReady) {
+    sendClockUpdate(room);
+    if (restartsByItself) {
+      scheduleRestartAfterPressWithoutMove(room, side, response, true);
+    } else if (waitsForReady) {
+      sendWaitingForReady(room, side, response.renderedPlayerMessage() + " " + READY_QUESTION);
+    }
   }
 
   private static final String PAUSED_SHORTLY = " The game is paused and will continue shortly.";
@@ -934,8 +1159,29 @@ public class GameWebSocketServer extends WebSocketServer {
     final Side side = room.getSide(conn);
     final boolean opponentOfferPending = isOpponentOfferPending(room, side);
 
-    // Parse the boardState (used by the correct-time validation path; optional/tolerant here).
-    final BitboardPosition afterPosition = optionalBoardState(json);
+    // Free placement: an offer made with a piece in an unclear placement is ruled on like a clock press with
+    // one - the arbiter makes the call, it counts, and the offer is not made.
+    if (room.isFreePlacement() && side == room.getSession().getHavingMove()
+        && room.getPlacements().hasUnclearPiece()
+        && !room.getSession().getDrawOfferManager().canAccept(side)) {
+      final ArbiterResponse response = room.getSession().offerDrawWithUnclearPlacement(side,
+          room.getPlacements().unclearPieces());
+      final boolean call = response.type() == ArbiterResponseType.UNCLEAR_PLACEMENT;
+      final boolean restartsByItself = call && room.getSession().isPressWithoutMovePause();
+      sendArbiterResponse(room, side, response, restartsByItself ? PAUSED_SHORTLY : "");
+      sendOpponentArbiterNotification(room, side, response, restartsByItself ? OPPONENT_PAUSED_SHORTLY : "");
+      if (call) {
+        announceUnclearPlacementPause(room, side, response, restartsByItself,
+            room.getSession().isWaitingForReady());
+      }
+      checkGameEnded(room);
+      return;
+    }
+
+    // Parse the boardState (used by the correct-time validation path; optional/tolerant here). In a game with
+    // free placement the server knows where the pieces lie.
+    final BitboardPosition afterPosition = room.isFreePlacement() ? room.getPlacements().countedPosition()
+        : optionalBoardState(json);
 
     // Correct-time vs. wrong-time per FIDE 9.1.2.1:
     // Correct = the offering player has the move AND has actually made a move on the board
@@ -1364,7 +1610,6 @@ public class GameWebSocketServer extends WebSocketServer {
 
     final var session = room.getSession();
     final var havingMove = session.getHavingMove();
-    final var board = GSON.toJsonTree(MessageConverter.fromStaticPosition(session.getBoard().getBitboardPosition()));
 
     // Tokens follow the players across the seat swap, including when this message cannot be delivered.
     for (final Side seat : new Side[] { Side.WHITE, Side.BLACK }) {
@@ -1373,7 +1618,7 @@ public class GameWebSocketServer extends WebSocketServer {
       msg.addProperty("gameId", room.getGameId());
       msg.addProperty("side", seat.name().toLowerCase());
       msg.addProperty("token", room.getToken(seat));
-      msg.add("board", board);
+      addBoard(msg, room, session.getBoard().getBitboardPosition());
       msg.addProperty("havingMove", havingMove.name().toLowerCase());
       msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
       // Short, like the game-start message: no "your turn" coaching — a running clock says it all.
@@ -1463,10 +1708,11 @@ public class GameWebSocketServer extends WebSocketServer {
       return; // no restoration is pending (any more)
     }
     room.setPhysicalPosition(restorePosition);
+    centreUnlessShown(room, restorePosition);
 
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "positionRestored");
-    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(restorePosition)));
+    addBoard(msg, room, restorePosition);
     msg.addProperty("autoResumePending", room.getSession().isAutoResumeAfterRestore());
     if (releasedMoveIsFinal) {
       // The released piece completed the move (FIDE 4.7): nothing more to play, just press the clock.
@@ -1735,7 +1981,7 @@ public class GameWebSocketServer extends WebSocketServer {
 
   private static boolean isPassiveOpponentNotification(ArbiterResponseType type) {
     return switch (type) {
-      case ILLEGAL_MOVE, TOUCH_MOVE_VIOLATION, RELEASED_PIECE_VIOLATION, INCOMPLETE_MOVE -> true;
+      case ILLEGAL_MOVE, TOUCH_MOVE_VIOLATION, RELEASED_PIECE_VIOLATION, INCOMPLETE_MOVE, UNCLEAR_PLACEMENT -> true;
       default -> false;
     };
   }
@@ -1823,7 +2069,7 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("gameId", gameId);
     msg.addProperty("side", side.name().toLowerCase());
     msg.addProperty("message", "This game has already ended.");
-    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(room.getPhysicalPosition())));
+    addBoard(msg, room, room.getPhysicalPosition());
     msg.add("clock", clockData);
     msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
     msg.add("result", gameEndedMessage(room, result));
@@ -1867,7 +2113,7 @@ public class GameWebSocketServer extends WebSocketServer {
     msg.addProperty("side", side.name().toLowerCase());
     msg.addProperty("token", room.getToken(side));
     msg.addProperty("state", session.getState().name());
-    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(room.getPhysicalPosition())));
+    addBoard(msg, room, room.getPhysicalPosition());
     msg.addProperty("havingMove", session.getHavingMove().name().toLowerCase());
     msg.add("clock", clockData);
     msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
@@ -1880,6 +2126,12 @@ public class GameWebSocketServer extends WebSocketServer {
     }
     sendRecoveryState(room, side, true);
     sendRecoveryState(room, side.getOppositeSide(), false);
+    // The arbiter's word on a half-removed piece stands as long as the piece lies there: a page that comes
+    // back is told again.
+    if (room.isFreePlacement() && room.getHalfRemovedPieceId() != 0 && session.getState() == GameState.IN_PROGRESS) {
+      room.getPlacements().halfRemovedPiece(session.getHavingMove())
+          .ifPresent(piece -> sendHalfRemovedPieceNotice(room, session.getHavingMove(), piece));
+    }
 
     // Replay the existing offer, without registering it again or resetting its touch/release
     // invalidation. Like the live UI, keep an invalidated offer visible until acted on.
@@ -2015,6 +2267,18 @@ public class GameWebSocketServer extends WebSocketServer {
     } catch (final RuntimeException e) {
       return null;
     }
+  }
+
+  /** @return the whole number under the key, or {@code null} when it is missing or no whole number */
+  private static Integer optInt(JsonObject json, String key) {
+    if (!json.has(key) || !json.get(key).isJsonPrimitive() || !json.get(key).getAsJsonPrimitive().isNumber()) {
+      return null;
+    }
+    final double value = json.get(key).getAsDouble();
+    if (value != Math.rint(value) || Math.abs(value) > Integer.MAX_VALUE) {
+      return null;
+    }
+    return (int) value;
   }
 
   private static Long optLong(JsonObject json, String key) {
@@ -2164,12 +2428,13 @@ public class GameWebSocketServer extends WebSocketServer {
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       final var position = room.getSession().getBoard().getBitboardPosition();
       room.setPhysicalPosition(position);
+      centreUnlessShown(room, position);
       final var havingMove = room.getSession().getHavingMove();
 
       final JsonObject opponentMsg = new JsonObject();
       opponentMsg.addProperty("type", "opponentMoved");
       opponentMsg.addProperty("message", "Opponent completed a move.");
-      opponentMsg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
+      addBoard(opponentMsg, room, position);
       opponentMsg.addProperty("havingMove", havingMove.name().toLowerCase());
       room.sendToSide(side.getOppositeSide(), GSON.toJson(opponentMsg));
     }
@@ -2214,7 +2479,8 @@ public class GameWebSocketServer extends WebSocketServer {
     final var havingMove = room.getSession().getHavingMove();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "boardUpdate");
-    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(position)));
+    centreUnlessShown(room, position);
+    addBoard(msg, room, position);
     msg.addProperty("havingMove", havingMove.name().toLowerCase());
     room.sendToBoth(GSON.toJson(msg));
   }
@@ -2266,6 +2532,7 @@ public class GameWebSocketServer extends WebSocketServer {
     if (result.type() == GameResultType.ABANDONMENT || result.type() == GameResultType.WRONG_CLOCK_PRESS_GAME_LOST
         || result.type() == GameResultType.MOVED_OPPONENT_PIECE_GAME_LOST
         || result.type() == GameResultType.WRONG_TIME_OFFER_GAME_LOST
+        || result.type() == GameResultType.UNCLEAR_PLACEMENT_GAME_LOST
         || result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
             || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
       msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());

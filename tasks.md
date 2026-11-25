@@ -20,7 +20,22 @@ merged `fixes-and-improvements`.
 - [x] Owner answers the four questions on the rulings in section 1 of the plan (2026-11-25: all four proposals
   accepted as they stood). Recorded in the plan and in E-005, together with the plan's two corrections to E-005.
 - [x] Review the plan with Codex (2026-11-25). E-005 and the plan now cover the half-removed capture victim, the immediate instruction, the clock-press ruling, and recovery on both boards.
-- [ ] Build the first playable capture-first case with Java and two-board Playwright coverage as described in the reviewed plan.
+- [x] Build the first playable capture-first case with Java and two-board Playwright coverage as described in
+  the reviewed plan (2026-11-26). Free placement is a game option, **off by default** while it is being built
+  (entry screen: *Free placement of the pieces*, with *Number of unclear placements causing game loss*). Built:
+  the measure in Java and in the page with the shared `tests/placement-samples.json`; the server keeps where
+  every piece lies and turns each release into an event of today (`PlacementBoard`); the page draws the pieces
+  in a layer and lets go of them where the mouse is; the half-removed victim with its immediate instruction;
+  the call at the clock press with its ladder, pause and locked board; no restoration complete and no game
+  ended while a piece lies unclear; reload and rematch. Section 8 of the plan says what differs from the plan
+  and what is not built.
+- [ ] Next case: the binding of an own piece let go unclearly (Q1 to Q3 of the plan) with the arbiter naming
+  the bound squares, the ruling for a bound piece on another square, and the green circles. Until then such a
+  piece is only touched, and the call names no square.
+- [ ] J'adoube: the button, the adjustment and its undo, the ladder for the opponent's time, adjusting without
+  J'adoube.
+- [ ] A free-placement mode of `RuleFuzzer`; `SPECIFICATION.md`, `MANUAL.md`, `fide-deviations.md`,
+  `CHANGELOG.md`; the option on by default once the rulings and J'adoube work together.
 
 ## 0.5.1 — Quick Restart
 

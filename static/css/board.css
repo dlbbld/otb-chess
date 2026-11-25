@@ -89,6 +89,41 @@
   left: 3px;
 }
 
+/* Free placement (E-005): the pieces lie where they were let go, in one layer over the 64
+   squares. A piece is placed by its centre, in shares of the board, so the layer scales and
+   turns with it. Under the arbiter's circles, like the pieces on their squares. */
+.board {
+  position: relative;
+}
+
+.piece-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.free-piece {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.free-piece svg,
+.floating-piece.free svg {
+  width: 56px;
+  height: 56px;
+}
+
+/* The piece in the hand keeps the size it has on the board, so that it lands where it is seen. */
+.floating-piece.free {
+  width: 56px;
+  height: 56px;
+}
+
 /* Dragging piece floating */
 .floating-piece {
   position: fixed;

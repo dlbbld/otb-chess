@@ -130,7 +130,8 @@ class GameWebSocket {
     }
   }
 
-  createGame(side, initialTimeMs, incrementMs, maxIllegalMoves, autoResumeAfterRestore, fen) {
+  createGame(side, initialTimeMs, incrementMs, maxIllegalMoves, autoResumeAfterRestore, fen,
+      freePlacement, maxUnclearPlacements) {
     const msg = {
       type: 'createGame',
       side: side,
@@ -143,6 +144,12 @@ class GameWebSocket {
     // overrides the creator's side to whichever side is to move in the FEN.
     if (fen) {
       msg.fen = fen;
+    }
+    // Free placement of the pieces (E-005). Without the field the server creates a game with
+    // centred pieces.
+    if (freePlacement) {
+      msg.freePlacement = true;
+      msg.maxUnclearPlacements = maxUnclearPlacements;
     }
     this.send(msg);
   }

@@ -17,6 +17,8 @@ import io.github.dlbbld.ashlarchess.board.enums.Side;
 import io.github.dlbbld.otbchess.arbiter.BoardMark;
 import io.github.dlbbld.otbchess.game.GameSession;
 import io.github.dlbbld.otbchess.game.model.TimeControl;
+import io.github.dlbbld.otbchess.placement.PlacementBoard;
+import io.github.dlbbld.otbchess.placement.PlacementMeasure;
 
 /**
  * Represents a game room connecting two players.
@@ -37,6 +39,12 @@ public class GameRoom {
   // Kept for rematches: a rematch rebuilds the session with the SAME settings.
   private final int maxIllegalMoves;
   private final boolean autoResumeAfterRestore;
+  // Free placement of the pieces (E-005): where every piece lies; null in a game without it. A rematch keeps the
+  // option and its limit like the other settings.
+  private final PlacementBoard placements;
+  private final int maxUnclearPlacements;
+  // The piece the player to move was last told to take off or put back (a half-removed opponent's piece), or 0.
+  private int halfRemovedPieceId;
   // Wall-clock creation time, used to reap rooms that were created but never joined.
   private final long createdAtMs = System.currentTimeMillis();
 
@@ -76,12 +84,47 @@ public class GameRoom {
    */
   public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore,
       Board startingBoard) {
+    this(gameId, timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard, false,
+        GameSession.DEFAULT_MAX_UNCLEAR_PLACEMENTS);
+  }
+
+  /**
+   * @param freePlacement        whether the pieces stay where they are let go (E-005) instead of being centred
+   * @param maxUnclearPlacements the number of unclear placements at a clock press that loses the game, or
+   *                             {@link GameSession#UNLIMITED_UNCLEAR_PLACEMENTS}; only used with free placement
+   */
+  public GameRoom(String gameId, TimeControl timeControl, int maxIllegalMoves, boolean autoResumeAfterRestore,
+      Board startingBoard, boolean freePlacement, int maxUnclearPlacements) {
     this.gameId = gameId;
     this.session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore, startingBoard);
+    this.session.setMaxUnclearPlacements(maxUnclearPlacements);
     this.physicalPosition = startingBoard.getBitboardPosition();
     this.timeControl = timeControl;
     this.maxIllegalMoves = maxIllegalMoves;
     this.autoResumeAfterRestore = autoResumeAfterRestore;
+    this.maxUnclearPlacements = maxUnclearPlacements;
+    this.placements = freePlacement
+        ? new PlacementBoard(PlacementMeasure.radiusFor(PlacementMeasure.DEFAULT_EXACTNESS_PERCENT),
+            startingBoard.getBitboardPosition())
+        : null;
+  }
+
+  /** @return whether the pieces of this game stay where they are let go (E-005) */
+  public boolean isFreePlacement() {
+    return placements != null;
+  }
+
+  /** @return where every piece lies, or {@code null} in a game without free placement */
+  public PlacementBoard getPlacements() {
+    return placements;
+  }
+
+  public synchronized int getHalfRemovedPieceId() {
+    return halfRemovedPieceId;
+  }
+
+  public synchronized void setHalfRemovedPieceId(int id) {
+    halfRemovedPieceId = id;
   }
 
   public String getGameId() {
@@ -304,7 +347,12 @@ public class GameRoom {
     rematchOfferedBy = Side.NONE;
     session = new GameSession(timeControl, maxIllegalMoves, autoResumeAfterRestore,
         new Board(session.getBoard().getInitialFen()));
+    session.setMaxUnclearPlacements(maxUnclearPlacements);
     physicalPosition = session.getBoard().getBitboardPosition();
+    if (placements != null) {
+      placements.reset(physicalPosition);
+    }
+    halfRemovedPieceId = 0;
     gameEndAnnounced = false;
     announcedBoardMarks = List.of();
     drawOfferMessage = "Your opponent offers a draw.";

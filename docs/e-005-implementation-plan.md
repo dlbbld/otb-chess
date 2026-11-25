@@ -1,6 +1,6 @@
 # E-005 — Implementation plan: free placement of the pieces and J'adoube
 
-**Status**: Reviewed draft of 2026-11-25. The capture-first clarification and the proposed delivery order are included below. Free placement is still unimplemented. Written against `jadoube` with the released `main` (0.5.1) merged in. The owner decided the four rulings of section 1 on 2026-11-25; the details marked *(proposal)* in section 2 are not confirmed.
+**Status**: Reviewed draft of 2026-11-25. The capture-first clarification and the proposed delivery order are included below. The first playable case (capture-first) is built since 2026-11-26, behind a game option that is off by default; section 8 says what exists and where it differs from this plan. Written against `jadoube` with the released `main` (0.5.1) merged in. The owner decided the four rulings of section 1 on 2026-11-25; the details marked *(proposal)* in section 2 are not confirmed.
 
 **What this is**: the plan for the requirement [E-005](enhancements.md#e-005--free-placement-of-the-pieces-and-jadoube). E-005 says what the players get; this says how it is built, in which order, and how it is tested. Where E-005 left a ruling open, section 1 records the owner's decision. Where it leaves a detail open, section 2 proposes one and marks it *(proposal)*.
 
@@ -274,3 +274,34 @@ Windows-only launcher tests are not touched by this work.
 ## 7. Not part of this plan
 
 As in E-005: playing by touch on a phone, and any change to the rulings that exist today. Also not planned: showing the piece in the opponent's hand more exactly than by square, and a limit on J'adoube in the own time.
+
+---
+
+## 8. State of the implementation
+
+**Built on 2026-11-26: the first playable case, capture-first.** Free placement is a game option on the entry screen, off by default during development.
+
+| Part | Where |
+|---|---|
+| The measure (2.1) | `PlacementMeasure`, `static/js/placement.js`, shared samples in `tests/placement-samples.json` |
+| The placements and the layer (2.2) | `PlacementBoard`, kept by `GameRoom`; `GameWebSocketServer.handleFreeBoardEvent` |
+| The call at the clock press, its ladder and pause (2.4) | `GameSession.ruleOnUnclearPlacement`; option `maxUnclearPlacements` |
+| The half-removed victim (Q4, capture-first) | `PlacementBoard.halfRemovedPiece`, message `placementNotice` |
+| The page (2.8) | `board.js` (layer of pieces), `game.js`, entry screen |
+| Tests | `TestPlacementMeasure`, `TestPlacementBoard`, `TestFreePlacementServer`, `tests/e2e/free-placement.spec.ts` |
+
+**Where the code differs from sections 2.2 and 2.3**
+
+- **No new event type yet.** The review asked that a half-removed victim never looks removed. So a piece let go unclearly *keeps counting on the square it stood on*: for the rules it was touched there (one `CLICK`) and is still on the board. Placed clearly afterwards it gives the event of today from that square (`DRAG_MOVE`, `DRAG_CAPTURE`), taken off it gives `REMOVE`, put back it gives nothing more. The rules therefore see no square as empty because its piece lies across a border, and `ArbiterEngine` is unchanged. `RELEASE_UNCLEAR` and `PLACE_AFTER_UNCLEAR` are only needed if the binding of the next case cannot be expressed this way.
+- **A piece under a capturer.** A piece placed clearly on a square whose piece lies unclear captures it for the rules (`DRAG_CAPTURE`), while that piece stays where it lies and counts on no square. Taking it off is then no event; the game can end only once it is off.
+- **An opponent's piece carried wholly off its square and let go unclearly** is given to the rules as moved to the square its centre is on, so the ruling of A-007 follows at once.
+- **The pause for the call** uses the mechanism of the pause after a clock press without a move, with the board locked in addition. A release that reaches the server in the pause is not applied, and the page is sent where the pieces lie (`placementsSync`).
+- **The page sends no position** in a game with free placement: `clockPress` and `offerDraw` are ruled on the server's own record.
+
+**Interim, until the next case is built**
+
+- An own piece let go unclearly is touched and lies unclear, but it is **bound to nothing**, wherever it lies. The call names no square for it: *"It is not clear on which square your knight is. Place your pieces more carefully."* Q1 to Q3 and the second ruling of 2.4 are not built.
+- No green circles for bound squares.
+- A page that is reloaded inside the short pause for a call has a usable board until the clock restarts; the server refuses what it does and sends the placements back.
+
+**Not built**: J'adoube (2.6), adjusting without J'adoube, the free-placement mode of `RuleFuzzer`, the second Playwright project, the documents of section 5, and the option on by default.

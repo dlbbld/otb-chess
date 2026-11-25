@@ -68,6 +68,25 @@
         <label><input type="radio" name="autoResumeAfterRestore" value="false"> No</label>
       </div>
 
+      <!-- Free placement (E-005). Off by default while the feature is being built. -->
+      <label><input type="checkbox" id="freePlacement"> Free placement of the pieces</label>
+      <div id="maxUnclearPlacementsRow" style="display:none;">
+        <label>Number of unclear placements causing game loss:</label>
+        <select id="maxUnclearPlacements">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+          <option value="-1">Unlimited</option>
+        </select>
+      </div>
+
       <label>Starting position FEN <span style="font-weight:normal;color:#888;">(optional — leave empty for normal start)</span>:</label>
       <input type="text" id="startingFen" placeholder="e.g. rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
       <p style="font-size:12px;color:#777;margin:-4px 0 12px;">
@@ -149,6 +168,11 @@
     // Create game — validate any supplied FEN first, then redirect to game.html (game.js handles
     // the WebSocket). An invalid FEN keeps the player on the start screen with the reason rather
     // than sending them to a board they cannot leave.
+    // The limit for unclear placements belongs to free placement: shown only with it.
+    document.getElementById('freePlacement').addEventListener('change', (e) => {
+      document.getElementById('maxUnclearPlacementsRow').style.display = e.target.checked ? '' : 'none';
+    });
+
     document.getElementById('createGameBtn').addEventListener('click', async () => {
       const side = document.querySelector('input[name="side"]:checked').value;
       const maxIllegal = document.getElementById('maxIllegalMoves').value;
@@ -191,6 +215,10 @@
         + '&time=' + time + '&inc=' + inc
         + '&maxIllegal=' + encodeURIComponent(maxIllegal)
         + '&autoResumeAfterRestore=' + encodeURIComponent(autoResumeAfterRestore);
+      if (document.getElementById('freePlacement').checked) {
+        url += '&free=true&maxUnclear='
+          + encodeURIComponent(document.getElementById('maxUnclearPlacements').value);
+      }
       if (fen) {
         url += '&fen=' + encodeURIComponent(fen);
       }

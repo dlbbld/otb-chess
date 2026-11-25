@@ -39,6 +39,12 @@ class ChessBoard {
     this.enabled = false;
     // Squares the arbiter points at: squareName -> 'green' | 'red' (see setMarks).
     this.marks = {};
+    // Free placement (E-005): the pieces lie where they were let go, in a layer over the squares.
+    // Off until the server sends placements (setPlacements); then this.squares holds no pieces.
+    this.free = false;
+    this.placements = []; // { id, piece, x, y } in units (see placement.js), the top piece last
+    this.placementRadius = 0;
+    this.layerEl = null;
 
     this.buildBoard();
     this.setupDragListeners();
@@ -92,10 +98,12 @@ class ChessBoard {
       }
     }
 
+    this.layerEl = null;
     this.renderAll();
   }
 
   setPosition(boardState) {
+    if (this.free) return; // the server sends placements with every position
     for (const [squareName, piece] of Object.entries(boardState)) {
       if (this.squares[squareName]) {
         this.squares[squareName].piece = piece;
@@ -109,7 +117,7 @@ class ChessBoard {
     const existing = sq.element.querySelector('.piece');
     if (existing) existing.remove();
 
-    if (sq.piece !== 'NONE') {
+    if (!this.free && sq.piece !== 'NONE') {
       const pieceEl = document.createElement('div');
       pieceEl.className = 'piece';
       pieceEl.innerHTML = getPieceSvg(sq.piece);
@@ -122,6 +130,129 @@ class ChessBoard {
     for (const squareName of Object.keys(this.squares)) {
       this.renderSquare(squareName);
     }
+    if (this.free) this.renderLayer();
+  }
+
+  // === Free placement (E-005) ===
+
+  /**
+   * Shows the pieces where the server says they lie. From the first call on the board is one with
+   * free placement: a piece stays where it is let go.
+   */
+  setPlacements(placements, radius) {
+    this.free = true;
+    this.placementRadius = radius || this.placementRadius;
+    this.placements = placements.map((p) => ({ id: p.id, piece: p.piece, x: p.x, y: p.y }));
+    for (const sq of Object.values(this.squares)) sq.piece = 'NONE';
+    this.renderAll();
+  }
+
+  measureOf(placement) {
+    return OtbPlacement.measure(placement.x, placement.y, this.placementRadius);
+  }
+
+  renderLayer() {
+    if (!this.layerEl || !this.boardEl.contains(this.layerEl)) {
+      this.layerEl = document.createElement('div');
+      this.layerEl.className = 'piece-layer';
+      this.boardEl.appendChild(this.layerEl);
+    }
+    this.layerEl.innerHTML = '';
+    for (const p of this.placements) {
+      // A piece in a hand - the player's or the opponent's - is not on the board meanwhile.
+      if (p.held || p.id === this.opponentDragId) continue;
+      const el = document.createElement('div');
+      el.className = 'free-piece';
+      el.innerHTML = getPieceSvg(p.piece);
+      el.dataset.id = p.id;
+      el.dataset.piece = p.piece;
+      const measured = this.measureOf(p);
+      // What the placement is, for the eye of a test: the square of a clear piece, or "unclear".
+      if (measured.kind === 'CLEAR') {
+        el.dataset.square = measured.square;
+      } else {
+        el.dataset.unclear = measured.squares.join(' ');
+      }
+      const pos = this.toBoardShare(p.x, p.y);
+      el.style.left = (pos.left * 100) + '%';
+      el.style.top = (pos.top * 100) + '%';
+      this.layerEl.appendChild(el);
+    }
+  }
+
+  // Units -> the share of the board's width and height from its top left corner, as drawn.
+  toBoardShare(x, y) {
+    const fx = x / OtbPlacement.BOARD;
+    const fy = y / OtbPlacement.BOARD;
+    return this.flipped ? { left: 1 - fx, top: fy } : { left: fx, top: 1 - fy };
+  }
+
+  // The inside of the board (without its frame) on the screen.
+  boardRect() {
+    const rect = this.boardEl.getBoundingClientRect();
+    return {
+      left: rect.left + this.boardEl.clientLeft,
+      top: rect.top + this.boardEl.clientTop,
+      width: this.boardEl.clientWidth,
+      height: this.boardEl.clientHeight
+    };
+  }
+
+  // A point of the screen -> units.
+  toUnits(clientX, clientY) {
+    const rect = this.boardRect();
+    let fx = (clientX - rect.left) / rect.width;
+    let fy = 1 - (clientY - rect.top) / rect.height;
+    if (this.flipped) {
+      fx = 1 - fx;
+      fy = 1 - fy;
+    }
+    return { x: Math.round(fx * OtbPlacement.BOARD), y: Math.round(fy * OtbPlacement.BOARD) };
+  }
+
+  // Units -> a point of the screen.
+  toClient(x, y) {
+    const rect = this.boardRect();
+    const pos = this.toBoardShare(x, y);
+    return { x: rect.left + pos.left * rect.width, y: rect.top + pos.top * rect.height };
+  }
+
+  /**
+   * Sets a piece down where it was let go - by this player or, mirrored, by the opponent. A piece
+   * with its centre outside the board leaves it. A clear placement on a square where another piece
+   * stands clearly puts that piece to the side; an unclear placement removes nothing.
+   *
+   * @returns { offBoard, capturedId, changed }
+   */
+  applyRelease(id, piece, x, y) {
+    const index = this.placements.findIndex((p) => p.id === id);
+    const before = index >= 0 ? this.placements[index] : null;
+    if (index >= 0) this.placements.splice(index, 1);
+    const measured = OtbPlacement.measure(x, y, this.placementRadius);
+    if (measured.kind === 'OFF_BOARD') {
+      this.renderLayer();
+      return { offBoard: true, capturedId: 0, changed: !!before };
+    }
+    let capturedId = 0;
+    if (measured.kind === 'CLEAR') {
+      const occupant = this.placements.find((p) => {
+        const m = this.measureOf(p);
+        return m.kind === 'CLEAR' && m.square === measured.square;
+      });
+      if (occupant) {
+        capturedId = occupant.id;
+        this.placements.splice(this.placements.indexOf(occupant), 1);
+      }
+    }
+    this.placements.push({ id: id, piece: piece, x: x, y: y });
+    this.renderLayer();
+    return { offBoard: false, capturedId: capturedId, changed: !before || before.x !== x || before.y !== y };
+  }
+
+  /** The pieces on the board, also one that lies across a border or is in a hand. */
+  getOnBoardPieces() {
+    if (this.free) return this.placements.map((p) => p.piece);
+    return Object.values(this.squares).map((sq) => sq.piece).filter((piece) => piece !== 'NONE');
   }
 
   flip() {
@@ -153,6 +284,13 @@ class ChessBoard {
     const state = {};
     for (const [squareName, data] of Object.entries(this.squares)) {
       state[squareName] = data.piece;
+    }
+    if (this.free) {
+      // The pieces in a clear placement. The server rules on its own record of where they lie.
+      for (const p of this.placements) {
+        const measured = this.measureOf(p);
+        if (measured.kind === 'CLEAR') state[measured.square] = p.piece;
+      }
     }
     return state;
   }
@@ -203,6 +341,10 @@ class ChessBoard {
   // Start dragging from the board
   onBoardMouseDown(e) {
     if (!this.enabled) return;
+    if (this.free) {
+      this.onFreeMouseDown(e);
+      return;
+    }
     const squareEl = e.target.closest('.square');
     if (!squareEl) return;
 
@@ -225,7 +367,85 @@ class ChessBoard {
   startSideAreaDrag(piece, e) {
     if (!this.enabled) return;
     e.preventDefault();
+    if (this.free) {
+      this.startFreeDrag({ piece: piece, fromSideArea: true }, e.clientX, e.clientY, 0, 0);
+      return;
+    }
     this.startDrag(piece, null, true, e.clientX, e.clientY);
+  }
+
+  // Free placement: the piece whose image is under the mouse, the top one first.
+  onFreeMouseDown(e) {
+    const pieceEl = e.target.closest('.free-piece');
+    if (!pieceEl) return;
+    const placement = this.placements.find((p) => String(p.id) === pieceEl.dataset.id);
+    if (!placement) return;
+    e.preventDefault();
+    // The piece is held where it was grabbed, not by its centre: it does not jump on the pick-up.
+    const centre = this.toClient(placement.x, placement.y);
+    placement.held = true;
+    this.startFreeDrag({ id: placement.id, piece: placement.piece, fromSideArea: false, origin: placement },
+      e.clientX, e.clientY, centre.x - e.clientX, centre.y - e.clientY);
+    this.renderLayer();
+  }
+
+  startFreeDrag(dragging, x, y, offsetX, offsetY) {
+    this.dragging = Object.assign(dragging, {
+      startX: x, startY: y, offsetX: offsetX, offsetY: offsetY, moved: false
+    });
+    this.lastHoverSquare = null;
+    this.floatingPiece = document.createElement('div');
+    this.floatingPiece.className = 'floating-piece free';
+    this.floatingPiece.innerHTML = getPieceSvg(dragging.piece);
+    this.floatingPiece.style.left = (x + offsetX) + 'px';
+    this.floatingPiece.style.top = (y + offsetY) + 'px';
+    document.body.appendChild(this.floatingPiece);
+    this.emitRaw({ eventType: 'DRAG_START', id: dragging.id || 0, piece: dragging.piece });
+  }
+
+  onFreeMouseMove(e) {
+    const d = this.dragging;
+    const cx = e.clientX + d.offsetX;
+    const cy = e.clientY + d.offsetY;
+    this.floatingPiece.style.left = cx + 'px';
+    this.floatingPiece.style.top = cy + 'px';
+    // A click never shifts a piece: it only moves once the mouse has travelled 1/16 of a square.
+    const threshold = this.boardRect().width / 8 / 16;
+    if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > threshold) d.moved = true;
+    const units = this.toUnits(cx, cy);
+    const square = OtbPlacement.measure(units.x, units.y, this.placementRadius).square || 'NONE';
+    if (square !== this.lastHoverSquare) {
+      this.lastHoverSquare = square;
+      this.emitRaw({ eventType: 'DRAG_HOVER', targetSquare: square, piece: d.piece });
+    }
+  }
+
+  onFreeMouseUp(e) {
+    const d = this.dragging;
+    this.floatingPiece.remove();
+    this.floatingPiece = null;
+    this.dragging = null;
+    let units = this.toUnits(e.clientX + d.offsetX, e.clientY + d.offsetY);
+    if (d.fromSideArea) {
+      // Let go outside the board: the piece stays at the side.
+      if (OtbPlacement.measure(units.x, units.y, this.placementRadius).kind === 'OFF_BOARD') return;
+      if (window.game) window.game.consumeDraggedSidePiece();
+      const id = this.placements.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+      this.applyRelease(id, d.piece, units.x, units.y);
+      this.piecePlaced();
+      this.emitRaw({ eventType: 'RELEASE', id: id, x: units.x, y: units.y, fromSide: d.piece });
+    } else {
+      d.origin.held = false;
+      if (!d.moved) units = { x: d.origin.x, y: d.origin.y };
+      const result = this.applyRelease(d.id, d.piece, units.x, units.y);
+      if (result.changed && !result.offBoard) this.piecePlaced();
+      this.emitRaw({ eventType: 'RELEASE', id: d.id, x: units.x, y: units.y });
+    }
+    if (window.game) window.game.recomputeSideArea();
+  }
+
+  emitRaw(event) {
+    if (this.eventCallback) this.eventCallback(event);
   }
 
   startDrag(piece, squareName, fromSideArea, x, y) {
@@ -250,6 +470,10 @@ class ChessBoard {
 
   onMouseMove(e) {
     if (!this.floatingPiece) return;
+    if (this.free) {
+      if (this.dragging) this.onFreeMouseMove(e);
+      return;
+    }
     this.floatingPiece.style.left = e.clientX + 'px';
     this.floatingPiece.style.top = e.clientY + 'px';
 
@@ -269,6 +493,10 @@ class ChessBoard {
 
   onMouseUp(e) {
     if (!this.dragging || !this.floatingPiece) return;
+    if (this.free) {
+      this.onFreeMouseUp(e);
+      return;
+    }
 
     this.floatingPiece.remove();
     this.floatingPiece = null;
@@ -367,6 +595,10 @@ class ChessBoard {
    * This mirrors the physical board experience: you see your opponent manipulating pieces.
    */
   applyOpponentEvent(event) {
+    if (this.free) {
+      this.applyOpponentFreeEvent(event);
+      return;
+    }
     const type = event.eventType;
     const square = event.square;
     const targetSquare = event.targetSquare;
@@ -489,6 +721,43 @@ class ChessBoard {
     }
   }
 
+  // Free placement: the piece in the opponent's hand is shown as in every game, at the centre of
+  // the square it is over; where it is let go is exact.
+  applyOpponentFreeEvent(event) {
+    if (event.eventType === 'DRAG_START') {
+      this.clearOpponentDragVisuals();
+      const held = this.placements.find((p) => p.id === event.id);
+      this.opponentDragId = held ? held.id : 0;
+      this.opponentFloating = document.createElement('div');
+      this.opponentFloating.className = 'floating-piece free opponent-floating-piece';
+      this.opponentFloating.innerHTML = getPieceSvg(event.piece);
+      document.body.appendChild(this.opponentFloating);
+      if (held) {
+        const at = this.toClient(held.x, held.y);
+        this.opponentFloating.style.left = at.x + 'px';
+        this.opponentFloating.style.top = at.y + 'px';
+      } else {
+        this.opponentFloating.style.display = 'none';
+      }
+      this.renderLayer();
+    } else if (event.eventType === 'DRAG_HOVER') {
+      if (!this.opponentFloating) return;
+      if (!event.targetSquare || event.targetSquare === 'NONE' || !this.squares[event.targetSquare]) {
+        this.opponentFloating.style.display = 'none';
+      } else {
+        const centre = OtbPlacement.centre(event.targetSquare);
+        const at = this.toClient(centre.x, centre.y);
+        this.opponentFloating.style.left = at.x + 'px';
+        this.opponentFloating.style.top = at.y + 'px';
+        this.opponentFloating.style.display = '';
+      }
+    } else if (event.eventType === 'RELEASE') {
+      this.clearOpponentDragVisuals();
+      const result = this.applyRelease(event.id, event.piece, event.x, event.y);
+      if (result.changed && !result.offBoard) this.piecePlaced();
+    }
+  }
+
   /**
    * Pieces currently held in a hand after being lifted off a board square: this player's own drag
    * and the opponent's mirrored drag. Their squares show empty while held, but the pieces are
@@ -496,6 +765,7 @@ class ChessBoard {
    */
   getLiftedBoardPieces() {
     const lifted = [];
+    if (this.free) return lifted; // a held piece stays in the list of placements
     if (this.dragging && !this.dragging.fromSideArea && this.dragging.squareName) {
       lifted.push(this.dragging.piece);
     }
@@ -517,6 +787,11 @@ class ChessBoard {
     if (this.opponentFloating) {
       this.opponentFloating.remove();
       this.opponentFloating = null;
+    }
+    if (this.free) {
+      this.opponentDragId = 0;
+      this.renderLayer();
+      return;
     }
     if (this.opponentDragSource && this.opponentDragSource !== 'NONE'
         && this.squares[this.opponentDragSource] && this.opponentDragPiece) {

@@ -45,6 +45,7 @@ tests/e2e/
   helpers/board.ts       # dragPiece(), pressClock(), expectPiece(), expectEmpty()
   helpers/sounds.ts      # entry-screen create/join, the observer on the audio output
   smoke.spec.ts          # create -> join -> white e2-e4 -> black sees it
+  free-placement.spec.ts # E-005: pieces stay where they are let go; the capture-first journey
 ```
 
 ## Notes

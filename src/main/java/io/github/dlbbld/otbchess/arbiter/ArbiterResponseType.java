@@ -23,5 +23,11 @@ public enum ArbiterResponseType {
   INCOMPLETE_MOVE,
 
   // Mid-play intervention: player changed the position without making a legal move
-  POSITION_CHANGE
+  POSITION_CHANGE,
+
+  // Free placement (E-005): the clock was pressed while a piece lay in an unclear placement
+  UNCLEAR_PLACEMENT,
+
+  // Free placement (E-005): the unclear placement that reached the limit - game lost
+  UNCLEAR_PLACEMENT_GAME_LOST
 }

@@ -339,6 +339,20 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
         Optional.empty());
   }
 
+  /**
+   * Free placement (E-005): the clock was pressed while a piece lay in an unclear placement. Nothing is restored;
+   * the player corrects the placement once the arbiter has restarted the clock.
+   */
+  public static ArbiterResponse unclearPlacement(String message, String opponentMessage) {
+    return new ArbiterResponse(ArbiterResponseType.UNCLEAR_PLACEMENT, MessageKey.CUSTOM_ERROR, List.of(message),
+        Optional.of(MessageKey.CUSTOM_INFO), List.of(opponentMessage), Optional.empty(), Optional.empty(),
+        Optional.empty(), Optional.empty(), Optional.empty());
+  }
+
+  public static ArbiterResponse unclearPlacementGameLost(String message) {
+    return custom(ArbiterResponseType.UNCLEAR_PLACEMENT_GAME_LOST, MessageKey.CUSTOM_ERROR, message);
+  }
+
   public static ArbiterResponse revertRestoration(String message) {
     return positionChange(message);
   }

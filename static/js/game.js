@@ -68,8 +68,11 @@ class Game {
       const maxIllegalMoves = parseInt(params.get('maxIllegal') || '2');
       const autoResumeAfterRestore = params.get('autoResumeAfterRestore') !== 'false';
       const fen = params.get('fen') || '';
+      // Free placement of the pieces (E-005) and its limit: 1..10, -1 = unlimited, missing = 3.
+      const freePlacement = params.get('free') === 'true';
+      const maxUnclearPlacements = parseInt(params.get('maxUnclear') || '3');
       this.ws.createGame(this.side, initialTimeMs, incrementMs, maxIllegalMoves,
-          autoResumeAfterRestore, fen);
+          autoResumeAfterRestore, fen, freePlacement, maxUnclearPlacements);
     } else {
       this.ws.joinGame(this.gameId);
     }
@@ -322,7 +325,7 @@ class Game {
       } catch (e) {
         /* storage unavailable: the board is set up all the same */
       }
-      this.board.setPosition(data.board);
+      this.showBoard(data);
       this.board.renderAll();
       this.updateClockLabels();
       this.setTimeControlLabel(data.timeControlLabel);
@@ -344,7 +347,7 @@ class Game {
       if (this.side === 'black' && !this.board.flipped) {
         this.board.flip();
       }
-      this.board.setPosition(data.board);
+      this.showBoard(data);
       this.board.renderAll();
       this.updateClockLabels();
       this.setTimeControlLabel(data.timeControlLabel);
@@ -390,7 +393,7 @@ class Game {
       if (((this.side === 'black') !== this.boardTurnedByPlayer) !== this.board.flipped) {
         this.board.flip();
       }
-      this.board.setPosition(data.board);
+      this.showBoard(data);
       this.board.renderAll();
       this.board.clearHighlights();
       this.updateClockLabels();
@@ -488,7 +491,7 @@ class Game {
         // setPosition already calls renderSquare on every entry in data.board
         // (the server sends all 64 squares), so a follow-up renderAll is pure
         // redundant DOM work. Skip it.
-        this.board.setPosition(data.board);
+        this.showBoard(data);
         this.board.clearHighlights();
         this.recomputeSideArea();
       }
@@ -515,7 +518,7 @@ class Game {
     this.ws.on('boardUpdate', (data) => {
       // setPosition renders every server-supplied square; the explicit
       // renderAll afterwards is redundant.
-      this.board.setPosition(data.board);
+      this.showBoard(data);
       this.board.clearHighlights();
       this.recomputeSideArea();
       this.isMyTurn = data.havingMove === this.side;
@@ -540,6 +543,44 @@ class Game {
       this.showArbiterMessage(data.message, 'error');
     });
 
+    // Free placement (E-005): the clock was pressed while a piece lay across a border. The
+    // arbiter has stopped the clock for the call; the board is locked until it restarts.
+    this.ws.on('unclear_placement', (data) => {
+      this.showArbiterMessage(data.message, 'error');
+      this.board.setEnabled(false);
+    });
+
+    this.ws.on('unclear_placement_game_lost', (data) => {
+      this.showArbiterMessage(data.message, 'error');
+    });
+
+    // An opponent's piece was set down halfway through taking it: the arbiter tells the player
+    // at once what to do with it, and the opponent what happened. An empty message ends it.
+    this.ws.on('placementNotice', (data) => {
+      const mine = this.isMyTurn;
+      if (data.message) {
+        this.placementNotice = data.message;
+        if (mine) this.showArbiterMessage(data.message, 'info');
+        else this.showOpponentInfo(data.message);
+        return;
+      }
+      // Only what the notice itself put there is taken away again.
+      if (mine && document.getElementById('arbiterMessage').textContent === this.placementNotice) {
+        this.clearArbiterMessage();
+      } else if (!mine
+          && document.getElementById('opponentInfoPanel').textContent === this.placementNotice) {
+        this.clearOpponentInfo();
+      }
+      this.placementNotice = null;
+    });
+
+    // The server did not take a release (the board was locked, or the frame was not valid): the
+    // pieces go back to where they lie for the server.
+    this.ws.on('placementsSync', (data) => {
+      this.showBoard(data);
+      this.recomputeSideArea();
+    });
+
     this.ws.on('restoreRequired', (data) => {
       this.showArbiterMessage(data.message, data.style || 'info');
       this.clearArbiterButtons();
@@ -551,7 +592,7 @@ class Game {
     this.ws.on('positionRestored', (data) => {
       if (data.board) {
         // setPosition already re-renders every supplied square.
-        this.board.setPosition(data.board);
+        this.showBoard(data);
         this.board.clearHighlights();
         this.recomputeSideArea();
       }
@@ -747,7 +788,7 @@ class Game {
       if (((this.side === 'black') !== !!this.boardTurnedByPlayer) !== this.board.flipped) {
         this.board.flip();
       }
-      this.board.setPosition(data.board);
+      this.showBoard(data);
       this.board.renderAll();
       this.board.clearHighlights();
       this.updateClockLabels();
@@ -797,7 +838,7 @@ class Game {
       if ((this.side === 'black') !== this.board.flipped) {
         this.board.flip();
       }
-      this.board.setPosition(data.board);
+      this.showBoard(data);
       this.board.renderAll();
       this.board.clearHighlights();
       this.updateClockLabels();
@@ -947,6 +988,13 @@ class Game {
           + ' As you have offered again, you lose the game.'
         : 'Your opponent has, despite the warnings, repeatedly offered a draw at the wrong time,'
           + ' and so has lost the game.');
+    } else if (data.resultType === 'UNCLEAR_PLACEMENT_GAME_LOST') {
+      // The unclear placement that reached the limit of the game (E-005).
+      this.showArbiterMessage(data.actor === this.side
+        ? 'You have again pressed the clock with a piece that was not clearly on a square, and so you'
+          + ' lose the game.'
+        : 'Your opponent has repeatedly pressed the clock with a piece that was not clearly on a'
+          + ' square, and so has lost the game.');
     } else if (data.resultType === 'MOVED_OPPONENT_PIECE_GAME_LOST') {
       // Third moved opponent piece despite the warning (see A-007).
       this.showArbiterMessage(data.actor === this.side
@@ -1123,6 +1171,16 @@ class Game {
     });
   }
 
+  // Shows the position a message of the server carries: in a game with free placement where
+  // every piece lies, otherwise the pieces on their squares.
+  showBoard(data) {
+    if (data.placements) {
+      this.board.setPlacements(data.placements, data.placementRadius);
+    } else {
+      this.board.setPosition(data.board);
+    }
+  }
+
   onBoardEvent(event) {
     // Any board interaction counts as a touch (FIDE 9.4) — the right to claim is gone for this
     // move, so claim presses from here on skip the SAN prompt and go straight to the arbiter.
@@ -1152,8 +1210,7 @@ class Game {
   }
 
   recomputeSideArea() {
-    const boardState = this.board.getBoardState();
-    const onBoard = Object.values(boardState).filter(p => p !== 'NONE');
+    const onBoard = this.board.getOnBoardPieces();
 
     const onBoardCounts = {};
     for (const p of onBoard) {

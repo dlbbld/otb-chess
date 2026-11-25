@@ -1,0 +1,31 @@
+{
+  "comment": "Sample placements for the measure of free placement (E-005), read by TestPlacementMeasure (Java) and by tests/e2e/free-placement.spec.ts (the page's placement.js). Units: 1024 to a square, x along the files from a, y along the ranks from 1. The radius is the one for 20%. Squares are listed by file and then by rank.",
+  "radius": 226,
+  "samples": [
+    { "name": "centre of e4", "x": 4608, "y": 3584, "kind": "CLEAR", "square": "e4", "squares": ["e4"] },
+    { "name": "exactly the radius from the left border is clear", "x": 4322, "y": 3584, "kind": "CLEAR", "square": "e4", "squares": ["e4"] },
+    { "name": "one unit closer to the left border", "x": 4321, "y": 3584, "kind": "UNCLEAR", "square": "e4", "squares": ["d4", "e4"] },
+    { "name": "exactly the radius from the right border is clear", "x": 4894, "y": 3584, "kind": "CLEAR", "square": "e4", "squares": ["e4"] },
+    { "name": "one unit closer to the right border", "x": 4895, "y": 3584, "kind": "UNCLEAR", "square": "e4", "squares": ["e4", "f4"] },
+    { "name": "exactly the radius from the upper border is clear", "x": 4608, "y": 3870, "kind": "CLEAR", "square": "e4", "squares": ["e4"] },
+    { "name": "one unit closer to the upper border", "x": 4608, "y": 3871, "kind": "UNCLEAR", "square": "e4", "squares": ["e4", "e5"] },
+    { "name": "exactly the radius from the lower border is clear", "x": 4608, "y": 3298, "kind": "CLEAR", "square": "e4", "squares": ["e4"] },
+    { "name": "one unit closer to the lower border", "x": 4608, "y": 3297, "kind": "UNCLEAR", "square": "e4", "squares": ["e3", "e4"] },
+    { "name": "on the line between d5 and e5", "x": 4096, "y": 4608, "kind": "UNCLEAR", "square": "e5", "squares": ["d5", "e5"] },
+    { "name": "on the corner of four squares", "x": 4096, "y": 4096, "kind": "UNCLEAR", "square": "e5", "squares": ["d4", "d5", "e4", "e5"] },
+    { "name": "near a corner, across both borders but not on the fourth square", "x": 4301, "y": 4301, "kind": "UNCLEAR", "square": "e5", "squares": ["d5", "e4", "e5"] },
+    { "name": "near a corner, just not on the fourth square", "x": 4256, "y": 4256, "kind": "UNCLEAR", "square": "e5", "squares": ["d5", "e4", "e5"] },
+    { "name": "near a corner, just on the fourth square", "x": 4255, "y": 4256, "kind": "UNCLEAR", "square": "e5", "squares": ["d4", "d5", "e4", "e5"] },
+    { "name": "over the left edge of the board", "x": 100, "y": 3584, "kind": "UNCLEAR", "square": "a4", "squares": ["a4"] },
+    { "name": "over the corner of the board", "x": 100, "y": 100, "kind": "UNCLEAR", "square": "a1", "squares": ["a1"] },
+    { "name": "over the right edge of the board and the border to h5", "x": 8191, "y": 4000, "kind": "UNCLEAR", "square": "h4", "squares": ["h4", "h5"] },
+    { "name": "the centre just inside the right edge", "x": 8191, "y": 3584, "kind": "UNCLEAR", "square": "h4", "squares": ["h4"] },
+    { "name": "the centre just outside the right edge", "x": 8192, "y": 3584, "kind": "OFF_BOARD", "square": null, "squares": [] },
+    { "name": "the centre just outside the left edge", "x": -1, "y": 3584, "kind": "OFF_BOARD", "square": null, "squares": [] },
+    { "name": "the centre just inside the upper edge", "x": 4608, "y": 8191, "kind": "UNCLEAR", "square": "e8", "squares": ["e8"] },
+    { "name": "the centre just outside the upper edge", "x": 4608, "y": 8192, "kind": "OFF_BOARD", "square": null, "squares": [] },
+    { "name": "the centre just outside the lower edge", "x": 4608, "y": -1, "kind": "OFF_BOARD", "square": null, "squares": [] },
+    { "name": "centre of a1", "x": 512, "y": 512, "kind": "CLEAR", "square": "a1", "squares": ["a1"] },
+    { "name": "centre of h8", "x": 7680, "y": 7680, "kind": "CLEAR", "square": "h8", "squares": ["h8"] }
+  ]
+}
