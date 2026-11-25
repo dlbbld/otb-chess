@@ -3,6 +3,35 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## Clock pressed twice (after 0.4.0)
+
+Development continues on `jadoube` (2026-11-25), created from the released `main` (`1f5c17a`).
+
+Feedback from a tester on the live site (0.4.0, 2026-11-25): "Everything seems to break if I press the clock
+twice." Not reproducible by the owner on a local server. 42 combinations of clock presses were played through
+in the browser against a local 0.4.0 server with the default game settings: own and opponent's lever, by
+either player, once, twice and three times, slowly and faster than the server answers, with no move, a legal
+move, an illegal move or only a touched piece on the board, before the opponent joined, during the pause to
+restore a position, right after Revert, during the pause after a wrong clock press, by both players together,
+and after the game. No script error, no lost connection and no game that could not be continued. Findings:
+
+- [ ] Two presses of the own lever without a move end the game at once in a default game: each is an illegal
+  move (FIDE 7.5.3), the second loses. There is no pause between them, so a double click is enough. As
+  implemented and specified; the most likely thing the tester saw. To decide: leave, or soften.
+- [ ] After an illegal move and Revert, during "Position restored. Restarting the clock shortly.", the board
+  is disabled and no move can be made, but a press of the own lever is ruled on as a press without a move:
+  the 2nd illegal move, which loses a default game. One of these rulings reads only "Illegal move. White loses
+  the game." without the reason. To decide: should a press in this delay only restart the clock?
+- [ ] A second press of the own lever that is sent before the answer to the first has arrived (a double click
+  over the internet; never on a local server) is answered with "It is not your turn.", which replaces "Move
+  accepted. Opponent's turn." on that board. The move is accepted and the game goes on.
+- [ ] Not about the clock, found on the way: two tabs of the same browser (not incognito, not two browsers)
+  share the stored session. Create in one tab, join in the other, reload the first: it comes back in the seat
+  of the second, the second is told "This game is now open in another window", and one colour has no player.
+- Not broken: presses before the opponent joined and after the game (ignored), during the pause to restore a
+  position ("please restore the position", no penalty), during the pause after a wrong clock press ("please
+  wait"), several fast presses of the opponent's lever (counted once per pause), both players pressing together.
+
 ## 0.4.0 — Piece and Clock Sounds
 
 - [x] Scope: everything on `add-sounds` since `0.3.0` (section below) - the sound for a piece set down and the
