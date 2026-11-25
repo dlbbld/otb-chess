@@ -12,8 +12,9 @@
     <div class="app-version" data-app-version></div>
     <p>An educational chessboard that simulates physical board play with an arbiter.</p>
 
-    <!-- Shown when this browser has a running game (saved session in localStorage): opening a
-         new tab / navigating to the lobby must lead back into the game, not strand the player. -->
+    <!-- Shown when this browser has a running game that is not open in any tab (see seats.js):
+         a new tab, or the browser started again, must lead back into the game. A game that is
+         open in another tab is not offered: from here its code joins it as the opponent. -->
     <div class="lobby-section game-in-progress" id="gameInProgress" style="display:none;">
       <h2>Game in progress</h2>
       <p style="color:#555;margin-bottom:12px;">You have a running game in this browser.</p>
@@ -98,6 +99,7 @@
   </div>
 
   <script src="js/sounds.js"></script>
+  <script src="js/seats.js"></script>
   <script>
     // The two sound options: shown as saved, saved on every change.
     for (const [kind, id] of [['piece', 'soundPieceOption'], ['clock', 'soundClockOption']]) {
@@ -106,19 +108,17 @@
       box.addEventListener('change', () => OtbSoundSettings.set(kind, box.checked));
     }
 
-    // Running game in this browser? localStorage survives new tabs (and browser restarts), so
-    // the saved session is the way back into the game — game.html resumes it via the secret
-    // seat token. A stale session (server restarted, game gone) resolves on the game page with
-    // the friendly "no longer available" + Back-to-lobby flow, which also clears it.
-    try {
-      const saved = JSON.parse(localStorage.getItem('otbSession') || 'null');
-      if (saved && saved.gameId && saved.token) {
-        document.getElementById('gameInProgress').style.display = '';
-        document.getElementById('returnToGameBtn').addEventListener('click', () => {
-          window.location.href = '/game.html';
-        });
-      }
-    } catch (e) { /* unreadable session — ignore, the lobby works normally */ }
+    // A running game of this browser that no open tab holds? The stored seat is the way back into
+    // it: a bare /game.html takes it again. A seat whose game is gone (server restarted) resolves
+    // on the game page with the friendly "no longer available" + Back-to-lobby flow, which also
+    // removes it. The seat of a finished game is not a game in progress.
+    OtbSeats.returnable().then((seats) => {
+      if (seats.length === 0) return;
+      document.getElementById('gameInProgress').style.display = '';
+      document.getElementById('returnToGameBtn').addEventListener('click', () => {
+        window.location.href = '/game.html';
+      });
+    });
 
     let selectedTime = 1800000;
     let selectedInc = 0;
@@ -194,9 +194,8 @@
       if (fen) {
         url += '&fen=' + encodeURIComponent(fen);
       }
-      // Deliberate new game: drop any saved session so the board page creates fresh (new code)
-      // instead of resuming a previous game.
-      try { localStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
+      // A page opened anew with this address creates a new game (new code); the seats of other
+      // games stay with their tabs.
       window.location.href = url;
     });
 
@@ -207,8 +206,9 @@
         document.getElementById('gameCodeInput').style.borderColor = '#c0392b';
         return;
       }
-      // Deliberate new join: drop any saved session so the board page joins fresh.
-      try { localStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
+      // The game page decides what the code means here: a game of this browser that no tab has
+      // open is taken up again; any other game is joined - also one that another tab of this
+      // browser created, so that both sides can be played from two tabs.
       window.location.href = '/game.html?gameId=' + gameId;
     }
 

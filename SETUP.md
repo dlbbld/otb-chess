@@ -233,7 +233,7 @@ every file under the grantee's own ownership and does not need `delete_child` ag
   ```bash
   cd /Users/chess-server/Claude/otb-chess
   git fetch origin --tags
-  git checkout --detach 0.4.0   # the tag being deployed
+  git checkout --detach 0.5.0   # the tag being deployed
   mvn -DskipTests package
   sudo launchctl kickstart -k system/io.github.dlbbld.otbchess.app
   ```

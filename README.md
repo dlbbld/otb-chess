@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.4.0 — Piece and Clock Sounds](CHANGELOG.md#040--piece-and-clock-sounds--2026-11-24)
+See [0.5.0 — Two-Tab Play and Fairer Rulings](CHANGELOG.md#050--two-tab-play-and-fairer-rulings--2026-11-25)
 for this release.
 
 ## Documentation
@@ -46,7 +46,7 @@ On Windows, `start.bat` fetches the latest pushed commit of the testing branch a
 from `..\otb-chess-stable`. Push verified changes to that branch, restart `start.bat`, then test
 at http://localhost:8080 before merging the PR. The branch is taken from the `OTB_TEST_BRANCH`
 environment variable, else the first argument (`start.bat my/branch`), else the default
-`add-sounds`. Local uncommitted edits are excluded; use `start-dev.bat` to run those.
+`fixes-and-improvements`. Local uncommitted edits are excluded; use `start-dev.bat` to run those.
 A failed fetch stops startup instead of serving an older commit.
 
 ```bash

@@ -248,22 +248,37 @@ class TestReviewServerRegressions {
     server.onMessage(white.socket, "{\"type\":\"restorePosition\"}");
     assertTrue(room.getSession().isRestorationResumePending());
 
-    // White presses the clock inside the delay without having moved: the clock runs again and the
-    // turn goes on, so both boards must hear about the resume - before the arbiter's answer.
+    // White presses the clock inside the delay without having moved. The press ends the restoration pause and
+    // is ruled on as an illegal move, for which the arbiter stops the clock again: the resume is announced
+    // once, when that pause is over, and not before.
+    final var pause = GameWebSocketServer.class.getDeclaredField("wrongClockPauseMs");
+    pause.setAccessible(true);
+    pause.setLong(server, 60);
     final var press = new JsonObject();
     press.addProperty("type", "clockPress");
     press.add("boardState", gson.toJsonTree(MessageConverter.fromStaticPosition(original)));
     server.onMessage(white.socket, press.toString());
+    assertEquals(Side.NONE, room.getSession().getClock().getRunningFor());
+    assertEquals(0, white.count("gameResumed"));
+    assertEquals(0, black.count("gameResumed"));
+
+    // The delayed resume of the restoration finds that pause over and stays silent.
+    delayedResume(room);
+    assertEquals(0, white.count("gameResumed"));
+
+    final long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+    while (room.getSession().getClock().getRunningFor() != Side.WHITE && System.nanoTime() < deadline) {
+      Thread.sleep(5);
+    }
     assertEquals(Side.WHITE, room.getSession().getClock().getRunningFor());
     assertEquals(1, white.count("gameResumed"));
     assertEquals(1, black.count("gameResumed"));
     assertEquals("white", white.last("gameResumed").get("havingMove").getAsString());
-    assertTrue(white.indexOf("gameResumed") < white.indexOf("illegal_move"));
-
-    // The delayed resume finds the game resumed and stays silent.
-    delayedResume(room);
-    assertEquals(1, white.count("gameResumed"));
-    assertEquals(1, black.count("gameResumed"));
+    assertTrue(white.indexOf("illegal_move") < white.indexOf("gameResumed"));
+    // The player keeps the ruling in view; the opponent is told that the clock runs again.
+    assertTrue(white.last("gameResumed").get("message").getAsString().contains("FIDE 7.5.3"));
+    assertTrue(white.last("gameResumed").get("message").getAsString().endsWith("The clock has restarted."));
+    assertEquals("Clock restarted. Game continues.", black.last("gameResumed").get("message").getAsString());
   }
 
   @Test

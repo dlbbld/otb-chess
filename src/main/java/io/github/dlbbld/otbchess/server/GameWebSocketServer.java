@@ -772,6 +772,16 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void pressClock(GameRoom room, Side side, BitboardPosition afterPosition) {
+    // A press that the arbiter does not rule on and has nothing to say to: the player's lever is down (it is not
+    // their turn, or the game is over), or the arbiter has just ruled on a press without a move and stopped the
+    // clock. Such a press is typically the second click of a double click, sent before the answer to the first
+    // arrived - an answer here would take that ruling out of the arbiter's window.
+    final GameSession pressedSession = room.getSession();
+    if (pressedSession.getState() != GameState.IN_PROGRESS || side != pressedSession.getHavingMove()
+        || pressedSession.isPressWithoutMovePause()) {
+      checkGameEnded(room);
+      return;
+    }
     final ArbiterResponse response = room.getSession().pressClockButton(side, afterPosition);
     // First of all, so that the lever is heard before the arbiter speaks.
     if (room.getSession().consumeClockPressRegistered()) {
@@ -781,13 +791,20 @@ public class GameWebSocketServer extends WebSocketServer {
     // here, because the delayed resume will find nothing left to do. Sent before the arbiter's
     // answer so that answer stays on top. An accepted move needs no announcement - it hands the
     // turn over.
-    if (room.getSession().consumeResumedByClockPress() && response.type() != ArbiterResponseType.MOVE_ACCEPTED
+    final boolean pressWithoutMove = response.type() == ArbiterResponseType.ILLEGAL_MOVE
+        && response.illegalMoveDetail().map(d -> d.noMoveMade()).orElse(false);
+    final boolean restartsByItself = pressWithoutMove && pressedSession.isPressWithoutMovePause();
+    final boolean waitsForReady = pressWithoutMove && pressedSession.isWaitingForReady();
+    // A press without a move stops the clock again at once: the resume is then announced when the pause after
+    // that ruling is over, not here.
+    final boolean endedRestorationDelay = room.getSession().consumeResumedByClockPress();
+    if (endedRestorationDelay && !restartsByItself && response.type() != ArbiterResponseType.MOVE_ACCEPTED
         && room.getSession().getState() == GameState.IN_PROGRESS) {
       sendGameResumed(room, room.getSession().isRestoredMoveFinal());
     }
-    sendArbiterResponse(room, side, response);
+    sendArbiterResponse(room, side, response, restartsByItself ? PAUSED_SHORTLY : "");
 
-    sendOpponentArbiterNotification(room, side, response);
+    sendOpponentArbiterNotification(room, side, response, restartsByItself ? OPPONENT_PAUSED_SHORTLY : "");
     sendBoardMarksIfChanged(room);
 
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
@@ -795,11 +812,16 @@ public class GameWebSocketServer extends WebSocketServer {
       // Note: opponentMoved (sent by sendArbiterResponse) already includes the board state.
       // Do NOT also send boardUpdate here, as it can overwrite the opponent's in-progress moves.
     } else if (response.type() == ArbiterResponseType.ILLEGAL_MOVE) {
-      if (response.illegalMoveDetail().map(d -> d.noMoveMade()).orElse(false)) {
-        // FIDE 7.5.3 press-without-move: the board is still at the turn start — nothing to
-        // restore, no restoration flow. The messages (already sent) ask for a move; a clock
-        // update shows the opponent's penalty time immediately.
+      if (pressWithoutMove) {
+        // FIDE 7.5.3 press-without-move: the board is still at the turn start - nothing to restore. The arbiter
+        // has stopped the clock all the same, as for the other rulings: the clock update shows the pause and the
+        // opponent's penalty time, and the game goes on as it does after a restoration.
         sendClockUpdate(room);
+        if (restartsByItself) {
+          scheduleRestartAfterPressWithoutMove(room, side, response, endedRestorationDelay);
+        } else if (waitsForReady) {
+          sendWaitingForReady(room, side, response.renderedPlayerMessage() + " " + READY_QUESTION);
+        }
       } else {
         sendRestoreInstructions(room, side, response.renderedPlayerMessage(), "error");
       }
@@ -829,6 +851,60 @@ public class GameWebSocketServer extends WebSocketServer {
     }
 
     checkGameEnded(room);
+  }
+
+  private static final String PAUSED_SHORTLY = " The game is paused and will continue shortly.";
+  private static final String OPPONENT_PAUSED_SHORTLY = " The game is paused; the clock will restart shortly.";
+  private static final String CLOCK_HAS_RESTARTED = " The clock has restarted.";
+  private static final String READY_QUESTION = "Are you ready to continue?";
+
+  /**
+   * The arbiter restarts the clock after the pause that follows a clock press without a move. Both players keep
+   * what they were told about the ruling; only its last sentence changes from the pause to the restart.
+   */
+  private void scheduleRestartAfterPressWithoutMove(GameRoom room, Side side, ArbiterResponse response,
+      boolean boardsAreLocked) {
+    final GameSession pausedSession = room.getSession();
+    final long pauseId = pausedSession.getPressWithoutMovePauseId();
+    maintenance.schedule(() -> {
+      try {
+        synchronized (room) {
+          if (room.getSession() != pausedSession || !pausedSession.resumeAfterPressWithoutMove(pauseId)) {
+            return;
+          }
+          final JsonObject msg = new JsonObject();
+          // The press came in the delay after a restoration, where both boards are locked and wait for the
+          // resume: this restart is that resume. Otherwise only the last sentence of the ruling changes.
+          msg.addProperty("type", boardsAreLocked ? "gameResumed" : "clockRestarted");
+          msg.addProperty("message", response.renderedPlayerMessage() + CLOCK_HAS_RESTARTED);
+          msg.addProperty("style", "error");
+          if (boardsAreLocked) {
+            msg.addProperty("havingMove", pausedSession.getHavingMove().name().toLowerCase());
+          }
+          room.sendToSide(side, GSON.toJson(msg));
+          if (boardsAreLocked) {
+            msg.addProperty("message", GameSession.CLOCK_RESTARTED);
+            msg.remove("style");
+            room.sendToSide(side.getOppositeSide(), GSON.toJson(msg));
+          }
+          response.renderedOpponentMessage().ifPresent(
+              message -> sendOpponentInfo(room, side.getOppositeSide(), message + CLOCK_HAS_RESTARTED, false));
+          sendClockUpdate(room);
+        }
+      } catch (final RuntimeException e) {
+        System.err.println("[press-without-move-resume] " + room.getGameId() + ": " + e);
+      }
+    }, wrongClockPauseMs, TimeUnit.MILLISECONDS);
+  }
+
+  /** Asks both players whether they are ready; the player the arbiter ruled on keeps the ruling in view. */
+  private void sendWaitingForReady(GameRoom room, Side ruledOn, String ruledOnMessage) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "waitingForReady");
+    msg.addProperty("message", ruledOnMessage);
+    room.sendToSide(ruledOn, GSON.toJson(msg));
+    msg.addProperty("message", READY_QUESTION);
+    room.sendToSide(ruledOn.getOppositeSide(), GSON.toJson(msg));
   }
 
   private void handleOfferDraw(WebSocket conn, JsonObject json) {
@@ -1625,7 +1701,11 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendOpponentArbiterNotification(GameRoom room, Side side, ArbiterResponse response) {
-    final Optional<String> opponentMessage = response.renderedOpponentMessage();
+    sendOpponentArbiterNotification(room, side, response, "");
+  }
+
+  private void sendOpponentArbiterNotification(GameRoom room, Side side, ArbiterResponse response, String suffix) {
+    final Optional<String> opponentMessage = response.renderedOpponentMessage().map(message -> message + suffix);
     if (opponentMessage.isEmpty()) {
       return;
     }
@@ -1697,15 +1777,47 @@ public class GameWebSocketServer extends WebSocketServer {
         return;
       }
       if (room.getSession().getState() == GameState.ENDED) {
-        // A finished game cannot be resumed; clear the returning client's stale saved session.
-        final JsonObject msg = new JsonObject();
-        msg.addProperty("type", "resumeFailed");
-        msg.addProperty("message", "This game has already ended.");
-        send(conn, msg);
+        // A finished game cannot be resumed: the seat is not given back. The returning player is
+        // shown how the game ended instead.
+        sendEndedGame(conn, gameId, room, side);
         return;
       }
       resumeSeat(conn, gameId, room, side);
     }
+  }
+
+  /**
+   * Answers a player who returns to their finished game - a page reload after the end, or the leaver of a game
+   * adjudicated as abandoned, whose closed page never saw the result. They get the board as it stood at the end, the
+   * final clock times and the result, and nothing else: the connection gets no seat, so it can neither act in the room
+   * nor take part in a rematch.
+   */
+  private void sendEndedGame(WebSocket conn, String gameId, GameRoom room, Side side) {
+    final var session = room.getSession();
+    final GameResult result = session.getResult();
+    if (result == null) {
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "resumeFailed");
+      msg.addProperty("message", "This game has already ended.");
+      send(conn, msg);
+      return;
+    }
+    final var clock = session.getClock();
+    final JsonObject clockData = new JsonObject();
+    clockData.addProperty("whiteTimeMs", clock.getRemainingTimeMs(Side.WHITE));
+    clockData.addProperty("blackTimeMs", clock.getRemainingTimeMs(Side.BLACK));
+    clockData.addProperty("running", clock.getRunningFor().name().toLowerCase());
+
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "resumeEnded");
+    msg.addProperty("gameId", gameId);
+    msg.addProperty("side", side.name().toLowerCase());
+    msg.addProperty("message", "This game has already ended.");
+    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(room.getPhysicalPosition())));
+    msg.add("clock", clockData);
+    msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
+    msg.add("result", gameEndedMessage(room, result));
+    send(conn, msg);
   }
 
   private void resumeSeat(WebSocket conn, String gameId, GameRoom room, Side side) {
@@ -2003,9 +2115,14 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   private void sendArbiterResponse(GameRoom room, Side side, ArbiterResponse response) {
+    sendArbiterResponse(room, side, response, "");
+  }
+
+  /** @param suffix what the arbiter adds to the ruling for the player it is given to, or an empty text */
+  private void sendArbiterResponse(GameRoom room, Side side, ArbiterResponse response, String suffix) {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", response.type().name().toLowerCase());
-    msg.addProperty("message", response.renderedPlayerMessage());
+    msg.addProperty("message", response.renderedPlayerMessage() + suffix);
     msg.addProperty("style", response.style());
 
     if (response.acceptedMove().isPresent()) {
@@ -2118,7 +2235,13 @@ public class GameWebSocketServer extends WebSocketServer {
     // flagged side's time is clamped to 0, and without this update the client's last cached value
     // is the previous tick's positive remainder - the LCD would show 0:01 on a game lost on time.
     sendClockValues(room);
+    room.sendToBoth(GSON.toJson(gameEndedMessage(room, result)));
+    // The end of the game took the circles of an open ruling off the board.
+    sendBoardMarksIfChanged(room);
+  }
 
+  /** The announcement of a result: sent to both players when the game ends, and to a player who returns to it. */
+  private static JsonObject gameEndedMessage(GameRoom room, GameResult result) {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameEnded");
     msg.addProperty("resultType", result.type().name());
@@ -2143,9 +2266,7 @@ public class GameWebSocketServer extends WebSocketServer {
       msg.addProperty("drawReason",
           room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
     }
-    room.sendToBoth(GSON.toJson(msg));
-    // The end of the game took the circles of an open ruling off the board.
-    sendBoardMarksIfChanged(room);
+    return msg;
   }
 
   private void checkGameEnded(GameRoom room) {

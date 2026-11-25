@@ -156,13 +156,18 @@ class TestReviewRegressions {
     assertTrue(session.isRestorationResumePending());
     assertFalse(session.consumeResumedByClockPress());
 
-    // A press without a move: the turn goes on, and the press itself restarted the clock.
+    // A press without a move: the turn goes on. The press itself ended the restoration pause; the ruling on
+    // it - an illegal move - stopped the clock again, for the pause that follows that ruling.
     assertNotEquals(ArbiterResponseType.MOVE_ACCEPTED, session.pressClockButton(Side.WHITE, original).type());
-    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+    assertEquals(Side.NONE, session.getClock().getRunningFor());
+    assertTrue(session.isPressWithoutMovePause());
     assertTrue(session.consumeResumedByClockPress());
     assertFalse(session.consumeResumedByClockPress());
-    // The delayed resume has nothing left to do.
+    // The delayed resume has nothing left to do; the clock restarts when the new pause is over.
     assertFalse(session.resumeAfterRestorationDelay());
+    assertEquals(Side.NONE, session.getClock().getRunningFor());
+    assertTrue(session.resumeAfterPressWithoutMove(session.getPressWithoutMovePauseId()));
+    assertEquals(Side.WHITE, session.getClock().getRunningFor());
   }
 
   @Test

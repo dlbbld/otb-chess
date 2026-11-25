@@ -217,15 +217,24 @@ test('an illegal move repeated after the Revert is given its reason again', asyn
   await expect(white.locator('#arbiterMessage')).toContainText(
     'Illegal move: the knight cannot move in this way. This is your 2nd illegal move.');
 
-  // Another illegal move after the next Revert is given its own reason.
+  // An illegal move of another piece after the next Revert is no third illegal move: the knight
+  // on b1 was touched first and is owed, so the arbiter rules a touch-move violation (A-011).
   await clickRestore(white);
   await expectGameResumed(white);
   await dragPiece(white, 'a1', 'a3'); // the rook jumps over its own pawn
   await pressClock(white);
   await expect(white.locator('#arbiterMessage')).toContainText(
-    'Illegal move: the rook cannot jump over other pieces. This is your 3rd illegal move.');
-  await expect(black.locator('#opponentInfoPanel')).toContainText(
-    'Your opponent made an illegal move: the rook cannot jump over other pieces.');
+    'Touch-move violation: You first touched the knight on b1');
+  await expect(white.locator('#arbiterMessage')).not.toContainText('illegal move');
+  await expect(black.locator('#opponentInfoPanel')).toContainText('touch-move violation');
+
+  // The knight itself, moved illegally once more, is the third illegal move.
+  await clickRestore(white);
+  await expectGameResumed(white);
+  await dragPiece(white, 'b1', 'b4');
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toContainText(
+    'Illegal move: the knight cannot move in this way. This is your 3rd illegal move.');
 });
 
 test('the repeated illegal move that loses the game is given its reason', async ({ browser }) => {

@@ -34,13 +34,10 @@ class Game {
     // drives the "who joined" half of the game-start message (see gameStartedMessage).
     this.isCreator = isCreator;
 
-    // A saved session (gameId + secret token in localStorage) means a running game in THIS
-    // browser: a bare /game.html — e.g. the lobby's "Return to game", or a new tab — resumes it
-    // without needing any game code in the URL.
-    const saved = Game.loadSession();
-    const hasSavedSession = !!(saved && saved.gameId && saved.token);
+    // Does this page already have a seat? See seats.js for what is kept where.
+    const seat = await this.findSeat(isCreator);
 
-    if (!isCreator && !this.gameId && !hasSavedSession) {
+    if (!isCreator && !this.gameId && !seat) {
       this.showGameUnavailable('No game code was provided.');
       return;
     }
@@ -60,15 +57,10 @@ class Game {
     await this.ws.connect();
     this.setupMessageHandlers();
 
-    // A saved session means this is a refresh of an existing game (or a return via the lobby /
-    // a bare /game.html): resume the SAME game (and code) rather than creating/joining a new
-    // one. The lobby clears it for a deliberate new game, and we clear it on abort / game end.
-    if (hasSavedSession) {
-      this.isCreator = saved.isCreator;
-      this.side = saved.side || this.side;
-      this.ws.sessionToken = saved.token;
-      this.ws.sessionGameId = saved.gameId;
-      this.ws.send({ type: 'resume', gameId: saved.gameId, token: saved.token });
+    // With a seat the page takes it again (the server answers with the state of the game, or with
+    // how it ended) instead of creating or joining.
+    if (seat) {
+      this.resumeSeat(seat);
     } else if (isCreator) {
       const initialTimeMs = parseInt(params.get('time') || '1800000');
       const incrementMs = parseInt(params.get('inc') || '0');
@@ -87,36 +79,59 @@ class Game {
     this.setupDevConsoleControls();
   }
 
-  // === Stable-session persistence (survives a full page refresh) ===
-  // Stored in localStorage (not sessionStorage) because Cloudflare Access bounces each navigation
-  // through a cross-origin redirect, which can drop sessionStorage. localStorage survives it, so a
-  // refresh resumes the SAME game (same join code) via the server `resume` path instead of creating
-  // a new one. Cleared on abort / game end, and by the lobby when the user deliberately starts a
-  // new game or join.
+  // Two clicks on the same clock lever within this time are one press (a double click).
+  static LEVER_REPEAT_MS = 400;
 
-  static loadSession() {
-    try {
-      const raw = localStorage.getItem('otbSession');
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      return null;
+  // === The player's seat (see seats.js) ===
+
+  // The seat this page takes, or null when it is to create or join a game.
+  async findSeat(isCreator) {
+    // A reload of this page, or a return to it in the tab's history: exactly the seat it had -
+    // never the seat of another tab of this browser, which may be the opponent's.
+    const own = OtbSeats.pageSeat();
+    if (own && (!this.gameId || OtbSeats.sameGame(this.gameId, own.gameId))) {
+      return own;
     }
+    // A page opened anew. Seats that an open tab holds are that tab's: with the code of such a
+    // game in the address this page joins it as the opponent.
+    const free = await OtbSeats.returnable();
+    if (this.gameId) {
+      return free.find((s) => OtbSeats.sameGame(s.gameId, this.gameId)) || null;
+    }
+    if (isCreator) {
+      // A new game - unless this is a reload whose history entry lost the page's seat.
+      const reloaded = (performance.getEntriesByType('navigation')[0] || {}).type === 'reload';
+      return reloaded ? (free.find((s) => s.isCreator) || null) : null;
+    }
+    // A bare /game.html - the start screen's "Return to game": the newest running game that is
+    // not open in a tab, else the newest running game.
+    return free[0] || OtbSeats.all().find((s) => !s.ended) || null;
   }
 
-  static saveSession(session) {
-    try {
-      localStorage.setItem('otbSession', JSON.stringify(session));
-    } catch (e) {
-      /* localStorage unavailable (private mode quota etc.) — resume just won't survive refresh */
-    }
+  resumeSeat(seat) {
+    this.seatToken = seat.token;
+    this.isCreator = !!seat.isCreator;
+    this.side = seat.side || this.side;
+    this.ws.sessionToken = seat.token;
+    this.ws.sessionGameId = seat.gameId;
+    this.ws.send({ type: 'resume', gameId: seat.gameId, token: seat.token });
   }
 
-  static clearSession() {
-    try {
-      localStorage.removeItem('otbSession');
-    } catch (e) {
-      /* ignore */
-    }
+  // The server gave this page a seat (created, joined, resumed, or a rematch changed its colour).
+  keepSeat(gameId, token) {
+    if (!token) return;
+    const seat = { gameId, token, side: this.side, isCreator: !!this.isCreator };
+    this.seatToken = token;
+    OtbSeats.save(seat);
+    OtbSeats.setPageSeat(seat);
+    OtbSeats.hold(token);
+  }
+
+  // The seat is of no use any more (game aborted, gone, or refused).
+  dropSeat() {
+    OtbSeats.remove(this.seatToken);
+    OtbSeats.setPageSeat(null);
+    this.seatToken = null;
   }
 
   // Renders the waiting creator's actions together: the share code, a copy button, and an explicit
@@ -166,6 +181,12 @@ class Game {
     });
     document.getElementById('topClockBtn').classList.add('neutral');
     document.getElementById('bottomClockBtn').classList.add('neutral');
+    // Anything the player does elsewhere between two presses of a lever - a piece, a button -
+    // makes the next press a press of its own, however quickly it follows.
+    document.addEventListener('mousedown', (event) => {
+      const target = event.target;
+      if (!target.closest || !target.closest('#topClockBtn, #bottomClockBtn')) this.lastLeverPress = null;
+    }, true);
   }
 
   updateClockLabels() {
@@ -262,6 +283,14 @@ class Game {
   onClockButtonPressed(position) {
     if (!this.gameActive) return;
 
+    // A lever that has just gone down cannot go down again at once: the second click of a double
+    // click is no second press. Without this it would be sent before the answer to the first one
+    // has arrived, and ruled on as a press of its own. (See setupClockButtons for what ends this.)
+    const now = Date.now();
+    const lastPress = this.lastLeverPress || {};
+    if (lastPress.position === position && now - lastPress.at < Game.LEVER_REPEAT_MS) return;
+    this.lastLeverPress = { position, at: now };
+
     const pressedColor = position === 'bottom' ? this.bottomClockColor : this.topClockColor;
 
     if (pressedColor !== this.side) {
@@ -304,7 +333,8 @@ class Game {
       // not resign. The explicit abort action is rendered beside the share code below.
       document.getElementById('resignBtn').style.display = 'none';
       // Persist so a page refresh resumes THIS game (same code) instead of creating a new one.
-      Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: true });
+      this.isCreator = true;
+      this.keepSeat(data.gameId, data.token);
       this.renderShareCode(data.gameId);
     });
 
@@ -320,7 +350,7 @@ class Game {
       this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
       // Persist so a refresh resumes this joined game rather than re-joining (which would fail).
-      Game.saveSession({ gameId: data.gameId, token: data.token, side: data.side, isCreator: false });
+      this.keepSeat(data.gameId, data.token);
       this.showArbiterMessage('Joined game. Waiting to start...');
     });
 
@@ -367,11 +397,9 @@ class Game {
       this.setTimeControlLabel(data.timeControlLabel);
       this.setupExtraQueens();
 
-      // gameEnded cleared storage, and the socket may have dropped before rematchStarted.
-      // Persist the recovered seat so a later refresh returns to this game too.
-      if (data.token) {
-        Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: this.isCreator });
-      }
+      // gameEnded marked the stored seat as ended, and the socket may have dropped before
+      // rematchStarted. Persist the recovered seat so a later refresh returns to this game too.
+      this.keepSeat(data.gameId, data.token);
 
       const started = data.state !== 'WAITING_FOR_PLAYERS';
       if (started) {
@@ -429,6 +457,14 @@ class Game {
     // Tried to join a game with no free seat (not found, already full, or already ended). Same
     // friendly treatment as a failed resume: a clear message and a way back to the lobby.
     this.ws.on('joinFailed', (data) => {
+      // No free seat, but this browser has one of its own in that game - its tab is open (this
+      // page then takes the seat over) or the game has ended (this page shows how). Take it.
+      const mine = !this.seatToken && (data.reason === 'full' || data.reason === 'ended')
+        ? OtbSeats.all().find((s) => OtbSeats.sameGame(s.gameId, this.gameId)) : null;
+      if (mine) {
+        this.resumeSeat(mine);
+        return;
+      }
       this.showGameUnavailable(data.message || 'This game is no longer available.');
     });
 
@@ -543,7 +579,7 @@ class Game {
     });
 
     this.ws.on('gameResumed', (data) => {
-      this.showArbiterMessage(data.message);
+      this.showArbiterMessage(data.message, data.style || undefined);
       this.clearArbiterButtons();
       if (data.havingMove) {
         this.isMyTurn = data.havingMove === this.side;
@@ -697,99 +733,36 @@ class Game {
     });
 
     this.ws.on('gameEnded', (data) => {
-      this.gameActive = false;
-      // Game over: drop the saved session so a refresh doesn't resume a finished game.
-      Game.clearSession();
-      this.board.setEnabled(false);
-      this.updateButtons();
-      // A pending draw offer dies with the game (e.g. a rejected claim was forwarded as an
-      // offer and the claimer then lost by escalation) — no Accept/Reject on a finished game.
-      document.getElementById('drawOfferPanel').style.display = 'none';
-      // The game-ending message goes to the arbiter window; stale passive info disappears, and
-      // a running disconnect countdown (plus its Claim-victory button) stops.
-      this.clearOpponentInfo();
-      this.stopDisconnectCountdown();
-      this.clearArbiterButtons();
-      // Game has ended — drop the PAUSE overlay because no further clockUpdate
-      // will arrive to clear it via the updateClocks path.
-      const clockEl = document.getElementById('chessClock');
-      if (clockEl) clockEl.classList.remove('paused');
-      const scoreText = data.winner === 'none' ? '\u00BD-\u00BD'
-        : (data.winner === 'white' ? '1-0' : '0-1');
-      document.getElementById('gameResultScore').textContent = scoreText;
-      document.getElementById('gameResultReason').textContent = data.description;
-      // No rematch after an abandonment \u2014 the opponent is gone, there is nobody to accept
-      // (and the server refuses such offers too). Reset to visible for every other ending,
-      // since the panel is reused across rematch chains.
-      document.getElementById('rematchBtn').style.display =
-        data.resultType === 'ABANDONMENT' ? 'none' : '';
-      document.getElementById('gameResultPanel').style.display = 'block';
+      this.showGameResult(data);
+    });
 
-      // Personalise the arbiter message for moves that immediately end the game instead of
-      // leaving the generic "Move accepted" / "Your turn" from that move. The mover (data.mover)
-      // is the side that played it; the other player is the recipient.
-      if (data.resultType === 'CHECKMATE') {
-        this.showArbiterMessage(data.mover === this.side
-          ? 'Your last move delivered checkmate.'
-          : 'You have been checkmated.');
-      } else if (data.resultType === 'STALEMATE') {
-        this.showArbiterMessage(data.mover === this.side
-          ? 'Your last move resulted in stalemate.'
-          : "Your opponent's last move resulted in stalemate.");
-      } else if (data.resultType === 'SEVENTY_FIVE_MOVE') {
-        this.showArbiterMessage(data.mover === this.side
-          ? 'Your last move led to 75 moves each without a capture or pawn move.'
-          : "Your opponent's last move led to 75 moves each without a capture or pawn move.");
-      } else if (data.resultType === 'FIVEFOLD_REPETITION') {
-        this.showArbiterMessage(data.mover === this.side
-          ? 'Your last move led to a fivefold repetition.'
-          : "Your opponent's last move led to a fivefold repetition.");
-      } else if ((data.resultType === 'RESIGNATION' || data.resultType === 'FLAG_FALL'
-          || data.resultType === 'ABANDONMENT') && data.winner === 'none') {
-        // FIDE draw exception: the actor resigned/flagged/left but the opponent cannot mate.
-        // Phrase it in the second person for each player.
-        const verb = data.resultType === 'RESIGNATION' ? 'resigned'
-          : (data.resultType === 'FLAG_FALL' ? 'flagged' : 'left the game');
-        const reason = data.drawReason === 'INSUFFICIENT_MATERIAL'
-          ? 'insufficient material to mate'
-          : 'no potential mate';
-        const msg = data.actor === this.side
-          ? `You ${verb}, but because your opponent has ${reason}, the game is a draw.`
-          : `Your opponent ${verb}, but because you have ${reason}, the game is a draw.`;
-        this.showArbiterMessage(msg);
-        document.getElementById('gameResultReason').textContent = msg;
-      } else if (data.resultType === 'ABANDONMENT') {
-        // Abandonment loss: the leaver is gone (their client won't render this); phrase for the
-        // remaining player. The actor check keeps it correct should the leaver ever see it.
-        this.showArbiterMessage(data.actor === this.side
-          ? 'You left the game and lose.'
-          : 'Your opponent left the game. You win.');
-      } else if (data.resultType === 'WRONG_CLOCK_PRESS_GAME_LOST') {
-        // Third press of the opponent's clock despite the warning (see A-006).
-        this.showArbiterMessage(data.actor === this.side
-          ? 'You have been warned that you will lose the game when you press your opponent\'s clock again.'
-            + ' As you have pressed it again, you lose the game.'
-          : 'Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game.');
-      } else if (data.resultType === 'WRONG_TIME_OFFER_GAME_LOST') {
-        // Third wrong-time draw offer on the same move despite the warning (see A-001).
-        this.showArbiterMessage(data.actor === this.side
-          ? 'You have been warned that you will lose the game when you offer a draw again on this move.'
-            + ' As you have offered again, you lose the game.'
-          : 'Your opponent has, despite the warnings, repeatedly offered a draw at the wrong time,'
-            + ' and so has lost the game.');
-      } else if (data.resultType === 'MOVED_OPPONENT_PIECE_GAME_LOST') {
-        // Third moved opponent piece despite the warning (see A-007).
-        this.showArbiterMessage(data.actor === this.side
-          ? 'You have been warned that you will lose the game when you move an opponent\'s piece again.'
-            + ' As you have moved one again, you lose the game.'
-          : 'Your opponent has, despite the warnings, repeatedly moved your pieces, and so has lost the game.');
-      } else if (data.resultType === 'DRAW_AGREEMENT' && data.winner === 'none') {
-        // Who accepted goes on top (arbiter message); the result panel keeps the canonical
-        // "The game is drawn by agreement." after the ½-½ score.
-        this.showArbiterMessage(data.actor === this.side
-          ? 'You accepted the draw offer.'
-          : 'Your opponent accepted the draw offer.');
+    // The player came back to their finished game (a reload after the end, or the leaver of a game
+    // adjudicated as abandoned): the server gives no seat back, but says how the game ended. Show
+    // the board as it stood, the final times and the result; nothing on the page acts any more.
+    this.ws.on('resumeEnded', (data) => {
+      this.gameId = data.gameId;
+      this.side = data.side;
+      this.board.setMarks([]);
+      // As on a reconnect: the own colour at the bottom, unless the player turned the board.
+      if (((this.side === 'black') !== !!this.boardTurnedByPlayer) !== this.board.flipped) {
+        this.board.flip();
       }
+      this.board.setPosition(data.board);
+      this.board.renderAll();
+      this.board.clearHighlights();
+      this.updateClockLabels();
+      this.setTimeControlLabel(data.timeControlLabel);
+      if (data.clock) {
+        this.updateClocks(data.clock);
+      }
+      if (!this.showGameResult(data.result)) {
+        this.showArbiterMessage(data.message || 'This game has already ended.');
+      }
+      // No seat, so no rematch from here; and every other control is dead as well.
+      document.getElementById('rematchBtn').style.display = 'none';
+      document.querySelectorAll('.game-layout button').forEach((btn) => { btn.disabled = true; });
+      this.clearArbiterButtons();
+      this.showArbiterButton('Back to lobby', () => { window.location.href = '/'; });
     });
 
     // Own rematch offer acknowledged: freeze the button so the offer can't be spammed; the
@@ -838,7 +811,7 @@ class Game {
       this.clearOpponentInfo();
 
       // The reconnect token stays with its player; persist the newly assigned colour.
-      Game.saveSession({ gameId: data.gameId, token: data.token, side: this.side, isCreator: this.isCreator });
+      this.keepSeat(data.gameId, data.token);
 
       // Result panel (and its rematch state) belongs to the finished game — reset for this one.
       this.clearResultPanel();
@@ -854,7 +827,7 @@ class Game {
     this.ws.on('gameAborted', () => {
       // Challenge cancelled before it started — drop the saved session and go back to the lobby to
       // create a new one (which will then get a fresh code).
-      Game.clearSession();
+      this.dropSeat();
       window.location.href = '/';
     });
 
@@ -887,6 +860,109 @@ class Game {
         this.appendDevConsole(data.devDetail);
       }
     });
+  }
+
+  // Shows the end of the game: board and buttons locked, score and reason in the result panel, and
+  // for some endings a message of the arbiter in the second person. Returns whether it wrote such a
+  // message; otherwise the arbiter's last message stays.
+  showGameResult(data) {
+    this.gameActive = false;
+    // Game over. The saved seat stays, marked as ended: nothing can be resumed with it, but a
+    // reload of this page then shows how the game ended instead of an empty board.
+    OtbSeats.markEnded(this.seatToken);
+    this.board.setEnabled(false);
+    this.updateButtons();
+    // A pending draw offer dies with the game (e.g. a rejected claim was forwarded as an
+    // offer and the claimer then lost by escalation) — no Accept/Reject on a finished game.
+    document.getElementById('drawOfferPanel').style.display = 'none';
+    // The game-ending message goes to the arbiter window; stale passive info disappears, and
+    // a running disconnect countdown (plus its Claim-victory button) stops.
+    this.clearOpponentInfo();
+    this.stopDisconnectCountdown();
+    this.clearArbiterButtons();
+    // Game has ended — drop the PAUSE overlay because no further clockUpdate
+    // will arrive to clear it via the updateClocks path.
+    const clockEl = document.getElementById('chessClock');
+    if (clockEl) clockEl.classList.remove('paused');
+    const scoreText = data.winner === 'none' ? '\u00BD-\u00BD'
+      : (data.winner === 'white' ? '1-0' : '0-1');
+    document.getElementById('gameResultScore').textContent = scoreText;
+    document.getElementById('gameResultReason').textContent = data.description;
+    // No rematch after an abandonment \u2014 the opponent is gone, there is nobody to accept
+    // (and the server refuses such offers too). Reset to visible for every other ending,
+    // since the panel is reused across rematch chains.
+    document.getElementById('rematchBtn').style.display =
+      data.resultType === 'ABANDONMENT' ? 'none' : '';
+    document.getElementById('gameResultPanel').style.display = 'block';
+
+    // Personalise the arbiter message for moves that immediately end the game instead of
+    // leaving the generic "Move accepted" / "Your turn" from that move. The mover (data.mover)
+    // is the side that played it; the other player is the recipient.
+    if (data.resultType === 'CHECKMATE') {
+      this.showArbiterMessage(data.mover === this.side
+        ? 'Your last move delivered checkmate.'
+        : 'You have been checkmated.');
+    } else if (data.resultType === 'STALEMATE') {
+      this.showArbiterMessage(data.mover === this.side
+        ? 'Your last move resulted in stalemate.'
+        : "Your opponent's last move resulted in stalemate.");
+    } else if (data.resultType === 'SEVENTY_FIVE_MOVE') {
+      this.showArbiterMessage(data.mover === this.side
+        ? 'Your last move led to 75 moves each without a capture or pawn move.'
+        : "Your opponent's last move led to 75 moves each without a capture or pawn move.");
+    } else if (data.resultType === 'FIVEFOLD_REPETITION') {
+      this.showArbiterMessage(data.mover === this.side
+        ? 'Your last move led to a fivefold repetition.'
+        : "Your opponent's last move led to a fivefold repetition.");
+    } else if ((data.resultType === 'RESIGNATION' || data.resultType === 'FLAG_FALL'
+        || data.resultType === 'ABANDONMENT') && data.winner === 'none') {
+      // FIDE draw exception: the actor resigned/flagged/left but the opponent cannot mate.
+      // Phrase it in the second person for each player.
+      const verb = data.resultType === 'RESIGNATION' ? 'resigned'
+        : (data.resultType === 'FLAG_FALL' ? 'flagged' : 'left the game');
+      const reason = data.drawReason === 'INSUFFICIENT_MATERIAL'
+        ? 'insufficient material to mate'
+        : 'no potential mate';
+      const msg = data.actor === this.side
+        ? `You ${verb}, but because your opponent has ${reason}, the game is a draw.`
+        : `Your opponent ${verb}, but because you have ${reason}, the game is a draw.`;
+      this.showArbiterMessage(msg);
+      document.getElementById('gameResultReason').textContent = msg;
+    } else if (data.resultType === 'ABANDONMENT') {
+      // Abandonment loss: the leaver is gone (their client won't render this); phrase for the
+      // remaining player. The actor check keeps it correct should the leaver ever see it.
+      this.showArbiterMessage(data.actor === this.side
+        ? 'You left the game and lose.'
+        : 'Your opponent left the game. You win.');
+    } else if (data.resultType === 'WRONG_CLOCK_PRESS_GAME_LOST') {
+      // Third press of the opponent's clock despite the warning (see A-006).
+      this.showArbiterMessage(data.actor === this.side
+        ? 'You have been warned that you will lose the game when you press your opponent\'s clock again.'
+          + ' As you have pressed it again, you lose the game.'
+        : 'Your opponent has, despite the warnings, repeatedly pressed your clock, and so has lost the game.');
+    } else if (data.resultType === 'WRONG_TIME_OFFER_GAME_LOST') {
+      // Third wrong-time draw offer on the same move despite the warning (see A-001).
+      this.showArbiterMessage(data.actor === this.side
+        ? 'You have been warned that you will lose the game when you offer a draw again on this move.'
+          + ' As you have offered again, you lose the game.'
+        : 'Your opponent has, despite the warnings, repeatedly offered a draw at the wrong time,'
+          + ' and so has lost the game.');
+    } else if (data.resultType === 'MOVED_OPPONENT_PIECE_GAME_LOST') {
+      // Third moved opponent piece despite the warning (see A-007).
+      this.showArbiterMessage(data.actor === this.side
+        ? 'You have been warned that you will lose the game when you move an opponent\'s piece again.'
+          + ' As you have moved one again, you lose the game.'
+        : 'Your opponent has, despite the warnings, repeatedly moved your pieces, and so has lost the game.');
+    } else if (data.resultType === 'DRAW_AGREEMENT' && data.winner === 'none') {
+      // Who accepted goes on top (arbiter message); the result panel keeps the canonical
+      // "The game is drawn by agreement." after the ½-½ score.
+      this.showArbiterMessage(data.actor === this.side
+        ? 'You accepted the draw offer.'
+        : 'Your opponent accepted the draw offer.');
+    } else {
+      return false;
+    }
+    return true;
   }
 
   clearResultPanel() {
@@ -1410,7 +1486,7 @@ class Game {
   // technical error with a calm message and an explicit path back to the lobby. The saved session
   // is dropped so a refresh doesn't loop trying to reopen a game that no longer exists.
   showGameUnavailable(message) {
-    Game.clearSession();
+    this.dropSeat();
     this.gameActive = false;
     // Nothing on this page is actionable except the way back. Disable every game control (Display
     // PGN, Flip Board, etc. aren't covered by updateButtons) and freeze the board. The Back-to-lobby

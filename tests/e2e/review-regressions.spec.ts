@@ -184,12 +184,16 @@ test('a clock press during the auto-resume delay leaves the player able to move'
   await expect(white.locator('#arbiterMessage')).toContainText('You moved an opponent');
   await clickRestore(white);
   // White presses the own clock at once, inside the pause before the clock restarts, without a move.
+  // The press is ruled on as an illegal move, for which the arbiter stops the clock once more.
   await pressClock(white);
   await expect(white.locator('#arbiterMessage')).toContainText('pressed without a move being made');
-  await expect(white.locator('#chessClock')).not.toHaveClass(/paused/);
-  // Stay past the end of the pause: nothing arriving late may lock the board or replace the message.
-  await white.waitForTimeout(2000);
+  await expect(white.locator('#arbiterMessage')).toContainText('The game is paused and will continue shortly.');
+  // Stay past the end of both pauses: nothing arriving late may lock the board or take the ruling away.
+  await white.waitForTimeout(2500);
   await expect(white.locator('#arbiterMessage')).toContainText('pressed without a move being made');
+  await expect(white.locator('#arbiterMessage')).toContainText('The clock has restarted.');
+  await expect(black.locator('#arbiterMessage')).toHaveText('Clock restarted. Game continues.');
+  for (const page of [white, black]) await expect(page.locator('#chessClock')).not.toHaveClass(/paused/);
   // White's clock is running, so White must be able to move.
   await dragPiece(white, 'e2', 'e4');
   for (const page of [white, black]) await expectPiece(page, 'e4', 'WHITE_PAWN');
