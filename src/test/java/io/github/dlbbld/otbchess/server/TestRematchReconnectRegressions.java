@@ -149,7 +149,9 @@ class TestRematchReconnectRegressions {
     }
     resume.join(5000);
     assertFalse(resume.isAlive());
-    assertEquals(1, returning.count("resumeFailed"));
+    // No seat in the finished game: the returning connection is only shown how it ended.
+    assertEquals(0, returning.count("resumeFailed"));
+    assertEquals(1, returning.count("resumeEnded"));
     assertEquals(0, returning.count("resync"));
     assertSame(white.socket, room.getWhitePlayer());
   }

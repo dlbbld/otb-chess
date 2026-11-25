@@ -43,7 +43,8 @@ and after the game. No script error, no lost connection and no game that could n
 - [x] **Blue circles for the move that was already made** (2026-11-25): a released-piece ruling circles the
   start and end square of the move that was completed with the release, on both boards, until the position is
   restored.
-- [x] **The own game cannot be joined from the same browser** (2026-11-25): the start screen refuses a code
+- [x] **The own game cannot be joined from the same browser** (2026-11-25; removed again the same day, see
+  *Two tabs of one browser can play each other* below): the start screen refuses a code
   that is the game this browser is already in, changes nothing, and points to a private window or another
   browser and to the manual (`MANUAL.md`, *Playing both sides yourself*). Client only: the server cannot tell
   two tabs of one browser from two players, so there is no Java test for it.
@@ -70,8 +71,36 @@ and after the game. No script error, no lost connection and no game that could n
   Windows-only launcher tests), `TouchMoveOracle` (33,793 cases, 0 differences), `RuleFuzzer` (20,000 games,
   0 findings), full browser suite against the rebuilt jar, whose manifest names `ashlar-chess-22.2.0.jar`
   (251 passed, 1 skipped, no retries). Not run: anything on Windows.
-- [ ] Still open, not asked for: creating or joining a *different* game in a second tab of the same browser
-  replaces the stored seat of the first tab; after a reload that tab is in the other game.
+- [x] **A reload after the game shows the finished game** (2026-11-25). Second report from the tester: "I
+  clicked the clock during my turn, twice and the board bugged and all the pieces disappeared from it."
+  Reproduced on a local server: the game ends (in 0.4.0 two presses without a move lose at once), the player
+  who joined reloads the page - empty board, "This game has already ended." That the tester reloaded is an
+  assumption. The creator's page created a new game on such a reload. Now the server answers a `resume` into
+  an ended game with `resumeEnded` (board as it stood, final times, the result as announced) instead of
+  refusing it; no seat is given back, so nothing can be done from that page and no rematch offered. Also for
+  the leaver of an abandoned game who returns ("You left the game and lose." with the board, before an empty
+  board). The page keeps its seat after the game, marked as ended. Not covered: a game the server has already
+  removed (30 minutes after the end, both players gone) still comes back as "no longer available" with an
+  empty board.
+- [x] **Two tabs of one browser can play each other** (asked for by the owner on 2026-11-25; replaces the
+  refusal above, which is removed with its message, style and tests). Each page notes its own seat in its
+  history entry, so a reload takes exactly that seat; the browser's seats are a list in `localStorage`
+  (`otbSeats`, before one `otbSession`); a page holds a Web Lock per seat, so the start screen and a newly
+  opened page know which games are open in a tab (`static/js/seats.js`, SPECIFICATION *Joining*). "Return to
+  game" is offered only for a running game that no tab has open - in a second tab beside the creator's it no
+  longer appears, and the code joins the game as the opponent. Two separate browsers behave as before
+  (reload, lost tab and return by the start screen or by the code, second window takes the seat over).
+  Client only: the server cannot tell two tabs from two players, so there is no Java test for this part.
+  Known: both tabs share the sound options, so with the sounds on each sound is played by both tabs. Without
+  the Locks API (page served neither over HTTPS nor from localhost) no seat counts as held: a second tab
+  then takes the creator's seat over instead of joining.
+- [x] Creating or joining a *different* game in a second tab of the same browser no longer replaces the
+  seat of the first tab (same change; `same-browser.spec.ts`).
+- [x] Verification on macOS with the two changes above: full Java suite (537 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), `RuleFuzzer` (20,000 games, 0 findings), full browser suite against the
+  rebuilt jar (260 passed, 1 skipped, no retries). `TouchMoveOracle` not run: no ruling changed. Not run:
+  anything on Windows, and no browser other than Chromium - the page's own seat and the locks are browser
+  features, so Firefox and Safari are untested.
 - Not broken: presses before the opponent joined and after the game (ignored), during the pause to restore a
   position ("please restore the position", no penalty), during the pause after a wrong clock press ("please
   wait"), several fast presses of the opponent's lever (counted once per pause), both players pressing together.

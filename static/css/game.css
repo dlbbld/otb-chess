@@ -32,8 +32,6 @@ body {
 .checkbox-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .checkbox-group label { margin-bottom: 0; cursor: pointer; color: #333; }
 .lobby-hint { font-size: 12px; color: #777; }
-.lobby-error { font-size: 13px; color: #a93226; margin-top: 10px; line-height: 1.4; }
-.lobby-error a { color: inherit; }
 .preset-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .preset-btn {
   padding: 6px 12px; border: 1px solid #ccc; background: #fff;

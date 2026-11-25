@@ -61,9 +61,11 @@ async function expectActiveSeat(page: Page, side: 'white' | 'black', gameId: str
   await expect(page.locator('#gameResultPanel')).toBeHidden();
   await expect(page.locator('#resignBtn')).toBeEnabled();
   await expect.poll(() => page.evaluate(() => (window as any).game.gameActive)).toBe(true);
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('otbSession') || 'null'));
+  // The stored seat and the page's own seat both carry the new colour.
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('otbSeats') || '[]')[0]);
   expect(saved).toMatchObject({ gameId, side });
   expect(saved.token).toBeTruthy();
+  expect(await page.evaluate(() => history.state.otbSeat)).toMatchObject({ gameId, side, token: saved.token });
 }
 
 async function playMove(mover: Page, opponent: Page, from: string, to: string, piece: string) {

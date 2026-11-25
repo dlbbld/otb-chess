@@ -1777,15 +1777,47 @@ public class GameWebSocketServer extends WebSocketServer {
         return;
       }
       if (room.getSession().getState() == GameState.ENDED) {
-        // A finished game cannot be resumed; clear the returning client's stale saved session.
-        final JsonObject msg = new JsonObject();
-        msg.addProperty("type", "resumeFailed");
-        msg.addProperty("message", "This game has already ended.");
-        send(conn, msg);
+        // A finished game cannot be resumed: the seat is not given back. The returning player is
+        // shown how the game ended instead.
+        sendEndedGame(conn, gameId, room, side);
         return;
       }
       resumeSeat(conn, gameId, room, side);
     }
+  }
+
+  /**
+   * Answers a player who returns to their finished game - a page reload after the end, or the leaver of a game
+   * adjudicated as abandoned, whose closed page never saw the result. They get the board as it stood at the end, the
+   * final clock times and the result, and nothing else: the connection gets no seat, so it can neither act in the room
+   * nor take part in a rematch.
+   */
+  private void sendEndedGame(WebSocket conn, String gameId, GameRoom room, Side side) {
+    final var session = room.getSession();
+    final GameResult result = session.getResult();
+    if (result == null) {
+      final JsonObject msg = new JsonObject();
+      msg.addProperty("type", "resumeFailed");
+      msg.addProperty("message", "This game has already ended.");
+      send(conn, msg);
+      return;
+    }
+    final var clock = session.getClock();
+    final JsonObject clockData = new JsonObject();
+    clockData.addProperty("whiteTimeMs", clock.getRemainingTimeMs(Side.WHITE));
+    clockData.addProperty("blackTimeMs", clock.getRemainingTimeMs(Side.BLACK));
+    clockData.addProperty("running", clock.getRunningFor().name().toLowerCase());
+
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "resumeEnded");
+    msg.addProperty("gameId", gameId);
+    msg.addProperty("side", side.name().toLowerCase());
+    msg.addProperty("message", "This game has already ended.");
+    msg.add("board", GSON.toJsonTree(MessageConverter.fromStaticPosition(room.getPhysicalPosition())));
+    msg.add("clock", clockData);
+    msg.addProperty("timeControlLabel", room.getTimeControl().displayLabel());
+    msg.add("result", gameEndedMessage(room, result));
+    send(conn, msg);
   }
 
   private void resumeSeat(WebSocket conn, String gameId, GameRoom room, Side side) {
@@ -2203,7 +2235,13 @@ public class GameWebSocketServer extends WebSocketServer {
     // flagged side's time is clamped to 0, and without this update the client's last cached value
     // is the previous tick's positive remainder - the LCD would show 0:01 on a game lost on time.
     sendClockValues(room);
+    room.sendToBoth(GSON.toJson(gameEndedMessage(room, result)));
+    // The end of the game took the circles of an open ruling off the board.
+    sendBoardMarksIfChanged(room);
+  }
 
+  /** The announcement of a result: sent to both players when the game ends, and to a player who returns to it. */
+  private static JsonObject gameEndedMessage(GameRoom room, GameResult result) {
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "gameEnded");
     msg.addProperty("resultType", result.type().name());
@@ -2228,9 +2266,7 @@ public class GameWebSocketServer extends WebSocketServer {
       msg.addProperty("drawReason",
           room.getSession().isDrawExceptionByInsufficientMaterial() ? "INSUFFICIENT_MATERIAL" : "NO_MATE");
     }
-    room.sendToBoth(GSON.toJson(msg));
-    // The end of the game took the circles of an open ruling off the board.
-    sendBoardMarksIfChanged(room);
+    return msg;
   }
 
   private void checkGameEnded(GameRoom room) {

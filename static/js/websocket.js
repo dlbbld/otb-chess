@@ -69,7 +69,7 @@ class GameWebSocket {
       }
       if (data.type === 'pong') return; // heartbeat ack — nothing to do
       if (data.type === 'resync' && this.onReconnected) this.onReconnected();
-      if (data.type === 'resumeFailed') this.shouldReconnect = false;
+      if (data.type === 'resumeFailed' || data.type === 'resumeEnded') this.shouldReconnect = false;
       const handler = this.messageHandlers[data.type];
       if (handler) {
         handler(data);

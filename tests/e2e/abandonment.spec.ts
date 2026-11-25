@@ -120,15 +120,23 @@ test('after the abandonment adjudication the leaver cannot reconnect (reported b
   await expectGameResult(white, '1-0');
 
   // Black comes back AFTER the game has been decided. The lobby still shows the (stale) banner —
-  // the closed tab never saw gameEnded — but the reconnect must be REFUSED.
+  // the closed tab never saw gameEnded — but the reconnect must be REFUSED: Black gets no seat,
+  // and is shown how the game ended instead - the board as it stood, the result, and why.
   const returned = await game.contexts[1].newPage();
   await returned.goto('/');
   await expect(returned.locator('#gameInProgress')).toBeVisible();
   await returned.locator('#returnToGameBtn').click();
-  await expect(returned.locator('#arbiterMessage')).toContainText('This game has already ended');
+  await expect(returned.locator('#arbiterMessage')).toHaveText('You left the game and lose.');
+  await expectGameResult(returned, '1-0');
+  await expect(returned.locator('#board .piece')).toHaveCount(32);
+  await expect(returned.locator('#board .square[data-square="e4"] .piece')).toHaveCount(1);
+  await expect(returned.locator('#rematchBtn')).toBeHidden();
+  await expect(returned.locator('#resignBtn')).toBeDisabled();
   await expect(returned.locator('#arbiterButtons')).toContainText('Back to lobby');
+  // White, still on the page of the finished game, hears nothing of it.
+  await expect(white.locator('#arbiterMessage')).toHaveText('Your opponent left the game. You win.');
 
-  // The refusal cleared the stale session: back in the lobby, the banner is gone.
+  // The game is marked as ended in this browser: back in the lobby, the banner is gone.
   await returned.locator('#arbiterButtons').getByText('Back to lobby').click();
   await expect(returned.locator('#createGameBtn')).toBeVisible();
   await expect(returned.locator('#gameInProgress')).toBeHidden();

@@ -82,8 +82,9 @@ test('a new tab in the same browser finds its way back into the running game via
 }) => {
   const game = await startTwoPlayerGame(browser);
   try {
-    // The player "loses" the game tab and opens a NEW tab in the same browser (same context =
+    // The player loses the game tab and opens a NEW tab in the same browser (same context =
     // same localStorage): the lobby must offer the way back, not strand them.
+    await game.creator.close();
     const newTab = await game.contexts[0].newPage();
     await newTab.goto('/');
     await expect(newTab.locator('#gameInProgress')).toBeVisible();

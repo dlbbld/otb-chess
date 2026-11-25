@@ -53,14 +53,16 @@ The game starts when both players are connected.
 
 ## Playing both sides yourself
 
-To try OTB Chess alone you need two browser sessions, one for each player:
+To try OTB Chess alone, open it twice, once for each player. Two tabs or two windows of the same browser are enough:
 
-- a normal window and a **private (incognito) window** of the same browser, or
-- two **different browsers**, or two devices.
+1. Create the game in the first tab and copy the code.
+2. Open the start page in a second tab, enter the code, and select **Join Game**.
 
-Two normal tabs or windows of the same browser do not work: they share the stored game, so the start screen refuses to join a game that is already open in that browser and tells you so.
+Each tab keeps its own side, also after a reload of the page. A private (incognito) window, a second browser, or a second device work as well, but are not needed.
 
-Both boards of a computer use the same loudspeaker. If the sounds are on in one of them, you hear the pieces and clock presses of both players from it.
+While the game is open in a tab, the start page does not offer **Return to game** for it: there is nothing to return to. It offers it once the tab with the game is closed.
+
+Both boards of a computer use the same loudspeaker. If the sounds are on in one of them, you hear the pieces and clock presses of both players from it. Two tabs of the same browser share the sound options, so with the sounds on each sound is played by both tabs.
 
 ## Playing
 
