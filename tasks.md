@@ -20,9 +20,9 @@ release's tasks until it ships.
   0 findings), full browser suite against the rebuilt jar (260 passed, 1 skipped, no retries, `sounds.spec.ts`
   in audio mode `'real'`); the jar reports `0.5.0` (`version.properties`, manifest, and `version.spec.ts` for
   `/api/version`, lobby and board). Not run: anything on Windows; no browser other than Chromium.
-- [ ] Manual test by the owner through `start.bat` (default branch `fixes-and-improvements`) before the
-  merge: version `0.5.0`, two tabs of one browser with a reload of each, a reload after the game, a double
-  click on the clock without a move.
+- [x] Manual test by the owner before the merge (2026-11-25): passed, release approved. Asked to check
+  through `start.bat` (default branch `fixes-and-improvements`): version `0.5.0`, two tabs of one browser with
+  a reload of each, a reload after the game, a double click on the clock without a move.
 - [ ] Merge the PR, tag `0.5.0` on the merge commit, publish the GitHub release, deploy by `SETUP.md` §12.
   Publication and deployment are reported in the conversation, not here.
 
