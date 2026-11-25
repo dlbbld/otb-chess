@@ -162,14 +162,14 @@ Separate options for the opponent's sounds, a control during the game, a volume 
 
 ## E-005 — Free placement of the pieces and J'adoube
 
-**Status**: Draft requirement, dictated by the owner on 2026-11-25 and written down the same day; the measure was replaced by the owner's inner circle later that day, and the open points were decided one by one in the same conversation. Not reviewed, nothing implemented. Written against the released `main` at 0.4.0; `jadoube` now holds 0.5.1. The implementation plan is [`e-005-implementation-plan.md`](e-005-implementation-plan.md) (draft of 2026-11-25, not reviewed). The four rulings it asked about were decided by the owner on 2026-11-25 and are written into this entry, as are its two corrections (three squares, requirement 4). Where the owner's words left a choice, the reading taken is marked *(reading)*. The percentage is the owner's first value and is expected to change.
+**Status**: Draft requirement, dictated by the owner on 2026-11-25 and written down the same day; the measure was replaced by the owner's inner circle later that day, and the open points were decided one by one in the same conversation. Reviewed on 2026-11-25. Implementation is pending. Written against the released `main` at 0.4.0; `jadoube` now holds 0.5.1. The implementation plan is [`e-005-implementation-plan.md`](e-005-implementation-plan.md) (reviewed draft of 2026-11-25). The four rulings it asked about were decided by the owner on 2026-11-25 and are written into this entry, as are its two corrections (three squares, requirement 4). Where the owner's words left a choice, the reading taken is marked *(reading)*. The percentage is the owner's first value and is expected to change.
 
 **Relation to the Laws**: this entry is the path to compliance for [D-004](fide-deviations.md#d-004--jadoube--piece-adjustment-is-not-modeled) (FIDE 4.2.1, 4.2.2). The ruling on unclear placement is arbiter policy and gets an entry of its own in `fide-deviations.md` when it is built.
 
 ### Requirement
 
 1. A piece stays where the player lets go of it. It is no longer centred on a square, and it can lie partly on up to three other squares.
-2. The arbiter rules on the placement at the clock press, like on everything else.
+2. The arbiter counts unresolved unclear placements at the clock press. A player who sets an opponent's piece down halfway through removing it gets an instruction at release, as described under *Captures and overlapping pieces*.
 3. A game option on the entry screen, **on by default**, chosen by the player who creates the game. With the option off the game is exactly as it is today: pieces are centred, there is no J'adoube button, none of the rulings below exists.
 4. The feature is a layer in front of the existing game: every placement is turned into "on square X" or "on no square" before the rules look at it. A clear placement is ruled on exactly as today: the rules for legal moves, touch-move, the released piece, restoration, claims and offers do not change for it. New in the rules are only the binding of a piece released in an unclear placement and the rulings below that enforce it.
 5. A J'adoube button lets the player on move adjust one piece without it counting as touched.
@@ -223,7 +223,8 @@ In this order:
 - A piece released in a clear placement on a square where an opponent's piece stands captures it: the opponent's piece leaves the board as today.
 - A piece released in an unclear placement over an occupied square removes nothing. The two pieces overlap, the later one drawn on top, and the arbiter steps in at the clock press (unclear placement). If the occupied square is one of the squares to choose from, choosing it is the capture.
 - Two pieces that are both clearly on neighbouring squares can still overlap on the screen, at 20% by up to half a piece image. That is allowed; J'adoube is there to straighten them.
-- Removing the opponent's piece first and then placing the own piece works as today.
+- **Removing the opponent's piece first.** White lifts Black's pawn on d5 to play exd5. Carrying it halfway towards e5 makes no call. Letting go on the line leaves it on the board. The arbiter immediately tells White to take it off to continue the capture or put it back on d5. Black sees where the pawn lies. A return preserves the touch. A release with its centre off the board completes the removal. A release elsewhere on the board with the inner circle clear of d5 gets the existing immediate opponent-piece ruling.
+- *Proposed for the first version:* the immediate instruction leaves White's clock running and costs no penalty. A clock press with the victim still unclear gets the usual counted call. If White puts the capturing pawn on d5 first, both pieces remain visible until the victim is removed. See the capture-first example in [the implementation plan](e-005-implementation-plan.md#capture-first-clarification-from-the-review).
 
 ### Automatic end of the game
 

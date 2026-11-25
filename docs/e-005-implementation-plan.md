@@ -1,6 +1,6 @@
 # E-005 — Implementation plan: free placement of the pieces and J'adoube
 
-**Status**: Draft of 2026-11-25, for review by Codex. Nothing is implemented. Written against `jadoube` with the released `main` (0.5.1) merged in. The owner decided the four rulings of section 1 on 2026-11-25; the details marked *(proposal)* in section 2 are not confirmed.
+**Status**: Reviewed draft of 2026-11-25. The capture-first clarification and the proposed delivery order are included below. Free placement is still unimplemented. Written against `jadoube` with the released `main` (0.5.1) merged in. The owner decided the four rulings of section 1 on 2026-11-25; the details marked *(proposal)* in section 2 are not confirmed.
 
 **What this is**: the plan for the requirement [E-005](enhancements.md#e-005--free-placement-of-the-pieces-and-jadoube). E-005 says what the players get; this says how it is built, in which order, and how it is tested. Where E-005 left a ruling open, section 1 records the owner's decision. Where it leaves a detail open, section 2 proposes one and marks it *(proposal)*.
 
@@ -38,6 +38,22 @@ The call says "your bishop", and a binding to "the legal moves that end on these
 
 - The inner circle still lies on the piece's own square: it is touched and lies unclear. At the clock press the arbiter makes the call for "your opponent's bishop"; the only way out is to put it back clearly on its square or to capture it. It counts on the ladder for unclear placements.
 - The inner circle no longer lies on its own square: the piece was moved. Ruled on at once as today, with the position restored and centred.
+
+#### Capture-first clarification from the review
+
+After 1.e4 d5, White intends exd5. White lifts Black's pawn on d5, carries it half a square towards e5 and lets go on the line. Both players can see where it landed. Neither the path of the drag nor the player's intent decides the ruling. Apply Q4 on **release**, using the pawn's original d5 square even if it is picked up again.
+
+| What White does with the black pawn | What happens |
+|---|---|
+| Carries it across the line with the mouse still down | Show the piece in hand. No call, touch adjudication or change to the captured material yet. |
+| Releases it between d5 and e5, with the inner circle still on d5 | Give an immediate instruction. “Black's pawn is still on the board. To capture it, take it off the board. Otherwise put it back on d5.” Show Black a passive notice. The pawn stays where released and counts as touched. |
+| Picks it up and releases its centre outside the board | Record the removal from d5. White can finish exd5 with the pawn from e4. Check legality and touch order as for an ordinary capture. |
+| Returns it clearly to d5 | Clear the instruction. The original touch still counts. A normal capture onto d5 remains possible. |
+| Releases it elsewhere on the board with the inner circle wholly clear of d5 | Apply the existing immediate opponent-piece ruling (A-007), including its restoration and escalation. |
+
+**Proposed handling of the instruction.** White's clock keeps running. The release costs no step on either ladder. Pressing the clock with the pawn still unclear invokes the existing Q4 pause and counts once on the unclear-placement ladder. If White first places the e4 pawn on d5 while Black's pawn still straddles the line, keep both physical pieces and the instruction. White can finish by taking the black pawn off. Evaluate the finished capture once both pieces are accounted for. An earlier clear release by White still enters the release history. The server must never infer removal or checkmate from the black pawn's absence in the clear-square map.
+
+**Board edge.** Use E-005's centre rule for the first version. The piece can hang partly outside and still be on the board. Once its centre is outside, removal is complete even if the artwork overlaps the rim. Requiring the entire image to clear the rim would change the previously agreed edge rule. The half-square example inside the board needs no such change.
 
 ### Two corrections to E-005
 
@@ -84,6 +100,8 @@ Today the page keeps one piece per square, sends the square of every event and t
 | unclear | off the board | `REMOVE` |
 
 - **What the two new events mean to the rules**: `RELEASE_UNCLEAR` empties the square the piece left, like `REMOVE`, and is a touch of the piece on that square. `PLACE_AFTER_UNCLEAR` puts the piece on its square, like `RESTORE_*`, but carries the square it came from, so a move finished this way is recognised as that move and as a release (FIDE 4.7). A piece from the side keeps "no square", which is what marks a promotion today.
+- Keep the original square, piece identity and first touch until an unclear piece is resolved. In particular, `RELEASE_UNCLEAR` of a victim must not enter the list of removed opponent pieces used by `MidPlayValidator`. A later `REMOVE` supplies its original square exactly once. Store draw order along with the placements so either player can reload an overlap and pick up the same top piece. Reconnecting while a piece is held returns it to the last acknowledged placement. A hover never changes that placement.
+- Ordinary handling, an armed adjustment, and manual restoration already have different consequences for the same gesture. Dispatch by that context before applying Q4. An unsuccessful announced adjustment goes back to its prior placement. A piece positioned during manual restoration goes through the restoration check.
 - **The rules never see a position with an unclear piece.** Every place that evaluates the position checks for unclear pieces first (2.4, 2.5).
 
 ### 2.3 What changes in the rules
@@ -189,13 +207,13 @@ Each phase ends with its tests green, committed and pushed on `jadoube`. Nothing
 |---|---|---|
 | **0. Decisions** | The owner answers Q1 to Q4. E-005 is brought up to date (three squares, requirement 4, the answers). | **Done on 2026-11-25**: E-005 has no open ruling. The proposals of section 2 go to the review. |
 | **1. The measure** | Units, radius, clear / unclear / off the board, the squares to choose from; in Java and in the page; the shared file of sample points. | Both read the file and agree, including corners with three squares, the edge of the board and the exact limit. |
-| **2. The rules** | The two events, the binding, the two rulings at the clock press, the ladder with its option, the pause for a call, the guards of 2.5. Driven by events built in tests; no page yet. | Section 4, Java tests for the rules. The old suites pass unchanged. |
+| **2. The rules** | The two events, the binding, the two rulings at the clock press, the ladder with its option, the pause for a call, the guards of 2.5. Cover each ruling in the session and in its playable journey. | Section 4, Java tests for the rules. The old suites pass unchanged. |
 | **3. The server** | Options at `createGame`, placements in the room, deriving the events, the messages of 2.7 without J'adoube, reload and rematch. | Section 4, server tests. |
-| **4. The page** | The layer of pieces, picking up and letting go, both boards, side areas, circles, sounds, messages, entry screen. Free placement is playable from here on, and on by default. | New browser tests for free placement; the whole existing browser suite passes with free placement on. |
+| **4. The page** | The layer of pieces, picking up and letting go, both boards, side areas, circles, sounds, messages, entry screen. Exercise free placement through an explicit game option while building it. | New browser tests for free placement; the whole existing browser suite passes with free placement on. |
 | **5. J'adoube** | Button, arming, adjustment and undo, the ladder for the opponent's time, adjusting without J'adoube. Rules, server and page together. | Section 4, the J'adoube tests at both levels. |
 | **6. Documents and release** | Section 5; full verification; manual test on Windows through `start.bat` (default branch `jadoube`). | By `RELEASING.md`. |
 
-Phases 2 and 4 are the large ones. Phase 5 can only start after 4; 1 to 3 need no page.
+**Reviewed delivery order.** Use phases 2–4 as a list of components, and deliver them together for one playable case at a time. Start with the capture-first journey in Q4, from mouse release through the session and back to both boards. This exercises the distinction between held, on the board and removed before adding the binding for the player's own pieces. Keep the lobby default on the current game during development. Enable free placement by default once the rulings and J'adoube work together and the full suite passes. Each playable change ships with its Java and Playwright regression in the same commit.
 
 ---
 
@@ -207,6 +225,7 @@ By the project's policy every change of behaviour has Java tests and browser tes
 
 - **The measure**: the sample file; the radius for 10%, 20% and 30%.
 - **Deriving the events**: every row of the table in 2.2; one clear piece per square; a clear release next to an unclear piece removes nothing.
+- **Capture-first sequence**: White pawn e4, black pawn d5, White to move. Release the victim on the d5/e5 boundary. Assert the immediate instruction, original touch, active clock, zero penalties and both pieces still in play. Branch from there to off-board removal followed by exd5, return followed by a direct capture, an unresolved clock press (one count), and displacement beyond d5 (A-007 only). Repeat with the capturer set on d5 before the victim is removed. Check the final position, move history and turn, including when the original touch has no legal capture.
 - **The binding**: the rook across d1 and e1 (E-005); the bishop that can reach neither square; only one of the squares legal; the square the piece came from among the squares; a second unclear release; with a touch-move obligation in force; with a move owed after a rejected claim; the king across f1 and g1; a pawn across squares of the last rank; the square of an en passant capture; a promoted piece from the side let go unclear.
 - **The clock press**: the order of 2.4; the ladder with limits 1, 3 and unlimited; the warning before the last step; the pause with and without automatic resume; a press in the pause; the bound piece on another square, at every press, without counting; no automatic end with an unclear piece; the draw offer with an unclear piece.
 - **J'adoube**: armed only in the own time, not in a pause, not while a piece is held; own and opponent's piece; undone on another square, unclear, off the board and for an unclear piece; no touch-move obligation, a pending draw offer stays acceptable, the right to claim stays; unused, it ends at the clock press; the ladder in the opponent's time.
@@ -222,6 +241,7 @@ By the project's policy every change of behaviour has Java tests and browser tes
 - The ladder up to the loss of the game, with the option at 1 and at 3.
 - The piece bound to two squares and put on a third.
 - A capture by a clear release; an unclear release over an occupied square removes nothing and the pieces overlap.
+- Start from the normal position, play 1.e4 d5 and replay White's capture with real mouse events while observing both boards. Hold the black pawn halfway, verify silence, release on the d5/e5 boundary, and verify the instruction, Black's notice, both clocks' turn indicators and an empty captured-pawn tray. Reload Black's board while the pawn straddles the line. Finish exd5 by taking the same pawn off first and placing White's pawn on d5. Verify one captured black pawn, acceptance and Black to move on both boards. Repeat the unresolved clock press and correction, and check the ordinary off-board-first capture with the option disabled. Include a rim drop with the centre just inside and just outside.
 - Checkmate ends the game on a clear release and not on an unclear one.
 - Revert centres the pieces.
 - J'adoube: the journeys of E-005 one by one, including the adjustment that is undone and the three ladders.
