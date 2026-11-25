@@ -930,7 +930,8 @@ class TestGameSession {
   /**
    * FIDE 7.5.3: pressing the clock without making a move is penalised as an illegal move — the opponent gets the
    * standard penalty time, the count escalates, and with the default limit of two the second press loses the game.
-   * Nothing needs restoring, so the mover's clock keeps running.
+   * Nothing needs restoring, but the arbiter stops the clock for the ruling as for every other one: a press in that
+   * pause is not ruled on, so a double click is one illegal move and not two.
    */
   @Test
   void testTwoClockPressesWithoutMoveLoseTheGame() {
@@ -940,10 +941,21 @@ class TestGameSession {
     final ArbiterResponse first = session.pressClockButton(Side.WHITE, session.getBoard().getBitboardPosition());
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE, first.type());
     assertTrue(first.renderedPlayerMessage().contains("FIDE 7.5.3"));
-    // Standard illegal-move penalty credited to Black; White's clock keeps running (no restore).
+    // Standard illegal-move penalty credited to Black; the clock is stopped until the arbiter restarts it.
     assertTrue(session.getClock().getRemainingTimeMs(Side.BLACK) > TEST_TIME.initialTimeMs());
-    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+    assertEquals(Side.NONE, session.getClock().getRunningFor());
+    assertTrue(session.isPressWithoutMovePause());
     assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    // The second click of a double click: not ruled on, not counted.
+    final ArbiterResponse inThePause = session.pressClockButton(Side.WHITE, session.getBoard().getBitboardPosition());
+    assertEquals(ArbiterResponseType.INCOMPLETE_MOVE, inThePause.type());
+    assertFalse(session.consumeClockPressRegistered());
+    assertEquals(GameState.IN_PROGRESS, session.getState());
+
+    assertTrue(session.resumeAfterPressWithoutMove(session.getPressWithoutMovePauseId()));
+    assertEquals(Side.WHITE, session.getClock().getRunningFor());
+    assertFalse(session.isPressWithoutMovePause());
 
     final ArbiterResponse second = session.pressClockButton(Side.WHITE, session.getBoard().getBitboardPosition());
     assertEquals(ArbiterResponseType.ILLEGAL_MOVE_GAME_LOST, second.type());

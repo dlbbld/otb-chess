@@ -94,6 +94,9 @@ class Game {
   // a new one. Cleared on abort / game end, and by the lobby when the user deliberately starts a
   // new game or join.
 
+  // Two clicks on the same clock lever within this time are one press (a double click).
+  static LEVER_REPEAT_MS = 400;
+
   static loadSession() {
     try {
       const raw = localStorage.getItem('otbSession');
@@ -166,6 +169,12 @@ class Game {
     });
     document.getElementById('topClockBtn').classList.add('neutral');
     document.getElementById('bottomClockBtn').classList.add('neutral');
+    // Anything the player does elsewhere between two presses of a lever - a piece, a button -
+    // makes the next press a press of its own, however quickly it follows.
+    document.addEventListener('mousedown', (event) => {
+      const target = event.target;
+      if (!target.closest || !target.closest('#topClockBtn, #bottomClockBtn')) this.lastLeverPress = null;
+    }, true);
   }
 
   updateClockLabels() {
@@ -261,6 +270,14 @@ class Game {
 
   onClockButtonPressed(position) {
     if (!this.gameActive) return;
+
+    // A lever that has just gone down cannot go down again at once: the second click of a double
+    // click is no second press. Without this it would be sent before the answer to the first one
+    // has arrived, and ruled on as a press of its own. (See setupClockButtons for what ends this.)
+    const now = Date.now();
+    const lastPress = this.lastLeverPress || {};
+    if (lastPress.position === position && now - lastPress.at < Game.LEVER_REPEAT_MS) return;
+    this.lastLeverPress = { position, at: now };
 
     const pressedColor = position === 'bottom' ? this.bottomClockColor : this.topClockColor;
 
@@ -543,7 +560,7 @@ class Game {
     });
 
     this.ws.on('gameResumed', (data) => {
-      this.showArbiterMessage(data.message);
+      this.showArbiterMessage(data.message, data.style || undefined);
       this.clearArbiterButtons();
       if (data.havingMove) {
         this.isMyTurn = data.havingMove === this.side;

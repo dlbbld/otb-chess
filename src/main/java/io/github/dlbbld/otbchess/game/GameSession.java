@@ -214,6 +214,7 @@ public class GameSession {
         removedSquaresThisTurn);
     if (midPlayResponse.isPresent()) {
       wrongClockPressPausedFor = null; // This intervention supersedes the old admonishment pause.
+      pressWithoutMovePause = false;
       final Optional<BitboardPosition> committedReleasePosition = finalMoveCommitment != null
           ? Optional.of(finalMoveCommitment.position())
           : arbiter.findReleasedPieceCommitmentPosition(board, currentSequence);
@@ -463,11 +464,22 @@ public class GameSession {
       case ILLEGAL_MOVE -> {
         // Add penalty time to opponent
         clock.addPenaltyTime(side.getOppositeSide(), arbiter.getIllegalMoveTracker().getPenaltyTimeMs());
-        // FIDE 7.5.3 press-without-move: nothing to restore — the player simply still has to
-        // move, so their clock keeps running. Every other illegal move pauses for restoration.
+        // The arbiter stops the clock for every illegal move. Most are then taken off the board by a
+        // restoration. A press without a move (FIDE 7.5.3) left nothing to restore: the game pauses as it does
+        // after a restoration - until the clock restarts by itself, or until both players are ready - so that
+        // the ruling is read before the next press counts.
         final boolean noMoveMade = response.illegalMoveDetail().map(IllegalMoveDetail::noMoveMade).orElse(false);
-        if (!noMoveMade) {
-          clock.stopClock();
+        clock.stopClock();
+        if (noMoveMade) {
+          wrongClockPressPausedFor = null; // this ruling supersedes an admonishment pause
+          if (autoResumeAfterRestore) {
+            pressWithoutMovePause = true;
+            pressWithoutMovePauseId++;
+          } else {
+            waitingForReady = true;
+            whiteReady = false;
+            blackReady = false;
+          }
         }
         restorationFromReleasedPiece = false;
       }
@@ -738,7 +750,7 @@ public class GameSession {
     if (waitingForReady) {
       return "The game is paused. Please wait until both players are ready.";
     }
-    if (restorationResumePending || isWrongClockPressPause()) {
+    if (restorationResumePending || isWrongClockPressPause() || pressWithoutMovePause) {
       noteToldToWaitForClock(side);
       return "The game is paused. Please wait until the clock restarts.";
     }
@@ -1093,6 +1105,10 @@ public class GameSession {
   // Whose clock the arbiter must restart after the admonishment pause; null when no pause active.
   private Side wrongClockPressPausedFor;
   private long wrongClockPauseId;
+  // The pause after a clock press without a move (FIDE 7.5.3) in a game that resumes by itself: the arbiter has
+  // stopped the clock and restarts it after a short while. There is nothing to restore, so no Revert ends it.
+  private boolean pressWithoutMovePause;
+  private long pressWithoutMovePauseId;
   // The squares the arbiter points at since its last ruling on the move (circles on both boards): the green
   // ones of a touch, then the red ones of an illegal move.
   private List<BoardMark> boardMarks = List.of();
@@ -1184,6 +1200,38 @@ public class GameSession {
     wrongClockPressPausedFor = null;
     clock.startClock(side);
     return side;
+  }
+
+  /**
+   * @return whether the arbiter has stopped the clock after a clock press without a move and will restart it by
+   *         itself. A press of the own lever in this pause is not ruled on.
+   */
+  public synchronized boolean isPressWithoutMovePause() {
+    return pressWithoutMovePause;
+  }
+
+  /** @return what identifies the current pause after a press without a move for its delayed restart */
+  public synchronized long getPressWithoutMovePauseId() {
+    return pressWithoutMovePauseId;
+  }
+
+  /**
+   * Ends the pause after a clock press without a move: restarts the clock of the player to move. Only the pause the
+   * callback was scheduled for; no-op when the game ended or another intervention took over meanwhile.
+   *
+   * @return whether this call restarted the clock
+   */
+  public synchronized boolean resumeAfterPressWithoutMove(long pauseId) {
+    if (!pressWithoutMovePause || pauseId != pressWithoutMovePauseId) {
+      return false;
+    }
+    pressWithoutMovePause = false;
+    if (state != GameState.IN_PROGRESS || waitingForRestoration || waitingForReady || restorationResumePending
+        || clock.getRunningFor() != Side.NONE) {
+      return false;
+    }
+    clock.startClock(board.getSideToMove());
+    return true;
   }
 
   // ===== Abandonment =====
@@ -1326,6 +1374,7 @@ public class GameSession {
   private void startNewTurn() {
     this.boardMarks = List.of();
     this.wrongClockPressPausedFor = null;
+    this.pressWithoutMovePause = false;
     this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
@@ -1348,6 +1397,7 @@ public class GameSession {
     this.result = gameResult;
     this.endedAtMs = System.currentTimeMillis();
     this.wrongClockPressPausedFor = null;
+    this.pressWithoutMovePause = false;
     this.waitingForReady = false;
     this.waitingForRestoration = false;
     this.restorationResumePending = false;
@@ -1392,6 +1442,7 @@ public class GameSession {
    */
   public synchronized void enterWaitingForReady() {
     this.wrongClockPressPausedFor = null;
+    this.pressWithoutMovePause = false;
     this.waitingForReady = true;
     this.whiteReady = false;
     this.blackReady = false;
@@ -1412,6 +1463,7 @@ public class GameSession {
     }
     RestoreTargetInvariant.verify(board, restorationTargetPosition);
     this.wrongClockPressPausedFor = null;
+    this.pressWithoutMovePause = false;
     this.waitingForRestoration = true;
     this.restorationResumePending = false;
     this.waitingForReady = false;
