@@ -16,19 +16,35 @@ move, an illegal move or only a touched piece on the board, before the opponent 
 restore a position, right after Revert, during the pause after a wrong clock press, by both players together,
 and after the game. No script error, no lost connection and no game that could not be continued. Findings:
 
-- [ ] Two presses of the own lever without a move end the game at once in a default game: each is an illegal
-  move (FIDE 7.5.3), the second loses. There is no pause between them, so a double click is enough. As
-  implemented and specified; the most likely thing the tester saw. To decide: leave, or soften.
-- [ ] After an illegal move and Revert, during "Position restored. Restarting the clock shortly.", the board
-  is disabled and no move can be made, but a press of the own lever is ruled on as a press without a move:
-  the 2nd illegal move, which loses a default game. One of these rulings reads only "Illegal move. White loses
-  the game." without the reason. To decide: should a press in this delay only restart the clock?
-- [ ] A second press of the own lever that is sent before the answer to the first has arrived (a double click
-  over the internet; never on a local server) is answered with "It is not your turn.", which replaces "Move
-  accepted. Opponent's turn." on that board. The move is accepted and the game goes on.
-- [ ] Not about the clock, found on the way: two tabs of the same browser (not incognito, not two browsers)
-  share the stored session. Create in one tab, join in the other, reload the first: it comes back in the seat
-  of the second, the second is told "This game is now open in another window", and one colour has no player.
+- [x] **Pause after a clock press without a move** (2026-11-25). The arbiter stops the clock for the ruling as
+  for every other one: with automatic resume the clock restarts after the arbiter's pause
+  (`OTB_WRONG_CLOCK_PAUSE_MS`, 5 s) and the ruling stays in view with its last sentence changed; without it both
+  players are asked whether they are ready. A press in the pause is not ruled on and not answered, so a double
+  click is one illegal move. After the restart a further press without a move is the next illegal move, as
+  before.
+- [x] Decided 2026-11-25 (Codex's reading of FIDE 7.5.1-7.5.5 and of the Arbiters' Manual, taken as
+  authoritative): illegal moves made in the same turn add up. Two presses without a move lose a default game,
+  and so does a press without a move after the Revert of an illegal move, also in the short delay before the
+  clock restarts. Nothing was changed here.
+- [x] **A late second press is not answered** (2026-11-25): a press that reaches the server when the player's
+  lever is down (not their turn, or the game is over) gets no answer, so "It is not your turn." no longer
+  replaces "Move accepted. Opponent's turn." The page takes two clicks on the same lever within 400 ms as one
+  press, unless the player did something else in between.
+- [x] **Touch-move before a further illegal move** (2026-11-25, A-011 in `docs/fide-deviations.md`). Reported
+  journey: 1. e4, Black Ng8-g6 (illegal), Revert, Nb8-b6 with the clock was a 2nd illegal move and lost the
+  game. Now a touch-move violation for the knight on g8: the move that replaces one the arbiter took off the
+  board has to be made with the touched piece, and another piece moved instead is not counted as an illegal
+  move. Unchanged: an illegal move of the touched piece itself, and an illegal move of another piece before the
+  arbiter has ruled on the turn.
+- [x] **Blue circles for the move that was already made** (2026-11-25): a released-piece ruling circles the
+  start and end square of the move that was completed with the release, on both boards, until the position is
+  restored.
+- [x] **The own game cannot be joined from the same browser** (2026-11-25): the start screen refuses a code
+  that is the game this browser is already in, changes nothing, and points to a private window or another
+  browser and to the manual (`MANUAL.md`, *Playing both sides yourself*). Client only: the server cannot tell
+  two tabs of one browser from two players, so there is no Java test for it.
+- [ ] Still open, not asked for: creating or joining a *different* game in a second tab of the same browser
+  replaces the stored seat of the first tab; after a reload that tab is in the other game.
 - Not broken: presses before the opponent joined and after the game (ignored), during the pause to restore a
   position ("please restore the position", no penalty), during the pause after a wrong clock press ("please
   wait"), several fast presses of the opponent's lever (counted once per pause), both players pressing together.
