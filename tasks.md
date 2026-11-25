@@ -10,7 +10,7 @@ release's tasks until it ships.
   `jadoube` only; the branch is still at 0.4.0 and needs the released `main` merged in before any code.
 - [x] Replace the measure by the owner's inner circle (2026-11-25): a circle of 20% of the piece area around
   its centre must lie inside one square; the "sloppy" placement in between is gone.
-- [ ] Owner decides the open points of E-005.
+- [x] Owner decides the open points of E-005 (2026-11-25, recorded in E-005 one by one).
 - [ ] Implementation plan for review.
 
 ## Clock pressed twice (after 0.4.0)

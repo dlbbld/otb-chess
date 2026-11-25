@@ -162,7 +162,7 @@ Separate options for the opponent's sounds, a control during the game, a volume 
 
 ## E-005 — Free placement of the pieces and J'adoube
 
-**Status**: Draft requirement, dictated by the owner on 2026-11-25 and written down the same day; the measure was replaced by the owner's inner circle later that day, and the open points were decided one by one in the same conversation. Not reviewed, no implementation plan yet, nothing implemented. Based on the released `main` at 0.4.0. Where the owner's words left a choice, the reading taken is marked *(reading)*; what is still undecided is listed under *Open points*. The percentage is the owner's first value and is expected to change.
+**Status**: Draft requirement, dictated by the owner on 2026-11-25 and written down the same day; the measure was replaced by the owner's inner circle later that day, and the open points were decided one by one in the same conversation. Not reviewed, no implementation plan yet, nothing implemented. Based on the released `main` at 0.4.0. Where the owner's words left a choice, the reading taken is marked *(reading)*. The percentage is the owner's first value and is expected to change.
 
 **Relation to the Laws**: this entry is the path to compliance for [D-004](fide-deviations.md#d-004--jadoube--piece-adjustment-is-not-modeled) (FIDE 4.2.1, 4.2.2). The ruling on unclear placement is arbiter policy and gets an entry of its own in `fide-deviations.md` when it is built.
 
@@ -180,6 +180,8 @@ Separate options for the opponent's sounds, a control during the game, a volume 
 - **Clear placement**: the inner circle lies completely inside one square. The piece is on that square, and a move to it is made.
 - **Unclear placement**: the inner circle reaches over a border. The piece is on no square, and the move is not made.
 - **Squares to choose from** after an unclear placement: the squares the inner circle lies on. These are two, or four at a corner.
+- **The area of the piece** is the piece image, the same for every piece. The percentage is one number and can be tuned.
+- **At the edge of the board**: a piece released with its centre outside the board is taken off the board, as today. If the centre is on the board and the inner circle reaches over the edge, the placement is unclear, with only the squares on the board to choose from.
 
 There is nothing in between: a placement is clear or unclear. *(Reading: the inner circle replaces the lines at 80% and 60% and with them the "sloppy" placement that the arbiter only reminded of.)*
 
@@ -195,6 +197,7 @@ The same rule in other words: only the centre of the piece and its distance to t
   - The player is bound to the **legal** moves that end with the piece on one of these squares *(reading, for the case that only some of the squares are legal: the illegal ones cannot be chosen)*.
   - If none of these squares gives a legal move, the release binds to nothing (decided by the owner on 2026-11-25): the player may take the piece to another square and make a legal move with it, and is not forced into an illegal move. Touch-move remains. This is what a release on an illegal square means today. Example: White lets go of the bishop from c1 across the border of c4 and d4 and it can reach neither; any legal bishop move remains.
 - **No correction without J'adoube** (the owner's correction of 2026-11-25; before, this was allowed): once a piece is released in a clear placement, the player may not shift it on its square without J'adoube, however badly it stands. Example: White plays e2-e4, the pawn lies clearly but not nicely on e4, and White picks it up and sets it down again on e4. See *Adjusting without J'adoube* below. Setting it down on another square is what it is today (released-piece rule). A piece released in an unclear placement is not meant: it has to be picked up again to finish the move.
+- Promotion, castling and en passant have no rule of their own: every piece that is set down is measured. To be confirmed in the implementation plan.
 - Positions the arbiter sets up are centred: the starting position, a reverted or restored position, a rematch.
 
 ### At the clock press
@@ -228,11 +231,13 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
   - A move cannot be made this way: a piece carried to another square under J'adoube is put back and is neither moved nor touched.
 - **When in the own time** (decided by the owner on 2026-11-25): at any moment while no piece is held, also after a piece was touched or moved in this turn. Example: White plays Nf3 and, before pressing the clock, straightens the bishop on c1 or a piece of the opponent. *(Proposed with it: a J'adoube that was pressed and not used ends with the clock press, and the button does nothing while the game is paused for a ruling.)*
 - **In the opponent's time**: nothing is armed. The arbiter says *"You can only adjust pieces in your own time."*, on a three-step ladder per player for the whole game: admonition, warning, loss of the game.
+- **No limit** on J'adoube in the own time in the first version.
 - **Without J'adoube, before the move is made** nothing changes: a piece that is clicked is touched and must be moved or captured, however badly it stands.
 - **Adjusting without J'adoube, after the move is made** (decided by the owner on 2026-11-25): the player shifts the piece they have moved on its square. The arbiter intervenes at once, not at the clock press: *"You cannot adjust pieces without saying J'adoube."* The game is paused for the call and then resumes; the move stands, the piece is on its square, and the player is free to press the clock. On a three-step ladder per player for the whole game: admonition, warning, loss of the game.
   - *(Reading)* The piece stays where the player shifted it to; nothing is put back. If it lies unclear after the shift, that is the unclear placement at the clock press.
   - The same holds for any other piece that the player shifts on its square after their move is made, an own one or one of the opponent (decided by the owner on 2026-11-25): same ruling, same ladder. Today such a late touch has no consequence, because the move is already made.
   - *(Reading)* A click that does not shift the piece is no adjustment.
+- The two J'adoube ladders (J'adoube in the opponent's time, adjusting without J'adoube) are separate, and each is fixed at three like the other ladders; the entry-screen option is only for unclear placements.
 
 ### Entry screen
 
@@ -241,13 +246,7 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 
 ### Open points
 
-In the order of their importance.
-
-1. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
-2. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
-3. **Are the two J'adoube ladders fixed at three** (J'adoube in the opponent's time, adjusting without J'adoube) like the other ladders, or do they follow the new option? And are they two ladders or one? Proposed: two ladders, each fixed at three, like the other ladders.
-4. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
-5. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
+None. The owner decided the open points on 2026-11-25; the last five (area of the piece, edge of the board, the two J'adoube ladders, no limit on J'adoube, promotion and the like) by accepting the proposals as they stood. The passages marked *(reading)* or *(proposed)* are the writer's and were not confirmed one by one.
 
 ### Not part of this
 
