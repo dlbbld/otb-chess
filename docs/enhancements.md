@@ -201,9 +201,13 @@ The same rule in other words: only the centre of the piece and its distance to t
 
 In this order:
 
-1. **A piece in an unclear placement**: the move is not made and the clock press is not accepted. The arbiter names the squares the inner circle lies on and asks the player to decide and to place the piece properly: *"It is not clear on which square your bishop is. Place it on c4 or on d4, and place your pieces more carefully."* The player may choose only one of these squares. They decide by placing the piece there, clearly, and pressing the clock again; the move is then ruled on as any other (accepted, illegal move, touch-move, …).
+1. **A piece in an unclear placement**: the move is not made. The arbiter **pauses the game** to make the call (decided by the owner on 2026-11-25): he names the squares the inner circle lies on and asks the player to decide and to place the piece properly: *"It is not clear on which square your bishop is. Place it on c4 or on d4, and place your pieces more carefully."*
+   - The arbiter then starts the clock again, and the player corrects the placement **while their own clock is running** *(reading: a short pause for the call and a restart by the arbiter, as after a wrong clock press, [A-006](fide-deviations.md#a-006--wrong-clock-press-pressing-the-opponents-clock-escalation); the board cannot be used during the pause)*.
+   - The player decides by placing the piece clearly on one of the named squares and pressing the clock again; the move is then ruled on as any other (accepted, illegal move, touch-move, …).
+   - **The piece is still unclear at the next clock press**: the same intervention again.
    - This counts on a ladder of its own, per player for the whole game (confirmed by the owner for the inner circle on 2026-11-25): admonition, then the warning that the next time loses the game, then **loss of the game**. Entry-screen option for the number: 3 by default, 1 to 10, or unlimited (same form as *Number of illegal moves causing game loss*).
-2. **Every piece is clear**: the move is ruled on as today.
+2. **A piece that was released unclear now stands clearly on a square outside its inner circle, although a square of the inner circle gives a legal move**: the arbiter intervenes again in the same way and names the squares the piece may go to: *"Your rook was released on d1 and e1. Place it on d1 or on e1."* The piece stays where the player put it; the player takes it to one of the named squares on their running clock. The arbiter intervenes at every clock press until this is resolved (decided by the owner on 2026-11-25). It applies whether or not the arbiter had already named the squares.
+3. **Every piece is clear and none is bound elsewhere**: the move is ruled on as today.
 
 ### Captures and overlapping pieces
 
@@ -234,14 +238,13 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 
 In the order of their importance.
 
-1. **Clocks during this ruling**: proposed that nothing is paused and the player's clock keeps running, because nothing has to be restored and the delay is the player's own.
-2. **The player puts the piece on a square outside the inner circle and presses the clock**, before or after the arbiter named the squares: proposed a released-piece violation as today, without penalty: the piece is put back where it lay unclear and the instruction is repeated.
-3. **When in the own time**: proposed at any moment while no piece is held, also after a piece was touched or moved in this turn. An armed J'adoube that was not used ends with the clock press. Not available while the game is paused for a ruling.
-4. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
-5. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
-6. **Is the wrong-time J'adoube ladder fixed at three** like the other ladders, or does it follow the new option?
-7. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
-8. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
+1. **What counts on the ladder for unclear placement**: proposed every clock press with a piece in an unclear placement, also a repeated one for the same piece, as every clock press with an illegal move counts today. Proposed not counted: the intervention for a piece taken outside its inner circle (number 2 under *At the clock press*), which is without penalty like a released-piece violation today.
+2. **When in the own time**: proposed at any moment while no piece is held, also after a piece was touched or moved in this turn. An armed J'adoube that was not used ends with the clock press. Not available while the game is paused for a ruling.
+3. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
+4. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
+5. **Is the wrong-time J'adoube ladder fixed at three** like the other ladders, or does it follow the new option?
+6. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
+7. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
 
 ### Not part of this
 
