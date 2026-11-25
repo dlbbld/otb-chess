@@ -162,7 +162,7 @@ Separate options for the opponent's sounds, a control during the game, a volume 
 
 ## E-005 — Free placement of the pieces and J'adoube
 
-**Status**: Draft requirement, dictated by the owner on 2026-11-25 and written down the same day; the measure was replaced by the owner's inner circle later that day, and the open points were decided one by one in the same conversation. Not reviewed, no implementation plan yet, nothing implemented. Based on the released `main` at 0.4.0. Where the owner's words left a choice, the reading taken is marked *(reading)*. The percentage is the owner's first value and is expected to change.
+**Status**: Draft requirement, dictated by the owner on 2026-11-25 and written down the same day; the measure was replaced by the owner's inner circle later that day, and the open points were decided one by one in the same conversation. Not reviewed, nothing implemented. Written against the released `main` at 0.4.0; `jadoube` now holds 0.5.1. The implementation plan is [`e-005-implementation-plan.md`](e-005-implementation-plan.md) (draft of 2026-11-25); it asks four questions on the rulings and corrects two statements of this entry. Where the owner's words left a choice, the reading taken is marked *(reading)*. The percentage is the owner's first value and is expected to change.
 
 **Relation to the Laws**: this entry is the path to compliance for [D-004](fide-deviations.md#d-004--jadoube--piece-adjustment-is-not-modeled) (FIDE 4.2.1, 4.2.2). The ruling on unclear placement is arbiter policy and gets an entry of its own in `fide-deviations.md` when it is built.
 
@@ -246,7 +246,7 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 
 ### Open points
 
-None. The owner decided the open points on 2026-11-25; the last five (area of the piece, edge of the board, the two J'adoube ladders, no limit on J'adoube, promotion and the like) by accepting the proposals as they stood. The passages marked *(reading)* or *(proposed)* are the writer's and were not confirmed one by one.
+Four, found while writing the implementation plan and listed there with a proposal each (section 1): whether the arbiter may name a square that gives no legal move, a piece let go across the border of its own square, a second unclear release on other squares, and an unclear placement of an opponent's piece. The owner decided the earlier open points on 2026-11-25; the last five (area of the piece, edge of the board, the two J'adoube ladders, no limit on J'adoube, promotion and the like) by accepting the proposals as they stood. The passages marked *(reading)* or *(proposed)* are the writer's and were not confirmed one by one.
 
 ### Not part of this
 
