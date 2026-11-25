@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.4.0 — Piece and Clock Sounds](CHANGELOG.md#040--piece-and-clock-sounds--2026-11-24)
+See [0.5.0 — Two-Tab Play and Fairer Rulings](CHANGELOG.md#050--two-tab-play-and-fairer-rulings--2026-11-25)
 for this release.
 
 ## Documentation

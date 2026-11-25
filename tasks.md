@@ -3,6 +3,29 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## 0.5.0 — Two-Tab Play and Fairer Rulings
+
+- [x] Scope: everything on `fixes-and-improvements` since `0.4.0` (section below) - the pause after a clock
+  press without a move, touch-move before an illegal move of another piece, green circles for the move that
+  was already made, the finished game after a reload, both sides from two tabs of one browser, Ashlar Chess
+  22.2.0. `0.5.0` instead of `0.4.1` (decided with the owner on 2026-11-25): two-tab play and the finished
+  game on reload are features, the server has a new message (`resumeEnded`), and the seat a browser stores
+  has a new form.
+- [x] Prepare version `0.5.0`, the dated changelog and README link, and the version pins
+  (`TestOtbChessServer`, `version.spec.ts`, the deploy example in `SETUP.md`). Use **Two-Tab Play and Fairer
+  Rulings** for the PR title and its opening heading, title the GitHub release `0.5.0`, and begin its notes
+  with the release name.
+- [x] Verification on macOS at the release commit: full Java suite (537 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), `TouchMoveOracle` (33,793 cases, 0 differences), `RuleFuzzer` (20,000 games,
+  0 findings), full browser suite against the rebuilt jar (260 passed, 1 skipped, no retries, `sounds.spec.ts`
+  in audio mode `'real'`); the jar reports `0.5.0` (`version.properties`, manifest, and `version.spec.ts` for
+  `/api/version`, lobby and board). Not run: anything on Windows; no browser other than Chromium.
+- [ ] Manual test by the owner through `start.bat` (default branch `fixes-and-improvements`) before the
+  merge: version `0.5.0`, two tabs of one browser with a reload of each, a reload after the game, a double
+  click on the clock without a move.
+- [ ] Merge the PR, tag `0.5.0` on the merge commit, publish the GitHub release, deploy by `SETUP.md` §12.
+  Publication and deployment are reported in the conversation, not here.
+
 ## Fixes and improvements (after 0.4.0)
 
 Development continues on `fixes-and-improvements` (2026-11-25), created from the released `main` (`1f5c17a`);
