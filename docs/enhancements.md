@@ -162,9 +162,9 @@ Separate options for the opponent's sounds, a control during the game, a volume 
 
 ## E-005 — Free placement of the pieces and J'adoube
 
-**Status**: Draft requirement, dictated by the owner on 2026-11-25 and written down the same day. Not reviewed, no implementation plan yet, nothing implemented. Based on the released `main` at 0.4.0. Where the owner's words left a choice, the reading taken is marked *(reading)*; what is still undecided is listed under *Open points*. The percentages are the owner's first values and are expected to change.
+**Status**: Draft requirement, dictated by the owner on 2026-11-25 and written down the same day; the measure was replaced by the owner's inner circle later that day. Not reviewed, no implementation plan yet, nothing implemented. Based on the released `main` at 0.4.0. Where the owner's words left a choice, the reading taken is marked *(reading)*; what is still undecided is listed under *Open points*. The percentage is the owner's first value and is expected to change.
 
-**Relation to the Laws**: this entry is the path to compliance for [D-004](fide-deviations.md#d-004--jadoube--piece-adjustment-is-not-modeled) (FIDE 4.2.1, 4.2.2). The rulings on unclear and sloppy placement are arbiter policy and get entries of their own in `fide-deviations.md` when they are built.
+**Relation to the Laws**: this entry is the path to compliance for [D-004](fide-deviations.md#d-004--jadoube--piece-adjustment-is-not-modeled) (FIDE 4.2.1, 4.2.2). The ruling on unclear placement is arbiter policy and gets an entry of its own in `fide-deviations.md` when it is built.
 
 ### Requirement
 
@@ -174,26 +174,23 @@ Separate options for the opponent's sounds, a control during the game, a volume 
 4. The feature is a layer in front of the existing game: every placement is turned into "on square X" or "on no square" before the rules look at it. The rules for legal moves, touch-move, the released piece, restoration, claims and offers do not change.
 5. A J'adoube button lets the player on move adjust one piece without it counting as touched.
 
-### The measure
+### The measure: the inner circle
 
-- **Footprint**: the area of a piece that is measured. Proposed: a square of 56/64 of a board square, the piece image as it is drawn today, the same for every piece.
-- **Share**: the part of the footprint that lies on a square, in percent. A footprint lies on at most four squares. What lies beyond the edge of the board counts for no square.
-- **Main square**: the square with the largest share.
+- **Inner circle**: a circle around the centre of the piece. Its area is the **placement exactness**, a percentage of the area of the piece: **20%** to start with.
+- **Clear placement**: the inner circle lies completely inside one square. The piece is on that square, and a move to it is made.
+- **Unclear placement**: the inner circle reaches over a border. The piece is on no square, and the move is not made.
+- **Squares to choose from** after an unclear placement: the squares the inner circle lies on. These are two, or four at a corner.
 
-A placement is one of three *(reading: two lines, at 80% and at 60%)*:
+There is nothing in between: a placement is clear or unclear. *(Reading: the inner circle replaces the lines at 80% and 60% and with them the "sloppy" placement that the arbiter only reminded of.)*
 
-| Placement | Share on the main square | Meaning |
-|---|---|---|
-| Proper | 80% or more | The piece is on that square. |
-| Sloppy | 60% up to 80% | The piece is on that square, and the move counts, but the arbiter wants it placed properly. |
-| Unclear | no square has 60% | The piece is on no square. The move is not made. |
+What 20% means on today's board, with the area of the piece taken as its image (56 of the 64 pixels of a square in each direction): the inner circle has a diameter of 28 pixels, a little less than half a square. The placement is clear as long as the centre of the piece is at least 14 pixels away from every border, that is, shifted by at most 18 pixels (0.28 of a square) from the centre of the square in each direction. At that limit a quarter of the piece image hangs over the border. A smaller percentage is more lenient: 10% allows 22 pixels, 30% allows 15.
 
-What the percentages mean on the board, for a piece shifted straight sideways from the centre of a 64-pixel square: up to 4 pixels 100%, 15 pixels (a quarter of a square) 80%, 26 pixels 60%, 32 pixels (centre on the border) 50% on each. Shifted in both directions the two shares multiply: a quarter of a square sideways and upwards is 65%. A piece with its centre on a corner has 25% on each of four squares.
+The same rule in other words: only the centre of the piece and its distance to the nearest border count. Both boards and the server can compute it exactly, in parts of a square, whatever the size of the screen.
 
 ### During the turn
 
 - The opponent sees every piece exactly where it lies, on the turned board mirrored accordingly.
-- A release in a proper or sloppy placement is a release on the main square, with everything that follows from it today (released-piece rule, capture, automatic end of the game).
+- A release in a clear placement is a release on that square, with everything that follows from it today (released-piece rule, capture, automatic end of the game).
 - A release in an unclear placement is a release on no square. The piece counts as touched, nothing is captured, nothing ends.
 - **Correcting the own placement**: until the clock is pressed, the player may pick up the piece they have moved and set it down again on the same square. This needs no J'adoube, is no new touch and is no violation. Setting it down on another square is what it is today (released-piece rule).
 - Positions the arbiter sets up are centred: the starting position, a reverted or restored position, a rematch.
@@ -202,27 +199,26 @@ What the percentages mean on the board, for a piece shifted straight sideways fr
 
 In this order:
 
-1. **A piece in an unclear placement**: the move is not made and the clock press is not accepted. The arbiter names the squares the player may choose from and asks them to decide and to place the piece properly: *"It is not clear on which square your bishop is. Place it on c4 or on d4, and place your pieces more carefully."* The player may choose only a square on which the piece lies with at least 30%. They decide by placing the piece there and pressing the clock again; the move is then ruled on as any other (accepted, illegal move, touch-move, …).
-   - This counts on a ladder of its own, per player for the whole game: admonition, then the warning that the next time loses the game, then **loss of the game**. Entry-screen option for the number: 3 by default, 1 to 10, or unlimited (same form as *Number of illegal moves causing game loss*).
-2. **No unclear piece, the move is otherwise acceptable, but a moved piece is sloppy** *(reading)*: the clock press is not accepted. The arbiter asks: *"Please place your bishop properly on c4."* No penalty and no count; the arbiter repeats it at every clock press until the piece is proper.
-3. **A violation that exists today** (illegal move, touch-move, released piece, …) is ruled on the main squares as today and comes before the sloppy placement: the restored position is centred anyway.
-4. Otherwise the move is accepted as today.
+1. **A piece in an unclear placement**: the move is not made and the clock press is not accepted. The arbiter names the squares the inner circle lies on and asks the player to decide and to place the piece properly: *"It is not clear on which square your bishop is. Place it on c4 or on d4, and place your pieces more carefully."* The player may choose only one of these squares. They decide by placing the piece there, clearly, and pressing the clock again; the move is then ruled on as any other (accepted, illegal move, touch-move, …).
+   - This counts on a ladder of its own, per player for the whole game *(reading: the ladder decided before the inner circle still applies)*: admonition, then the warning that the next time loses the game, then **loss of the game**. Entry-screen option for the number: 3 by default, 1 to 10, or unlimited (same form as *Number of illegal moves causing game loss*).
+2. **Every piece is clear**: the move is ruled on as today.
 
 ### Captures and overlapping pieces
 
-- A piece released with 60% or more on a square where an opponent's piece stands captures it: the opponent's piece leaves the board as today.
+- A piece released in a clear placement on a square where an opponent's piece stands captures it: the opponent's piece leaves the board as today.
 - A piece released in an unclear placement over an occupied square removes nothing. The two pieces overlap, the later one drawn on top, and the arbiter steps in at the clock press (unclear placement). If the occupied square is one of the squares to choose from, choosing it is the capture.
+- Two pieces that are both clearly on neighbouring squares can still overlap on the screen, at 20% by up to half a piece image. That is allowed; J'adoube is there to straighten them.
 - Removing the opponent's piece first and then placing the own piece works as today.
 
 ### Automatic end of the game
 
-A move that ends the game without a clock press today (checkmate, stalemate, …) does so when its piece is released with 60% or more on the square, also in a sloppy placement. An unclear placement is no move, so nothing ends.
+A move that ends the game without a clock press today (checkmate, stalemate, …) does so when its piece is released in a clear placement. An unclear placement is no move, so nothing ends.
 
 ### J'adoube
 
 - A **J'adoube** button on the board, only in a game with free placement. It can always be pressed.
 - **In the own time**: the press arms it and the button is disabled. Both players are told (*"White: J'adoube."*). The next piece the player presses the mouse button on is the adjusted piece, from the press until the release. It does not count as touched. With the release the button is enabled again; every further adjustment needs a new J'adoube. One J'adoube, one piece.
-  - The piece must end properly placed on the square it was on. If it is released on another square, sloppy or unclear, the adjustment is **undone**: the piece lies again where it lay before, without penalty.
+  - The piece must end in a clear placement on the square it was on. If it is released on another square or in an unclear placement, the adjustment is **undone**: the piece lies again where it lay before, without penalty.
   - A move cannot be made this way: a piece carried to another square under J'adoube is put back and is neither moved nor touched.
 - **In the opponent's time**: nothing is armed. The arbiter says *"You can only adjust pieces in your own time."*, on a three-step ladder per player for the whole game: admonition, warning, loss of the game.
 - **Without J'adoube** nothing changes: a piece that is clicked is touched and must be moved or captured, however badly it stands.
@@ -234,18 +230,16 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 
 ### Open points
 
-1. **One line or two?** The owner first set the line at 20% outside the main square and then at 60% on it. Read here as two lines with the sloppy placement in between. With one line at 60% there is no sloppy placement, a piece may stay up to 40% over a border, and J'adoube is the only way to straighten it.
-2. **An unclear piece before the clock press** (see the explanation given to the owner on 2026-11-25): may the player pick it up again and put it on any square (it is only touched), or only on a square it lies on with at least 30% (it is released there)? Proposed: any square until the clock is pressed, since the clock press is where the move ends ([D-001](fide-deviations.md#d-001--clock-press-as-the-move-boundary)); after a clock press with an unclear piece only the named squares.
-3. **After the arbiter named the squares, the player puts the piece on another one**: proposed as for a released piece today, without penalty: the piece is put back where it lay and the instruction is repeated.
-4. **No square reaches 30%** (a piece on a corner of four squares): proposed that the player may then choose any of the squares it lies on.
-5. **Clocks during these rulings**: proposed that nothing is paused and the player's clock keeps running, because nothing has to be restored and the delay is the player's own.
-6. **Which pieces J'adoube may adjust**: proposed own and opponent's pieces (FIDE 4.2.1 says "one or more pieces").
-7. **When in the own time**: proposed at any moment while no piece is held, also after a piece was touched or moved in this turn. An armed J'adoube that was not used ends with the clock press. Not available while the game is paused for a ruling.
-8. **Is the wrong-time J'adoube ladder fixed at three** like the other ladders, or does it follow the new option?
-9. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
-10. **The footprint**: the image square as proposed, or a round base, and the same size for every piece or a larger one for king and queen.
-11. **A piece released partly beyond the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside, otherwise measured as above.
-12. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
+1. **An unclear piece before the clock press** (see the explanation given to the owner on 2026-11-25): may the player pick it up again and put it on any square (it is only touched), or only on a square its inner circle lies on (it is released there)? Proposed: any square until the clock is pressed, since the clock press is where the move ends ([D-001](fide-deviations.md#d-001--clock-press-as-the-move-boundary)); after a clock press with an unclear piece only the named squares.
+2. **After the arbiter named the squares, the player puts the piece on another one**: proposed as for a released piece today, without penalty: the piece is put back where it lay and the instruction is repeated.
+3. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
+4. **Clocks during this ruling**: proposed that nothing is paused and the player's clock keeps running, because nothing has to be restored and the delay is the player's own.
+5. **Which pieces J'adoube may adjust**: proposed own and opponent's pieces (FIDE 4.2.1 says "one or more pieces").
+6. **When in the own time**: proposed at any moment while no piece is held, also after a piece was touched or moved in this turn. An armed J'adoube that was not used ends with the clock press. Not available while the game is paused for a ruling.
+7. **Is the wrong-time J'adoube ladder fixed at three** like the other ladders, or does it follow the new option?
+8. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
+9. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
+10. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
 
 ### Not part of this
 

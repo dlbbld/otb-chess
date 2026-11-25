@@ -8,6 +8,8 @@ release's tasks until it ships.
 - [x] Write down the owner's requirement of 2026-11-25 as E-005 in `docs/enhancements.md` (pieces stay where
   they are released, rulings on unclear and sloppy placement, J'adoube button), with the open points. On
   `jadoube` only; the branch is still at 0.4.0 and needs the released `main` merged in before any code.
+- [x] Replace the measure by the owner's inner circle (2026-11-25): a circle of 20% of the piece area around
+  its centre must lie inside one square; the "sloppy" placement in between is gone.
 - [ ] Owner decides the open points of E-005.
 - [ ] Implementation plan for review.
 
