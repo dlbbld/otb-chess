@@ -43,6 +43,11 @@ and after the game. No script error, no lost connection and no game that could n
   that is the game this browser is already in, changes nothing, and points to a private window or another
   browser and to the manual (`MANUAL.md`, *Playing both sides yourself*). Client only: the server cannot tell
   two tabs of one browser from two players, so there is no Java test for it.
+- [x] Verification on macOS at the last of these commits: full Java suite (524 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), `TouchMoveOracle` (33,793 cases, 0 differences), `RuleFuzzer` (20,000 games,
+  0 findings), full browser suite (249 passed, 1 skipped; the one test that still expected the old ruling was
+  changed and its file rerun). Not run: anything on Windows; the launcher's default branch was changed in
+  `start.bat` and `TestWindowsLauncher`, whose tests run on Windows only.
 - [ ] Still open, not asked for: creating or joining a *different* game in a second tab of the same browser
   replaces the stored seat of the first tab; after a reload that tab is in the other game.
 - Not broken: presses before the opponent joined and after the game (ignored), during the pause to restore a
