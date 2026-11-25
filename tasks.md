@@ -3,6 +3,14 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## Free placement and J'adoube (requirement)
+
+- [x] Write down the owner's requirement of 2026-11-25 as E-005 in `docs/enhancements.md` (pieces stay where
+  they are released, rulings on unclear and sloppy placement, J'adoube button), with the open points. On
+  `jadoube` only; the branch is still at 0.4.0 and needs the released `main` merged in before any code.
+- [ ] Owner decides the open points of E-005.
+- [ ] Implementation plan for review.
+
 ## Clock pressed twice (after 0.4.0)
 
 Development continues on `jadoube` (2026-11-25), created from the released `main` (`1f5c17a`).

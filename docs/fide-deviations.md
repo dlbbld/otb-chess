@@ -52,6 +52,8 @@ Each deviation entry includes a *Path to compliance* sub-section so the route to
 
 **Rationale for not implementing**: Substantial work — UI button, mode tracking, per-piece event recording, side/turn validation, distinguishing adjusting-own-piece vs. adjusting-opponent-piece. The feature exists primarily to mirror physical-board behaviour. Lower priority than D-001.
 
+**Requirement (2026-11-25)**: written down together with free placement of the pieces as [E-005](enhancements.md#e-005--free-placement-of-the-pieces-and-jadoube); it replaces the sketch below where they differ.
+
 **Path to compliance (sketch)**:
 
 - "J'adoube" button, must be pressed before each piece adjustment. One press = one adjustment, not a session-wide toggle.
