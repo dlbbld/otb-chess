@@ -226,6 +226,7 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 - **In the own time**: the press arms it and the button is disabled. Both players are told (*"White: J'adoube."*). The next piece the player presses the mouse button on is the adjusted piece, from the press until the release. It may be an own piece or a piece of the opponent (decided by the owner on 2026-11-25; FIDE 4.2.1). It does not count as touched. With the release the button is enabled again; every further adjustment needs a new J'adoube. One J'adoube, one piece.
   - The piece must end in a clear placement on the square it was on. If it is released on another square or in an unclear placement, the adjustment is **undone**: the piece lies again where it lay before, without penalty.
   - A move cannot be made this way: a piece carried to another square under J'adoube is put back and is neither moved nor touched.
+- **When in the own time** (decided by the owner on 2026-11-25): at any moment while no piece is held, also after a piece was touched or moved in this turn. Example: White plays Nf3 and, before pressing the clock, straightens the bishop on c1 or a piece of the opponent. *(Proposed with it: a J'adoube that was pressed and not used ends with the clock press, and the button does nothing while the game is paused for a ruling.)*
 - **In the opponent's time**: nothing is armed. The arbiter says *"You can only adjust pieces in your own time."*, on a three-step ladder per player for the whole game: admonition, warning, loss of the game.
 - **Without J'adoube** nothing changes: a piece that is clicked is touched and must be moved or captured, however badly it stands.
 
@@ -238,13 +239,12 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 
 In the order of their importance.
 
-1. **When in the own time**: proposed at any moment while no piece is held, also after a piece was touched or moved in this turn. An armed J'adoube that was not used ends with the clock press. Not available while the game is paused for a ruling.
-2. **Does the intervention for a piece taken outside its inner circle count on the ladder** (number 2 under *At the clock press*)? Proposed: no, it is without penalty like a released-piece violation today.
-3. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
-4. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
-5. **Is the wrong-time J'adoube ladder fixed at three** like the other ladders, or does it follow the new option?
-6. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
-7. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
+1. **Does the intervention for a piece taken outside its inner circle count on the ladder** (number 2 under *At the clock press*)? Proposed: no, it is without penalty like a released-piece violation today.
+2. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
+3. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
+4. **Is the wrong-time J'adoube ladder fixed at three** like the other ladders, or does it follow the new option?
+5. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
+6. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
 
 ### Not part of this
 
