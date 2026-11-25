@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test';
 
-test('0.5.0 is reported by the API and shown on lobby and board pages', async ({ page, request }) => {
+test('0.5.1 is reported by the API and shown on lobby and board pages', async ({ page, request }) => {
   const response = await request.get('/api/version');
   expect(response.ok()).toBe(true);
-  await expect(response.json()).resolves.toEqual({ version: '0.5.0' });
+  await expect(response.json()).resolves.toEqual({ version: '0.5.1' });
 
   await page.goto('/');
-  await expect(page.locator('[data-app-version]')).toHaveText('v0.5.0');
+  await expect(page.locator('[data-app-version]')).toHaveText('v0.5.1');
 
   await page.goto('/game.html');
-  await expect(page.locator('[data-app-version]')).toHaveText('v0.5.0');
+  await expect(page.locator('[data-app-version]')).toHaveText('v0.5.1');
 });
