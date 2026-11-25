@@ -1,47 +1,49 @@
 # E-005 — Implementation plan: free placement of the pieces and J'adoube
 
-**Status**: Draft of 2026-11-25, for review by the owner and by Codex. Nothing is implemented. Written against `jadoube` with the released `main` (0.5.1) merged in.
+**Status**: Draft of 2026-11-25, for review by Codex. Nothing is implemented. Written against `jadoube` with the released `main` (0.5.1) merged in. The owner decided the four rulings of section 1 on 2026-11-25; the details marked *(proposal)* in section 2 are not confirmed.
 
-**What this is**: the plan for the requirement [E-005](enhancements.md#e-005--free-placement-of-the-pieces-and-jadoube). E-005 says what the players get; this says how it is built, in which order, and how it is tested. Where E-005 leaves a ruling open, section 1 asks the owner. Where it leaves a detail open, section 2 proposes one and marks it *(proposal)*.
+**What this is**: the plan for the requirement [E-005](enhancements.md#e-005--free-placement-of-the-pieces-and-jadoube). E-005 says what the players get; this says how it is built, in which order, and how it is tested. Where E-005 left a ruling open, section 1 records the owner's decision. Where it leaves a detail open, section 2 proposes one and marks it *(proposal)*.
 
 **How it was written**: by reading E-005 against the code as it is: `static/js/board.js`, `static/js/game.js`, `GameSession`, `ArbiterEngine`, `MidPlayValidator`, `TouchMoveEvaluator`, `GameWebSocketServer`, and the sections of `SPECIFICATION.md` on board events, the released-piece rule and the evaluation at the clock press. Nothing was run.
 
 ---
 
-## 1. Decisions needed from the owner
+## 1. Decisions of the owner
 
-These four are rulings. E-005 does not answer them, and the code cannot be written without an answer. Each has a proposal; the rest of the plan assumes the proposals.
+These four are rulings. E-005 did not answer them, and the code cannot be written without an answer. The owner decided all four on 2026-11-25 by accepting the proposals as they stood; E-005 now contains them.
 
 ### Q1 — May the arbiter name a square that gives no legal move?
 
 E-005 lets the arbiter say *"Place it on c4 or on d4"* and also says an illegal square of the two "cannot be chosen". If c4 is illegal and the player follows the call, an illegal move is counted. What the arbiter says when neither square is legal is not written. [A-010](fide-deviations.md#a-010--a-release-and-a-touch-are-judged-in-the-order-they-happened) pins that the player must be able to follow every ruling, and `RuleFuzzer` checks it.
 
-**Proposal**: the arbiter names only the squares the player is bound to, which are the ones that give a legal move. If none does, he names no square: *"It is not clear on which square your bishop is. Place your pieces more carefully."* The player may then make any legal move with the piece. This tells the player which square is legal, but the second ruling of E-005 ("Your rook was released on d1 and e1. Place it on d1 or on e1.") has to name the bound squares anyway, so nothing more is given away.
+**Decided**: the arbiter names only the squares the player is bound to, which are the ones that give a legal move. If none does, he names no square: *"It is not clear on which square your bishop is. Place your pieces more carefully."* The player may then make any legal move with the piece. This tells the player which square is legal, but the second ruling of E-005 ("Your rook was released on d1 and e1. Place it on d1 or on e1.") has to name the bound squares anyway, so nothing more is given away.
 
 ### Q2 — A piece let go across the border of its own square
 
 A pawn on e2 is picked up and let go across the border of e2 and e3. By the text of E-005 it is bound to the legal moves that end on e2 or e3, which leaves only e2-e3. Today the same handling is a click: the pawn is touched and must move, to any square.
 
-**Proposal**: if the square the piece came from is one of the squares its inner circle lies on, the release binds to nothing. The piece is touched, as today, and it lies unclear, so the arbiter makes the call at the clock press. The arbiter cannot tell a piece put back carelessly from a move.
+**Decided**: if the square the piece came from is one of the squares its inner circle lies on, the release binds to nothing. The piece is touched, as today, and it lies unclear, so the arbiter makes the call at the clock press. The arbiter cannot tell a piece put back carelessly from a move.
 
 ### Q3 — A second unclear release on other squares
 
 The rook from a1 is let go across d1 and e1, picked up again and let go across f1 and g1. It is bound to d1 and e1, but the call names the squares the piece lies on now.
 
-**Proposal**: the first binding stands, as the first release does today (FIDE 4.7). While a binding exists the call names the bound squares, not the squares the piece lies on: *"It is not clear on which square your rook is. It was released on d1 and e1. Place it on d1 or on e1."*
+**Decided**: the first binding stands, as the first release does today (FIDE 4.7). While a binding exists the call names the bound squares, not the squares the piece lies on: *"It is not clear on which square your rook is. It was released on d1 and e1. Place it on d1 or on e1."*
 
 ### Q4 — An unclear placement of an opponent's piece
 
 The call says "your bishop", and a binding to "the legal moves that end on these squares" means nothing for a piece that is not the player's. Today a click on an opponent's piece is a touch, taking it off the board is the first half of a capture, and dragging it to another square is ruled on at once (*"You moved an opponent's piece. That is not allowed."*, [A-007](fide-deviations.md#a-007--moving-an-opponents-piece-escalation), with restoration and a ladder).
 
-**Proposal**:
+**Decided**:
 
 - The inner circle still lies on the piece's own square: it is touched and lies unclear. At the clock press the arbiter makes the call for "your opponent's bishop"; the only way out is to put it back clearly on its square or to capture it. It counts on the ladder for unclear placements.
 - The inner circle no longer lies on its own square: the piece was moved. Ruled on at once as today, with the position restored and centred.
 
 ### Two corrections to E-005
 
-- **Three squares are possible.** E-005 says the inner circle lies on two squares, "or four at a corner". Near a corner it can cross both borders without reaching the fourth square: at 20% the radius is 0.22 of a square, and a centre 0.2 away from each of the two borders is 0.28 away from the corner. The squares to choose from are the squares the circle really lies on: one (at the edge of the board), two, three or four.
+Both are taken over into E-005.
+
+- **Three squares are possible.** E-005 said the inner circle lies on two squares, "or four at a corner". Near a corner it can cross both borders without reaching the fourth square: at 20% the radius is 0.22 of a square, and a centre 0.2 away from each of the two borders is 0.28 away from the corner. The squares to choose from are the squares the circle really lies on: one (at the edge of the board), two, three or four.
 - **"The rules do not change" (requirement 4) holds only in part.** A clear placement is ruled on exactly as today. The binding of an unclear release, and the ruling without a restoration that enforces it, are new in the released-piece logic. Section 2.3 lists every change.
 
 ### Readings of E-005 that this plan relies on
@@ -185,7 +187,7 @@ Each phase ends with its tests green, committed and pushed on `jadoube`. Nothing
 
 | Phase | Content | Done when |
 |---|---|---|
-| **0. Decisions** | The owner answers Q1 to Q4 and looks through the proposals. E-005 is brought up to date (three squares, requirement 4, the answers). | E-005 has no open ruling. |
+| **0. Decisions** | The owner answers Q1 to Q4. E-005 is brought up to date (three squares, requirement 4, the answers). | **Done on 2026-11-25**: E-005 has no open ruling. The proposals of section 2 go to the review. |
 | **1. The measure** | Units, radius, clear / unclear / off the board, the squares to choose from; in Java and in the page; the shared file of sample points. | Both read the file and agree, including corners with three squares, the edge of the board and the exact limit. |
 | **2. The rules** | The two events, the binding, the two rulings at the clock press, the ladder with its option, the pause for a call, the guards of 2.5. Driven by events built in tests; no page yet. | Section 4, Java tests for the rules. The old suites pass unchanged. |
 | **3. The server** | Options at `createGame`, placements in the room, deriving the events, the messages of 2.7 without J'adoube, reload and rematch. | Section 4, server tests. |
@@ -245,7 +247,7 @@ Windows-only launcher tests are not touched by this work.
 - **The old game must not move.** Held by the missing-field rule of 2.7, the untouched suites, the fuzzer's comparison of both modes, and the second Playwright project.
 - **The existing browser tests on a board drawn differently.** The pieces leave their squares in the page's structure; the helpers find pieces through the square. Phase 4 is not done before the whole suite passes.
 - **A fourth kind of pause.** The game already has the pause for a restoration, after a press of the opponent's clock and after a press without a move, each with its own bookkeeping. The pause for a call is built once for the three new calls and must give way to the others in the same way they give way to each other today.
-- **Q1 and the fuzzer.** If the owner decides that the arbiter names squares that may be illegal, the fuzzer's check "what the arbiter said is accepted" needs a stated exception, and A-010 a sentence.
+- **Q1 and the fuzzer.** The arbiter names only squares that give a legal move, so the fuzzer's check "what the arbiter said is accepted" holds for the new calls without an exception. The call that names no square gives the player nothing to follow; the fuzzer checks there that a legal move with the piece is accepted.
 
 ---
 

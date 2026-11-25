@@ -17,7 +17,8 @@ merged `fixes-and-improvements`.
 - [x] Merge the released `main` (0.5.1, `ef4fda7`) into `jadoube` (2026-11-25), so that the code starts from
   the current release.
 - [x] Implementation plan written (2026-11-25): `docs/e-005-implementation-plan.md`. Not reviewed.
-- [ ] Owner answers the four questions on the rulings in section 1 of the plan.
+- [x] Owner answers the four questions on the rulings in section 1 of the plan (2026-11-25: all four proposals
+  accepted as they stood). Recorded in the plan and in E-005, together with the plan's two corrections to E-005.
 - [ ] Review of the plan with Codex.
 
 ## 0.5.1 — Quick Restart
