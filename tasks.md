@@ -3,9 +3,10 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
-## Clock pressed twice (after 0.4.0)
+## Fixes and improvements (after 0.4.0)
 
-Development continues on `jadoube` (2026-11-25), created from the released `main` (`1f5c17a`).
+Development continues on `fixes-and-improvements` (2026-11-25), created from the released `main` (`1f5c17a`);
+it is the default branch of `start.bat`. `jadoube` is kept for another purpose.
 
 Feedback from a tester on the live site (0.4.0, 2026-11-25): "Everything seems to break if I press the clock
 twice." Not reproducible by the owner on a local server. 42 combinations of clock presses were played through

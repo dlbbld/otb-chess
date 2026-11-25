@@ -24,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class TestWindowsLauncher {
 
-  private static final String DEFAULT_BRANCH = "add-sounds";
+  private static final String DEFAULT_BRANCH = "fixes-and-improvements";
 
   private static final String OTHER_BRANCH = "release/candidate";
 
