@@ -83,6 +83,13 @@
       <label>Game Code:</label>
       <input type="text" id="gameCodeInput" placeholder="Enter game code">
       <button id="joinGameBtn" class="primary-btn">Join Game</button>
+      <!-- Shown when the code is that of the game this browser is already in (see joinGame). -->
+      <p id="joinRefused" class="lobby-error" role="alert" style="display:none;">
+        This game is already open in this browser, so you cannot join it here. To play both sides
+        yourself, join from a private (incognito) window or from another browser. See
+        <a href="https://github.com/dlbbld/otb-chess/blob/main/MANUAL.md#playing-both-sides-yourself"
+           target="_blank" rel="noopener">the manual</a>.
+      </p>
     </div>
 
     <!-- The player's own options, kept in this browser (localStorage) and never sent to the server.
@@ -207,10 +214,31 @@
         document.getElementById('gameCodeInput').style.borderColor = '#c0392b';
         return;
       }
+      // The game this browser is already in - created here in another tab, or joined - cannot be
+      // joined from here: all tabs of a browser share the stored seat, so the new tab would take
+      // that seat over and leave the other colour without a player. Nothing is changed.
+      if (isGameOfThisBrowser(gameId)) {
+        document.getElementById('joinRefused').style.display = '';
+        return;
+      }
       // Deliberate new join: drop any saved session so the board page joins fresh.
       try { localStorage.removeItem('otbSession'); } catch (e) { /* ignore */ }
       window.location.href = '/game.html?gameId=' + gameId;
     }
+
+    function isGameOfThisBrowser(gameId) {
+      try {
+        const saved = JSON.parse(localStorage.getItem('otbSession') || 'null');
+        return !!(saved && saved.token && saved.gameId
+            && String(saved.gameId).toUpperCase() === gameId.toUpperCase());
+      } catch (e) {
+        return false;
+      }
+    }
+
+    document.getElementById('gameCodeInput').addEventListener('input', () => {
+      document.getElementById('joinRefused').style.display = 'none';
+    });
 
     document.getElementById('joinGameBtn').addEventListener('click', joinGame);
     document.getElementById('gameCodeInput').addEventListener('keydown', (e) => {

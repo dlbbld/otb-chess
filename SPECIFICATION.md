@@ -80,6 +80,7 @@ the server, and hold for every game the player creates, joins or returns to. See
 
 6. The creator receives an **8-character game code** with a **Copy code** button.
 7. The second player opens the join page; the **game code field auto-fills** from the URL or from the creator's clipboard share, so the second player only confirms.
+   - **Not from the same browser.** All tabs of a browser share the stored seat (`otbSession` in `localStorage`), so a second tab that joined the game would take over the seat of the first one and leave the other colour without a player. The start screen therefore refuses a code that is the game this browser is already in - created here or joined here - and changes nothing: *"This game is already open in this browser, so you cannot join it here. To play both sides yourself, join from a private (incognito) window or from another browser. See the manual."* The check is the page's own (`isGameOfThisBrowser` in `index.html`); the server cannot tell two tabs of one browser from two players.
 8. Both browsers connect via WebSocket -- the game begins.
 
 ### Aborting (before the opponent joins)
@@ -174,7 +175,11 @@ The two LCDs and the rocker keep the same relative placement so that "the LCD ne
 ### Clock-press semantics
 
 - A press of the player's **own** lever on their **own turn** triggers full move evaluation (see "Two-Layer Evaluation at Clock Press").
-- **Pressing the clock without having made a move** (board unchanged at the press) is considered and penalised **as an illegal move** per FIDE 7.5.3: standard penalty time to the opponent, counts toward the illegal-move limit (default 2 → the second such press loses the game). There is nothing to restore, so the message asks the player to make a move and their clock keeps running.
+- **Pressing the clock without having made a move** (board unchanged at the press) is considered and penalised **as an illegal move** per FIDE 7.5.3: standard penalty time to the opponent, counts toward the illegal-move limit (default 2 → the second such press loses the game). There is nothing to restore, so the message asks the player to make a move. The arbiter stops the clock for this ruling as for every other one, and the game goes on as it does after a restoration:
+  - with *Continue clock without confirmation* (the default), the clock restarts by itself after the arbiter's pause (`OTB_WRONG_CLOCK_PAUSE_MS`, 5 s). The ruling ends with *"The game is paused and will continue shortly."*; at the restart (`clockRestarted`) only that last sentence changes, to *"The clock has restarted."*, so the count of illegal moves stays in view. The opponent's info window says *"…The game is paused; the clock will restart shortly."*, then *"…The clock has restarted."* The board stays usable: a move made in the pause is accepted with a press after the restart.
+  - without it, both players are asked *"Are you ready to continue?"* (`waitingForReady`); the player who pressed reads the ruling before the question.
+  - A press of the own lever in this pause is not ruled on and not answered: the second click of a double click is no second illegal move, and the ruling stays where it is. After the restart the lever is up again - a further press without a move is the next illegal move.
+- **A press that reaches the server when the player's lever is down** - it is not their turn, or the game is over - is not answered either. This is the second click of a double click that was sent before the answer to the first one arrived; an answer would replace *"Move accepted. Opponent's turn."*. The page itself treats two clicks on the same lever within 400 ms as one press, unless the player did something else in between.
 - A press of the **opponent's** lever registers only while the opponent's clock is running (their lever up) and escalates per [A-006](docs/fide-deviations.md#a-006--wrong-clock-press-pressing-the-opponents-clock-escalation): pause + admonishment, pause + warning, loss on the third press. With the opponent's lever already down (or one's own lever pressed out of turn) the press is a physical no-op — silence, like the real clock.
 - Every press that registers - the own lever when the move is evaluated, the opponent's lever while their clock is running - is heard by both players (`clockPressHeard`, see *Sounds*). A press that is a no-op is silent.
 - When the arbiter restarts the clock after that pause, the restart is announced (`clockRestarted`): the offender reads *"Clock restarted. Game continues."* in place of the admonishment, after the second press with the warning repeated; the opponent's info window changes from *"…your clock will restart shortly."* to *"…Your clock has restarted."* The opponent's arbiter window is changed only if the arbiter had answered them *"The game is paused. Please wait until the clock restarts."* during the pause — an instruction standing there otherwise (for example a touch-move ruling) stays.
@@ -245,7 +250,8 @@ sound on this message and on no other, also for the player's own press.
   move, an incomplete move), including the press that ends the game; the opponent's lever while
   their clock is running (*Clock-press semantics*), including the third press that loses the game.
 - Silent: a lever that is already down; a press while the game is paused (the position is to be
-  restored, both players are asked whether they are ready, the pause after a wrong clock press);
+  restored, both players are asked whether they are ready, the pause after a wrong clock press or
+  after a press without a move);
   a press after the game or with the time expired. The clock restarted by the arbiter or by the
   automatic resume is no press. A press during the short delay before the automatic resume
   restarts the clock itself and is evaluated, so it is heard.
@@ -349,6 +355,8 @@ The opponent is told:
 ### Persistence across interventions
 
 Touch-move obligations persist across arbiter interventions and restorations. If a player touched a piece, made an illegal move, restored the position, and resumed -- the touch-move obligation from the original touch still applies.
+
+**The move that replaces one the arbiter took off the board** has to honour that obligation ([A-011](docs/fide-deviations.md#a-011--another-piece-moved-in-place-of-an-illegal-move)). If the player moves another piece instead - the touched piece was not moved since the restoration, or the piece that has to be captured was not taken - the ruling is a **touch-move violation**, whether or not the other move would have been legal: nothing is counted, and the arbiter asks again for the touched piece. Example: 1. e4, Black plays the knight from g8 to g6 (illegal move, 1st), reverts, plays the knight from b8 to b6 and presses the clock - touch-move violation for the knight on g8, not a 2nd illegal move. An illegal move of the touched piece itself (g8 to g5) is an illegal move as before, and before the arbiter has ruled on the turn the legality of the move comes first (see *Two-Layer Evaluation at Clock Press*).
 
 ### Released-piece rule (FIDE 4.7)
 
@@ -492,6 +500,7 @@ Opponent-side castling-start notices are passive information only. They are show
 
 - If a touch-move obligation exists, the matched move must satisfy it.
 - If not satisfied -> touch-move violation (not counted as illegal move).
+- One case reaches this layer although no legal move matches: the move that replaces one the arbiter took off the board, made with another piece than the touched one (see *Persistence across interventions*). It is a touch-move violation, not an illegal move.
 
 ### Touch-move safety net (fail closed)
 
@@ -537,12 +546,14 @@ With a ruling on the move — the move shown with a clock press, or with a draw 
   - opponent piece: the first touched opponent piece that can be captured;
   - an own piece together with the opponent piece it can capture: both;
   - king and rook touched for castling: both, where they stand once the board is as the ruling asks for — a king that was put on its castling square already is circled there (only the rook is still to be moved), not on the empty square it left.
+- **Blue — the move that was already made** (released-piece violation): the start and the end square of the move that was completed with the release, when the piece came from a square of the board. Example: 1. e4, Black plays the knight from g8 to f6, puts it back, plays the pawn from e7 to e6 and presses the clock - g8 and f6 are circled. A promotion piece set down from the side, and a king released on its castling square (the rook is still to be moved), are not marked; a rook moved before the king is, on the rook's squares.
 - **Red — the illegal move**: its start and end square, when the board shows exactly one move — one own piece that left its square and stands on another one while nothing else changed (a pawn may stand on the last rank as the piece it was promoted to), or a castling attempt (the king's start square and the square the king was put on). An illegal position with several displaced pieces, and the clock pressed without a move, are not marked. Neither are two pieces of the same kind that both moved although the board looks like one move (the knight from g1 put on g3, the one from b1 on g1): the server follows each piece through the board events and marks a move only when every other piece stands on its own square. What counts is what was done since the board was last set back by a restoration, so an illegal move — also an illegal castling — that is repeated in the same turn is marked again.
 
 How long they stay:
 
-- Green stays through the restoration, because the obligation does: until the move is accepted. An illegal move made meanwhile does not end it: its red circles are added, and the green one is there again after the restoration. A square has one circle — where the illegal move of the touched piece started, red covers green until the position is restored.
+- Green stays through the restoration, because the obligation does: until the move is accepted. An illegal move of the touched piece made meanwhile does not end it: its red circles are added, and the green one is there again after the restoration. A square has one circle — where the illegal move of the touched piece started, red covers green until the position is restored. (A move of another piece after a restoration is a touch-move violation and leaves only the green circle.)
 - Red stays while the illegal move is on the board: until the position is restored.
+- Blue stays until the position is restored: the Revert puts the move that was already made on the board again, and nothing is left to point at.
 - A new ruling on what was touched or released replaces the circles of the previous one. A press that is not ruled on (not the player's turn, a pause) and a press without a move leave them.
 - The end of the game takes the circles off, whichever way it ends (resignation, flag fall, agreed draw, ...): nothing is owed any more. Only the illegal move that loses the game stays marked, in red, and alone.
 - A rematch starts without circles. A page that reconnects is sent the current ones.

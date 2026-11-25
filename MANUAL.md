@@ -51,6 +51,17 @@ A browser plays sounds on a page only after you have clicked or touched that pag
 
 The game starts when both players are connected.
 
+## Playing both sides yourself
+
+To try OTB Chess alone you need two browser sessions, one for each player:
+
+- a normal window and a **private (incognito) window** of the same browser, or
+- two **different browsers**, or two devices.
+
+Two normal tabs or windows of the same browser do not work: they share the stored game, so the start screen refuses to join a game that is already open in that browser and tells you so.
+
+Both boards of a computer use the same loudspeaker. If the sounds are on in one of them, you hear the pieces and clock presses of both players from it.
+
 ## Playing
 
 Move pieces on the board as if using a physical chessboard. Your opponent sees your board actions in real time.
@@ -64,3 +75,9 @@ Important differences from most online chess sites:
 - Draw offers, draw claims, resignations, and clock presses are part of the procedure, not just UI shortcuts.
 
 The arbiter intervenes when a supported rule requires it. If the position must be restored, follow the arbiter message and restore the board.
+
+**Pressing the clock without a move** is an illegal move (FIDE 7.5.3). The arbiter stops the clock, tells you so, and restarts the clock after a few seconds; with confirmation switched on, both players confirm that they are ready instead. A double click on the clock counts once. Once the clock runs again, the next press without a move is the next illegal move.
+
+**After an illegal move** you have to move the piece you touched first, if it can move. If you move another piece instead, the arbiter rules a touch-move violation - whether or not that move would have been legal - and asks again for the touched piece. This is not counted as an illegal move.
+
+**Circles on the board** show what the arbiter's ruling is about, on both boards: green for the piece you have to move or capture, red for the start and end square of an illegal move, blue for the start and end square of a move you had already made when you changed the position again.
