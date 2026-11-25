@@ -954,7 +954,7 @@ Messages without a `style` field are interpreted by the client at default (info)
 
 ## Architecture
 
-- **Separate Maven project** (`otb-chess`) depending on **ashlar-chess 19.0.0**.
+- **Separate Maven project** (`otb-chess`) depending on **ashlar-chess** (the version is set in `pom.xml`).
 - **All business logic in Java.** Frontend is thin presentation only.
 - **Java built-in `HttpServer`** on port **8080** for static files.
 - **Java-WebSocket library** on port **8081** for two-player real-time communication.

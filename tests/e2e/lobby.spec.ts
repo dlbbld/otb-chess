@@ -113,6 +113,18 @@ test('an invalid starting FEN is rejected on the start screen, not on the board'
   await expect(page.locator('#startingFen')).toBeVisible(); // the FEN input only exists on the lobby
 });
 
+test('a starting position no game can reach is rejected with the chess library\'s reason', async ({ page }) => {
+  await page.goto('/');
+  // Two rooks check the black king at once: no single move can create that (refused since Ashlar Chess 21).
+  await page.locator('#startingFen').fill('R3k2R/8/8/8/8/8/8/4K3 b - - 0 1');
+  await page.locator('#createGameBtn').click();
+
+  await expect(page.locator('#fenError')).toHaveText(
+    'Invalid FEN: the black king is in a double check that no single move could create',
+  );
+  await expect(page.locator('#startingFen')).toBeVisible();
+});
+
 test('a valid starting FEN proceeds to the board', async ({ page }) => {
   await page.goto('/');
   await page.locator('#startingFen').fill('4k3/8/8/8/8/8/8/4K2R w K - 0 1');

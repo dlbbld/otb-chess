@@ -52,6 +52,24 @@ and after the game. No script error, no lost connection and no game that could n
   0 findings), full browser suite (250 passed, 1 skipped, no retries). Not run: anything on Windows; the
   launcher's default branch was changed in `start.bat` and `TestWindowsLauncher`, whose tests run on Windows
   only.
+- [x] **Ashlar Chess 22.2.0** (2026-11-25, from 20.0.0; the latest release). The app's code needed no change.
+  What a player can notice, from the library's releases 21.0.0 to 22.2.0: a custom starting FEN is checked more
+  strictly - a check no single move can create (two rooks, three checkers), more promoted pieces than missing
+  pawns, split empty-square runs (`44`), and leading zeros in the two counters are refused with the library's
+  reason (`TestStartingFenStrictness`, `lobby.spec.ts`); the draw instead of a loss on flag fall or resignation
+  (the opponent cannot checkmate) comes from the library's new unwinnability engine, written from the FUN 2022
+  paper; the lenient SAN of a draw claim keeps the named piece and origin.
+- [ ] **The restated king-in-check reasons stay** (2026-11-25). Asked for: remove the workaround, since the
+  wording was fixed in the library. It is not: 22.2.0, and the library's `main` after it, still say "it would
+  leave the own king in check" and "it would expose the own king to check" (`ValidateNewMove.kingSafetyMessage`),
+  so `illegal-move-reasons.properties` still turns them into "it leaves ..." and "it exposes ...". Without the
+  pairs the arbiter's ruling would speak of a move that "would leave" the king in check again.
+  `TestIllegalMoveReasons.theLibraryStillWordsTheseReasonsConditionally` now pins the library's own text, so the
+  upgrade that rewords it fails that test and names the file to clean up.
+- [x] Verification on macOS with Ashlar Chess 22.2.0: full Java suite (533 run, 0 failures, 4 skipped: the
+  Windows-only launcher tests), `TouchMoveOracle` (33,793 cases, 0 differences), `RuleFuzzer` (20,000 games,
+  0 findings), full browser suite against the rebuilt jar, whose manifest names `ashlar-chess-22.2.0.jar`
+  (251 passed, 1 skipped, no retries). Not run: anything on Windows.
 - [ ] Still open, not asked for: creating or joining a *different* game in a second tab of the same browser
   replaces the stored seat of the first tab; after a reload that tab is in the other game.
 - Not broken: presses before the opponent joined and after the game (ignored), during the pause to restore a
