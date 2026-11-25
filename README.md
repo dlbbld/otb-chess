@@ -17,7 +17,7 @@ may occur, and availability is not guaranteed. It is intended for learning and t
 tournament adjudication.
 
 See the [Manual](MANUAL.md) for how to create, join, and play a game.
-See [0.5.0 — Two-Tab Play and Fairer Rulings](CHANGELOG.md#050--two-tab-play-and-fairer-rulings--2026-11-25)
+See [0.5.1 — Quick Restart](CHANGELOG.md#051--quick-restart--2026-11-25)
 for this release.
 
 ## Documentation

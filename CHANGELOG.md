@@ -2,6 +2,26 @@
 
 All notable changes to OTB Chess are documented here.
 
+## 0.5.1 — Quick Restart — 2026-11-25
+
+A maintenance release for the host: the server is back within seconds after a restart. Nothing
+changes for the players during a game. The change has a Java test and a browser test that kills
+and restarts a real server.
+
+### Fixed
+
+- **The restarted server takes its port over at once.** At the deployment of 0.5.0 the site
+  answered 502 for about 50 seconds: the new process could not open its WebSocket port ("Address
+  already in use") while the connections of the stopped process were still expiring, gave up
+  after 10 seconds, and was started again until it succeeded. The server now asks to reuse its
+  address. On Windows nothing changes: the problem does not exist there, and the option would
+  let a second server open a port that is in use.
+
+### Known limits
+
+- Games live in the server's memory. A restart ends the running games; the pages say that the
+  game is no longer available and lead back to the start screen.
+
 ## 0.5.0 — Two-Tab Play and Fairer Rulings — 2026-11-25
 
 Both sides of a game can be played from two tabs of one browser, a page that is reloaded after the
