@@ -191,7 +191,7 @@ The same rule in other words: only the centre of the piece and its distance to t
 
 - The opponent sees every piece exactly where it lies, on the turned board mirrored accordingly.
 - A release in a clear placement is a release on that square, with everything that follows from it today (released-piece rule, capture, automatic end of the game).
-- A release in an unclear placement is a release on no square. The piece counts as touched, nothing is captured, nothing ends.
+- A release in an unclear placement is no move yet: nothing is captured, nothing ends. The piece counts as touched, and it counts as **released on the squares its inner circle lies on** (decided by the owner on 2026-11-25): from then on, already before the clock press, it may only be placed on one of these squares. Example: White lets go of the rook from a1 with the inner circle across the border of d1 and e1; only Rd1 and Re1 remain, Rb1 does not.
 - **Correcting the own placement**: until the clock is pressed, the player may pick up the piece they have moved and set it down again on the same square. This needs no J'adoube, is no new touch and is no violation. Setting it down on another square is what it is today (released-piece rule).
 - Positions the arbiter sets up are centred: the starting position, a reverted or restored position, a rematch.
 
@@ -230,8 +230,8 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 
 ### Open points
 
-1. **An unclear piece before the clock press** (see the explanation given to the owner on 2026-11-25): may the player pick it up again and put it on any square (it is only touched), or only on a square its inner circle lies on (it is released there)? Proposed: any square until the clock is pressed, since the clock press is where the move ends ([D-001](fide-deviations.md#d-001--clock-press-as-the-move-boundary)); after a clock press with an unclear piece only the named squares.
-2. **After the arbiter named the squares, the player puts the piece on another one**: proposed as for a released piece today, without penalty: the piece is put back where it lay and the instruction is repeated.
+1. **How the squares of the inner circle bind**, in the terms of the released-piece rule of today (FIDE 4.7 binds only to legal moves). Proposed: the player is bound to the legal moves that end with the piece on one of these squares. If none of these squares gives a legal move, the release binds to nothing, as a release on an illegal square today, and only touch-move remains.
+2. **The player puts the piece on a square outside the inner circle and presses the clock**, before or after the arbiter named the squares: proposed a released-piece violation as today, without penalty: the piece is put back where it lay unclear and the instruction is repeated.
 3. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
 4. **Clocks during this ruling**: proposed that nothing is paused and the player's clock keeps running, because nothing has to be restored and the delay is the player's own.
 5. **Which pieces J'adoube may adjust**: proposed own and opponent's pieces (FIDE 4.2.1 says "one or more pieces").
