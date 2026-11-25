@@ -59,7 +59,7 @@ and after the game. No script error, no lost connection and no game that could n
   reason (`TestStartingFenStrictness`, `lobby.spec.ts`); the draw instead of a loss on flag fall or resignation
   (the opponent cannot checkmate) comes from the library's new unwinnability engine, written from the FUN 2022
   paper; the lenient SAN of a draw claim keeps the named piece and origin.
-- [ ] **The restated king-in-check reasons stay** (2026-11-25). Asked for: remove the workaround, since the
+- [x] **The restated king-in-check reasons stay** (decided by the owner on 2026-11-25). Asked for: remove the workaround, since the
   wording was fixed in the library. It is not: 22.2.0, and the library's `main` after it, still say "it would
   leave the own king in check" and "it would expose the own king to check" (`ValidateNewMove.kingSafetyMessage`),
   so `illegal-move-reasons.properties` still turns them into "it leaves ..." and "it exposes ...". Without the
