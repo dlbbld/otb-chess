@@ -82,4 +82,4 @@ The arbiter intervenes when a supported rule requires it. If the position must b
 
 **Touch-move comes first.** You have to move the piece you touched first, if it can move - also after an illegal move was taken back. If you move another piece instead, the arbiter rules a touch-move violation, whether or not that move would have been legal, and asks for the touched piece. This is not counted as an illegal move. An illegal move with the touched piece itself is an illegal move.
 
-**Circles on the board** show what the arbiter's ruling is about, on both boards: green for the piece you have to move or capture, red for the start and end square of an illegal move, blue for the start and end square of a move you had already made when you changed the position again.
+**Circles on the board** show what the arbiter's ruling is about, on both boards: green for what you have to play - the piece you have to move or capture, or the start and end square of a move you had already made when you changed the position again - and red for the start and end square of an illegal move.

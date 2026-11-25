@@ -1110,7 +1110,7 @@ public class GameSession {
   private boolean pressWithoutMovePause;
   private long pressWithoutMovePauseId;
   // The squares the arbiter points at since its last ruling on the move (circles on both boards): the green
-  // ones of a touch, then the red ones of an illegal move, or the blue ones of a move that was already made.
+  // ones of a touch or of a move that was already made, and the red ones of an illegal move.
   private List<BoardMark> boardMarks = List.of();
   // Who was answered "wait until the clock restarts" during the current admonishment pause.
   private final Set<Side> toldToWaitForClock = EnumSet.noneOf(Side.class);
@@ -1488,9 +1488,8 @@ public class GameSession {
     }
     this.waitingForRestoration = false;
     currentSequence.markPositionRestored();
-    // The illegal move is off the board again, so its squares are no longer pointed at; the same holds for the
-    // move that was already made, which is on the board again. A touched piece stays marked: the obligation
-    // holds until the move is made.
+    // The illegal move is off the board again, so its squares are no longer pointed at. What is owed stays
+    // marked until the move is accepted: a touched piece, and the move that was already made.
     this.boardMarks = marksOf(BoardMark.Color.GREEN);
     // Preserve the FIDE 4.7 released-piece commitment when THIS restoration was caused by a
     // released-piece violation: the committed move must stay final across revert cycles until the

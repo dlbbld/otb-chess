@@ -43,6 +43,13 @@ and after the game. No script error, no lost connection and no game that could n
 - [x] **Blue circles for the move that was already made** (2026-11-25): a released-piece ruling circles the
   start and end square of the move that was completed with the release, on both boards, until the position is
   restored.
+- [x] **Green instead of blue** (decided by the owner on 2026-11-25: no third colour). The circles of the move
+  that was already made are green, like the touched piece: one colour for what the player has to play. They
+  therefore stay as green does - through the Revert, on the start and end square of the move that is on the
+  board again, until the clock press accepts it (as blue they went at the Revert). `BoardMark.Color.BLUE`, the
+  style and the page's third colour are removed. Verified on macOS: full Java suite (537 run, 0 failures, 4
+  skipped), and the eleven browser specs about circles, touch-move and released pieces against the rebuilt jar
+  (109 passed, no retries); the full browser suite was not rerun for this.
 - [x] **The own game cannot be joined from the same browser** (2026-11-25; removed again the same day, see
   *Two tabs of one browser can play each other* below): the start screen refuses a code
   that is the game this browser is already in, changes nothing, and points to a private window or another

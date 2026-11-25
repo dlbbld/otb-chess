@@ -23,7 +23,7 @@ const WHITE_IN_CHECK = 'r3k2r/pppppppp/8/8/8/5n2/PPPPP1PP/R3K2R w KQkq - 0 1';
 /** The circled squares of a board, as "square:colour", in alphabetical order. */
 const marks = (page: Page) => page.evaluate(() =>
   [...document.querySelectorAll('#board .square')]
-    .flatMap((sq) => ['green', 'red', 'blue']
+    .flatMap((sq) => ['green', 'red', 'blue'] // 'blue' was a third colour for a day; it must not come back
       .filter((colour) => sq.classList.contains(`mark-${colour}`))
       .map((colour) => `${(sq as HTMLElement).dataset.square}:${colour}`))
     .sort());
@@ -340,8 +340,9 @@ test('an illegal castling repeated after the Revert is circled again, also when 
 
 // Reported wish (2026-11-25): 1. e4, then Black plays the knight from g8 to f6, puts it back,
 // plays the pawn from e7 to e6 and presses the clock. The arbiter says that the move was already
-// made; the two blue circles show which move that was.
-test('the move that was already made is circled blue on its start and end square until the position is restored', async ({
+// made; two circles show which move that was - green, like everything the player has to play
+// (decided on 2026-11-25: no third colour).
+test('the move that was already made is circled green on its start and end square until it is accepted', async ({
   browser,
 }) => {
   game = await startTwoPlayerGame(browser);
@@ -356,16 +357,17 @@ test('the move that was already made is circled blue on its start and end square
   await pressOwnClock(black);
 
   await expect(arbiter(black)).toContainText('Released-piece violation: You already released the knight on f6');
-  for (const page of [white, black]) await expectMarks(page, ['f6:blue', 'g8:blue']);
-  expect(await ringColour(black, 'g8')).toBe('003088');
-  expect(await ringColour(white, 'f6')).toBe('003088');
+  for (const page of [white, black]) await expectMarks(page, ['f6:green', 'g8:green']);
+  expect(await ringColour(black, 'g8')).toBe('15781B');
+  expect(await ringColour(white, 'f6')).toBe('15781B');
 
-  // The Revert puts the knight on f6 again: the move is on the board, and nothing is circled.
+  // The Revert puts the knight on f6 again. The move is still to be shown with the clock, so it
+  // stays circled, as a touched piece does.
   await clickRestore(black);
   for (const page of [white, black]) {
     await expectPiece(page, 'f6', 'BLACK_KNIGHT');
     await expectPiece(page, 'e7', 'BLACK_PAWN');
-    await expectMarks(page, []);
+    await expectMarks(page, ['f6:green', 'g8:green']);
   }
   await expect(arbiter(black)).toContainText('your move is final');
   await pressOwnClock(black);
