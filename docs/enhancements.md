@@ -206,7 +206,7 @@ In this order:
    - The player decides by placing the piece clearly on one of the named squares and pressing the clock again; the move is then ruled on as any other (accepted, illegal move, touch-move, …).
    - **The piece is still unclear at the next clock press**: the same intervention again, and it counts again (decided by the owner on 2026-11-25: every clock press with a piece in an unclear placement is a step on the ladder, as every clock press with an illegal move counts today).
    - This counts on a ladder of its own, per player for the whole game (confirmed by the owner for the inner circle on 2026-11-25): admonition, then the warning that the next time loses the game, then **loss of the game**. Entry-screen option for the number: 3 by default, 1 to 10, or unlimited (same form as *Number of illegal moves causing game loss*).
-2. **A piece that was released unclear now stands clearly on a square outside its inner circle, although a square of the inner circle gives a legal move**: the arbiter intervenes again in the same way and names the squares the piece may go to: *"Your rook was released on d1 and e1. Place it on d1 or on e1."* The piece stays where the player put it; the player takes it to one of the named squares on their running clock. The arbiter intervenes at every clock press until this is resolved (decided by the owner on 2026-11-25). It applies whether or not the arbiter had already named the squares.
+2. **A piece that was released unclear now stands clearly on a square outside its inner circle, although a square of the inner circle gives a legal move**: the arbiter intervenes again in the same way and names the squares the piece may go to: *"Your rook was released on d1 and e1. Place it on d1 or on e1."* The piece stays where the player put it; the player takes it to one of the named squares on their running clock. The arbiter intervenes at every clock press until this is resolved (decided by the owner on 2026-11-25). It applies whether or not the arbiter had already named the squares. It does **not** count on the ladder (decided by the owner on 2026-11-25), like a released-piece violation today.
 3. **Every piece is clear and none is bound elsewhere**: the move is ruled on as today.
 
 ### Captures and overlapping pieces
@@ -231,7 +231,7 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 - **Without J'adoube, before the move is made** nothing changes: a piece that is clicked is touched and must be moved or captured, however badly it stands.
 - **Adjusting without J'adoube, after the move is made** (decided by the owner on 2026-11-25): the player shifts the piece they have moved on its square. The arbiter intervenes at once, not at the clock press: *"You cannot adjust pieces without saying J'adoube."* The game is paused for the call and then resumes; the move stands, the piece is on its square, and the player is free to press the clock. On a three-step ladder per player for the whole game: admonition, warning, loss of the game.
   - *(Reading)* The piece stays where the player shifted it to; nothing is put back. If it lies unclear after the shift, that is the unclear placement at the clock press.
-  - *(Reading)* The same holds for any other piece that the player shifts on its square after their move is made, an own one or one of the opponent: today such a late touch has no consequence, because the move is already made.
+  - The same holds for any other piece that the player shifts on its square after their move is made, an own one or one of the opponent (decided by the owner on 2026-11-25): same ruling, same ladder. Today such a late touch has no consequence, because the move is already made.
   - *(Reading)* A click that does not shift the piece is no adjustment.
 
 ### Entry screen
@@ -243,12 +243,11 @@ A move that ends the game without a clock press today (checkmate, stalemate, …
 
 In the order of their importance.
 
-1. **Does the intervention for a piece taken outside its inner circle count on the ladder** (number 2 under *At the clock press*)? Proposed: no, it is without penalty like a released-piece violation today.
-2. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
-3. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
-4. **Are the two J'adoube ladders fixed at three** (J'adoube in the opponent's time, adjusting without J'adoube) like the other ladders, or do they follow the new option? And are they two ladders or one?
-5. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
-6. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
+1. **The area of the piece** that the 20% refer to: proposed the piece image, the same for every piece, which gives the 28-pixel circle above. A round base, or a larger one for king and queen, would change the size of the circle and nothing else.
+2. **A piece released at the edge of the board**: today a drop outside the board takes the piece off. Proposed: off the board when the centre of the piece is outside; unclear when the inner circle reaches over the edge, with only the squares on the board to choose from.
+3. **Are the two J'adoube ladders fixed at three** (J'adoube in the opponent's time, adjusting without J'adoube) like the other ladders, or do they follow the new option? And are they two ladders or one? Proposed: two ladders, each fixed at three, like the other ladders.
+4. **A cap on J'adoube in the own time** against using it to annoy the opponent: proposed none in the first version.
+5. **Promotion, castling and en passant** need no rule of their own (each piece that is set down is measured), to be confirmed in the implementation plan.
 
 ### Not part of this
 
