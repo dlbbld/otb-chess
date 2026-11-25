@@ -116,7 +116,9 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
    * The squares this ruling points at, in the clear cases only. A touch-move ruling marks green what the binding
    * touch obliges the player to move or capture - the evaluator has already picked the first touched piece that can
    * move, or the first touched opponent piece that can be captured. An illegal move marks red its start and end
-   * square when the board shows exactly one such move. Everything else marks nothing.
+   * square when the board shows exactly one such move. A released-piece ruling marks blue the start and the end
+   * square of the move that was made with the release, when the piece came from a square of the board. Everything
+   * else marks nothing.
    */
   public List<BoardMark> boardMarks() {
     if (obligation.isPresent()) {
@@ -132,6 +134,12 @@ public record ArbiterResponse(ArbiterResponseType type, MessageKey playerMessage
         && illegalMoveDetail.get().toSquare() != Square.NONE) {
       return List.of(BoardMark.red(illegalMoveDetail.get().fromSquare()),
           BoardMark.red(illegalMoveDetail.get().toSquare()));
+    }
+    if (type == ArbiterResponseType.RELEASED_PIECE_VIOLATION && releasedPieceContext.isPresent()
+        && releasedPieceContext.get().fromSquare() != Square.NONE
+        && releasedPieceContext.get().square() != Square.NONE) {
+      return List.of(BoardMark.blue(releasedPieceContext.get().fromSquare()),
+          BoardMark.blue(releasedPieceContext.get().square()));
     }
     return List.of();
   }

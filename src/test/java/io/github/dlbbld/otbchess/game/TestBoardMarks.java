@@ -464,6 +464,70 @@ class TestBoardMarks {
     assertEquals(red(Square.G1, Square.G3), session.getBoardMarks(), "no move is owed any more");
   }
 
+  // ----- blue: the move that was already made -----
+
+  /**
+   * Reported wish (2026-11-25): the knight is played to f3 and put back, then a pawn is played and the clock pressed.
+   * The arbiter says that the move was already made - and shows on the board which move that was.
+   */
+  @Test
+  void theMoveThatWasAlreadyMadeIsMarkedBlueUntilThePositionIsRestored() {
+    final var session = session(null);
+    drag(session, Piece.WHITE_KNIGHT, Square.G1, Square.F3);
+    drag(session, Piece.WHITE_KNIGHT, Square.F3, Square.G1);
+    drag(session, Piece.WHITE_PAWN, Square.E2, Square.E3);
+
+    final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_PAWN, Square.E2, Square.E3));
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, ruling.type());
+    assertEquals(List.of(BoardMark.blue(Square.G1), BoardMark.blue(Square.F3)), ruling.boardMarks());
+    assertEquals(List.of(BoardMark.blue(Square.G1), BoardMark.blue(Square.F3)), session.getBoardMarks());
+
+    // The restoration puts the knight on f3 again: the move is on the board, nothing is pointed at.
+    revertAndResume(session, ruling);
+    assertEquals(List.of(), session.getBoardMarks());
+    assertEquals(ArbiterResponseType.MOVE_ACCEPTED, session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.G1, Square.F3)).type());
+    assertEquals(List.of(), session.getBoardMarks());
+  }
+
+  @Test
+  void theBlueCirclesOfAMoveThatWasAlreadyMadeAreShownAgainWhenThePositionIsChangedAgain() {
+    final var session = session(null);
+    drag(session, Piece.WHITE_KNIGHT, Square.G1, Square.F3);
+    drag(session, Piece.WHITE_PAWN, Square.E2, Square.E3);
+    final ArbiterResponse first = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.G1, Square.F3, Piece.WHITE_PAWN, Square.E2, Square.E3));
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, first.type());
+    assertEquals(List.of(BoardMark.blue(Square.G1), BoardMark.blue(Square.F3)), session.getBoardMarks());
+    revertAndResume(session, first);
+    assertEquals(List.of(), session.getBoardMarks());
+
+    drag(session, Piece.WHITE_PAWN, Square.D2, Square.D3);
+    final ArbiterResponse second = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_KNIGHT, Square.G1, Square.F3, Piece.WHITE_PAWN, Square.D2, Square.D3));
+
+    assertEquals(ArbiterResponseType.RELEASED_PIECE_VIOLATION, second.type());
+    assertEquals(List.of(BoardMark.blue(Square.G1), BoardMark.blue(Square.F3)), session.getBoardMarks());
+  }
+
+  @Test
+  void theBlueCirclesAreTakenOffWhenTheGameEnds() {
+    final var session = session(null);
+    drag(session, Piece.WHITE_KNIGHT, Square.G1, Square.F3);
+    drag(session, Piece.WHITE_KNIGHT, Square.F3, Square.G1);
+    drag(session, Piece.WHITE_PAWN, Square.E2, Square.E3);
+    final ArbiterResponse ruling = session.pressClockButton(Side.WHITE,
+        moved(session, Piece.WHITE_PAWN, Square.E2, Square.E3));
+    session.enterWaitingForRestoration(ruling.restorePosition().orElse(session.getPositionBeforeTurn()));
+    assertEquals(2, session.getBoardMarks().size());
+
+    session.resign(Side.WHITE);
+
+    assertEquals(List.of(), session.getBoardMarks());
+  }
+
   // ----- what leaves the marks as they are -----
 
   @Test
