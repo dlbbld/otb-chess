@@ -249,6 +249,11 @@ every file under the grantee's own ownership and does not need `delete_child` ag
   node tools/smoke-ws.mjs wss://play.otb-chess.app                        # OK: gameCreated ...
   ```
   Then play a two-player flow through the public URL.
+- **How long the restart takes**: a few seconds. Up to 0.5.0 it can take about a minute when
+  browsers were connected shortly before: the new process cannot bind the WebSocket port while the
+  old connections expire (`Address already in use` in `app.log`), gives up after 10 seconds, and
+  is started again by launchd until it succeeds. The site answers 502 meanwhile. Nothing needs to
+  be done; wait and check the version again.
 - **Roll back**: check out the previous tag and repeat the rebuild and restart. The game state is
   in memory only, so a restart ends running games — deploy when the site is idle.
 

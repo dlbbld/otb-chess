@@ -92,6 +92,12 @@ public class GameWebSocketServer extends WebSocketServer {
   public GameWebSocketServer(String host, int port) {
     super(new InetSocketAddress(host, port));
     setTcpNoDelay(true); // Disable Nagle's algorithm for low-latency messaging
+    // Take the port over at once after a restart. Without it the bind fails with "Address already in use" for as
+    // long as connections of the process before are still expiring (TIME_WAIT) - at the deployment of 0.5.0 the
+    // site was down for about 50 seconds that way. (The library switches the option off unless asked.)
+    // Not on Windows: there a port with expiring connections can be bound anyway, and the option would instead
+    // let a second server bind a port that a running one holds.
+    setReuseAddr(!isWindows());
   }
 
   @Override
@@ -317,6 +323,10 @@ public class GameWebSocketServer extends WebSocketServer {
   public void onError(WebSocket conn, Exception ex) {
     System.err.println("WebSocket error: " + ex.getMessage());
     ex.printStackTrace();
+  }
+
+  static boolean isWindows() {
+    return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
   }
 
   // Counted down by onStart() once the server socket is bound and listening.

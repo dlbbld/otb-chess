@@ -3,6 +3,28 @@
 Live-planning source of truth. Mark items done in place (check, don't delete); keep an unshipped
 release's tasks until it ships.
 
+## After 0.5.0
+
+Branch `quick-restart` (2026-11-25), created from the released `main` (`06c4f8f`). The default branch of
+`start.bat` is unchanged (`fixes-and-improvements`, which is 0.5.0); this branch is served by
+`start.bat quick-restart`.
+
+- [x] **The restarted server binds its port at once** (2026-11-25). Found at the deployment of 0.5.0: after
+  `launchctl kickstart -k` the site answered 502 for about 50 seconds. The new process could not bind the
+  WebSocket port (`Address already in use`) while the connections of the killed process were expiring, gave up
+  after 10 seconds, and was started again by launchd until it succeeded. The WebSocket library switches
+  `SO_REUSEADDR` off unless asked; the server now asks for it, except on Windows, where a port with expiring
+  connections can be bound anyway and the option would let a second server bind a port in use. Reproduced
+  with the released jar by `tests/e2e/server-restart.spec.ts` (a real server process killed with two players
+  connected and started again on the same ports: not up within 8 seconds before, up at once now, three runs);
+  `TestQuickRestart` pins the option. An orderly stop inside one JVM does not reproduce it.
+- [x] Verification on macOS: full Java suite (539 run, 0 failures, 4 skipped: the Windows-only launcher
+  tests), full browser suite against the rebuilt jar (261 passed, 1 skipped, no retries). Not run: anything
+  on Windows, where the option is left off and nothing changes; `RuleFuzzer` and `TouchMoveOracle` (no rule
+  and no message handling changed).
+- Not live: the site serves 0.5.0 without this fix, so the next restart there can again take about a minute
+  (`SETUP.md` §12 says so).
+
 ## 0.5.0 — Two-Tab Play and Fairer Rulings
 
 - [x] Scope: everything on `fixes-and-improvements` since `0.4.0` (section below) - the pause after a clock
