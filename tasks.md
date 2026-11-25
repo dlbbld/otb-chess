@@ -5,6 +5,9 @@ release's tasks until it ships.
 
 ## Free placement and J'adoube (requirement)
 
+Development continues on `jadoube`; since 2026-11-25 it is the default branch of `start.bat`, in place of the
+merged `fixes-and-improvements`.
+
 - [x] Write down the owner's requirement of 2026-11-25 as E-005 in `docs/enhancements.md` (pieces stay where
   they are released, rulings on unclear and sloppy placement, J'adoube button), with the open points. On
   `jadoube` only; the branch is still at 0.4.0 and needs the released `main` merged in before any code.

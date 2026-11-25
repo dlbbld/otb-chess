@@ -2,13 +2,13 @@
 rem Fetches the latest pushed commit of the testing branch and serves it from the
 rem STABLE worktree (..\otb-chess-stable). Test here before merging the branch's PR.
 rem The branch is the OTB_TEST_BRANCH environment variable, else the first argument,
-rem else fixes-and-improvements -- so a release never has to edit this file.
+rem else jadoube -- so a release never has to edit this file.
 rem In-progress, uncommitted edits in this working tree never reach this server.
 rem To run the working tree as-is (including in-progress code), use start-dev.bat instead.
 setlocal
 cd /d "%~dp0" || exit /b 1
 if not defined OTB_TEST_BRANCH set "OTB_TEST_BRANCH=%~1"
-if not defined OTB_TEST_BRANCH set "OTB_TEST_BRANCH=fixes-and-improvements"
+if not defined OTB_TEST_BRANCH set "OTB_TEST_BRANCH=jadoube"
 git fetch origin "%OTB_TEST_BRANCH%" || exit /b 1
 set "OTB_STABLE_SHA="
 for /f "delims=" %%i in ('git rev-parse --verify FETCH_HEAD') do set "OTB_STABLE_SHA=%%i"
