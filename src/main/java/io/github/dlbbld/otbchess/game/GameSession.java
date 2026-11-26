@@ -357,9 +357,11 @@ public class GameSession {
     // From here on the arbiter rules on the move: the lever was up and went down.
     clockPressRegistered = true;
 
-    // Free placement: a piece that lies unclear comes before everything else - there is no move to rule on.
-    if (!unclearPieces.isEmpty()) {
-      return ruleOnUnclearPlacement(side, unclearPieces);
+    // Free placement: a piece that lies unclear, or a bound piece that is not on a square it is bound to, comes
+    // before everything else - there is no move to rule on.
+    final Optional<ArbiterResponse> placementCall = ruleOnPlacement(side, unclearPieces);
+    if (placementCall.isPresent()) {
+      return placementCall.get();
     }
 
     // Special case: must execute specified move (after rejected draw claim)
@@ -419,6 +421,12 @@ public class GameSession {
       return Optional.empty();
     }
 
+    // Free placement: a move that breaks the binding of an unclear release is not made, so it ends nothing.
+    if (finalMoveCommitment == null && arbiter.findUnclearBinding(board, currentSequence)
+        .filter(binding -> !binding.moves().contains(matchedMove)).isPresent()) {
+      return Optional.empty();
+    }
+
     // Touch-move check (also pure read). If the matched move would violate touch-move, leave
     // detection to the clock press so the existing arbiter feedback flow handles it.
     final java.util.Optional<io.github.dlbbld.otbchess.touchmove.TouchMoveObligation> obligation = arbiter
@@ -463,6 +471,9 @@ public class GameSession {
   // The arbiter's short pause is the one for an unclear placement: the board cannot be used until the clock
   // restarts, because the player corrects the placement on their own running clock.
   private boolean unclearPlacementPause;
+  // The arbiter has named the squares a piece is bound to in this turn: they are circled until the piece stands on
+  // one of them.
+  private boolean bindingCalled;
 
   /** Sets the number of unclear placements that lose the game: 1 or more, or unlimited. */
   public synchronized void setMaxUnclearPlacements(int maxUnclearPlacements) {
@@ -477,20 +488,57 @@ public class GameSession {
   }
 
   /**
-   * A draw offer by the player to move while a piece lies in an unclear placement: ruled on like a clock press
-   * with one. Outside play - a pause, a clock that has run out - nothing is ruled on.
+   * A draw offer by the player to move while the arbiter has a call to make about a placement: ruled on like a
+   * clock press. Outside play - a pause, a clock that has run out - nothing is ruled on.
+   *
+   * @return the call, or empty when there is none to make and the offer is ruled on as in every game
    */
-  public synchronized ArbiterResponse offerDrawWithUnclearPlacement(Side side, List<PlacedPiece> unclearPieces) {
-    if (state != GameState.IN_PROGRESS || side != board.getSideToMove() || waitingForRestoration || waitingForReady
-        || restorationResumePending || clock.getRunningFor() == Side.NONE || checkFlagFall().isPresent()) {
-      return ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts.");
+  public synchronized Optional<ArbiterResponse> offerDrawWithPlacementCall(Side side,
+      List<PlacedPiece> unclearPieces) {
+    if (state != GameState.IN_PROGRESS || side != board.getSideToMove()) {
+      return Optional.empty();
     }
-    return ruleOnUnclearPlacement(side, unclearPieces);
+    if (unclearPieces.isEmpty() && misplacedBinding().isEmpty()) {
+      return Optional.empty();
+    }
+    if (waitingForRestoration || waitingForReady || restorationResumePending || clock.getRunningFor() == Side.NONE
+        || checkFlagFall().isPresent()) {
+      return Optional.of(ArbiterResponse.incompleteMove("The game is paused. Please wait until the clock restarts."));
+    }
+    return ruleOnPlacement(side, unclearPieces);
   }
 
-  /** @return whether the board is locked because the arbiter is making the call for an unclear placement */
+  /** @return whether the board is locked because the arbiter is making a call about a placement */
   public synchronized boolean isUnclearPlacementPause() {
     return unclearPlacementPause && (pressWithoutMovePause || waitingForReady);
+  }
+
+  /**
+   * The two calls about a placement at the clock press (E-005), in this order: a piece lies unclear, or a piece
+   * bound by an unclear release stands on a square it is not bound to.
+   */
+  private Optional<ArbiterResponse> ruleOnPlacement(Side side, List<PlacedPiece> unclearPieces) {
+    if (!unclearPieces.isEmpty()) {
+      return Optional.of(ruleOnUnclearPlacement(side, unclearPieces));
+    }
+    return misplacedBinding().map(binding -> ruleOnMisplacedBoundPiece(side, binding));
+  }
+
+  /**
+   * The binding of an unclear release that the player has to honour. A move owed after a rejected draw claim comes
+   * first: a binding that does not allow it binds to nothing.
+   */
+  private Optional<ArbiterEngine.UnclearBinding> bindingInForce() {
+    if (state != GameState.IN_PROGRESS || finalMoveCommitment != null) {
+      return Optional.empty();
+    }
+    return arbiter.findUnclearBinding(board, currentSequence).filter(binding -> mustExecuteMove == null
+        || binding.moves().stream().anyMatch(move -> move.moveSpecification().equals(mustExecuteMove)));
+  }
+
+  /** The binding in force whose piece does not stand on one of the squares it is bound to. */
+  private Optional<ArbiterEngine.UnclearBinding> misplacedBinding() {
+    return bindingInForce().filter(binding -> !binding.isPieceOnBoundSquare());
   }
 
   /**
@@ -508,6 +556,35 @@ public class GameSession {
           sideName(side) + " loses the game by repeatedly placing pieces unclearly."));
       return ArbiterResponse.unclearPlacementGameLost(call);
     }
+    pauseForPlacementCall();
+    final boolean warned = limited && count == maxUnclearPlacements - 1;
+    final String opponentInfo = "Your opponent pressed the clock while a piece was not clearly on a square"
+        + (warned ? " and has been warned: the next time loses them the game." : ".");
+    return ArbiterResponse.unclearPlacement(
+        call + (warned ? " Warning: the next time you press the clock with a piece placed unclearly, you lose"
+            + " the game." : ""),
+        opponentInfo);
+  }
+
+  /**
+   * A piece that was bound by an unclear release stands clearly on a square it is not bound to, or is off the
+   * board: the arbiter names the squares it may go to. The piece stays where it is, the move is not made, and
+   * nothing is counted - as for a released piece today. The arbiter intervenes at every clock press until the piece
+   * stands on one of the squares.
+   */
+  private ArbiterResponse ruleOnMisplacedBoundPiece(Side side, ArbiterEngine.UnclearBinding binding) {
+    pauseForPlacementCall();
+    bindingCalled = true;
+    final String name = pieceName(binding.piece());
+    final String released = " was released on " + joinSquares(binding.squares(), "", "and") + ".";
+    return ArbiterResponse.unclearPlacement(
+        "Your " + name + released + " Place it on " + joinSquares(binding.squares(), "on ", "or") + ".",
+        "Your opponent's " + name + released + " It has to be placed "
+            + (binding.squares().size() == 1 ? "there." : "on one of them."));
+  }
+
+  /** The pause for a call about a placement: the clock stops and the board is locked until it restarts. */
+  private void pauseForPlacementCall() {
     clock.stopClock();
     wrongClockPressPausedFor = null; // this call supersedes an admonishment pause
     unclearPlacementPause = true;
@@ -519,34 +596,81 @@ public class GameSession {
       whiteReady = false;
       blackReady = false;
     }
-    final boolean warned = limited && count == maxUnclearPlacements - 1;
-    final String opponentInfo = "Your opponent pressed the clock while a piece was not clearly on a square"
-        + (warned ? " and has been warned: the next time loses them the game." : ".");
-    return ArbiterResponse.unclearPlacement(
-        call + (warned ? " Warning: the next time you press the clock with a piece placed unclearly, you lose"
-            + " the game." : ""),
-        opponentInfo);
   }
 
   /**
-   * What the arbiter says about the pieces that lie unclear. An opponent's piece that stood on a square was set
-   * down while it was being taken: it is to be put back or taken off. Which squares a player's own piece
-   * is bound to is not ruled on yet (the binding of E-005 is the next step of the implementation).
+   * What the arbiter says about the pieces that lie unclear.
+   * <ul>
+   * <li>An own piece that is bound by its release: the squares it is bound to, which are the ones that give a
+   * legal move. When it lies elsewhere by now, the call says where it was released.</li>
+   * <li>An own piece that was released in a clear placement before (FIDE 4.7) and picked up again: the square of
+   * that release.</li>
+   * <li>An own piece that is bound to nothing: no square. Any legal move with it remains.</li>
+   * <li>An opponent's piece that stood on a square was set down while it was being taken: it is to be put back or
+   * taken off.</li>
+   * </ul>
    */
-  private static String unclearPlacementCall(Side side, List<PlacedPiece> unclearPieces) {
+  private String unclearPlacementCall(Side side, List<PlacedPiece> unclearPieces) {
+    final Optional<ArbiterEngine.UnclearBinding> binding = bindingInForce();
+    final Optional<ArbiterEngine.ReleasedPiece> released = arbiter.findReleasedPiece(board, currentSequence);
     final StringBuilder call = new StringBuilder();
+    // One piece that still lies where it was let go: the short form, in one sentence.
+    boolean reminderSaid = false;
     for (final PlacedPiece unclear : unclearPieces) {
       final boolean own = unclear.piece().getSide() == side;
-      final String name = unclear.piece().getPieceType().name().toLowerCase();
+      final String name = pieceName(unclear.piece());
       call.append("It is not clear on which square your ").append(own ? "" : "opponent's ").append(name)
           .append(" is.");
-      if (!own && unclear.origin() != Square.NONE) {
-        call.append(" Put it back on ").append(unclear.origin().getName())
-            .append(" or take it off the board.");
+      if (!own) {
+        if (unclear.origin() != Square.NONE) {
+          call.append(" Put it back on ").append(unclear.origin().getName())
+              .append(" or take it off the board.");
+        }
+      } else if (binding.isPresent() && binding.get().piece() == unclear.piece()
+          && binding.get().at() == unclear.square()) {
+        final List<Square> squares = binding.get().squares();
+        bindingCalled = true;
+        if (unclear.liesOn().containsAll(squares)) {
+          call.append(" Place it on ").append(joinSquares(squares, "on ", "or"));
+          if (unclearPieces.size() == 1) {
+            call.append(", and place your pieces more carefully.");
+            reminderSaid = true;
+          } else {
+            call.append('.');
+          }
+        } else {
+          call.append(" It was released on ").append(joinSquares(squares, "", "and")).append(". Place it on ")
+              .append(joinSquares(squares, "on ", "or")).append('.');
+        }
+      } else if (released.isPresent() && released.get().piece() == unclear.piece()
+          && released.get().square() == unclear.square()) {
+        final String square = released.get().square().getName();
+        call.append(" It was released on ").append(square).append(". Place it on ").append(square).append('.');
       }
       call.append(' ');
     }
+    if (reminderSaid) {
+      return call.toString().trim();
+    }
     return call.append("Place your pieces more carefully.").toString();
+  }
+
+  private static String pieceName(io.github.dlbbld.ashlarchess.board.enums.Piece piece) {
+    return piece.getPieceType().name().toLowerCase();
+  }
+
+  /**
+   * "d1", "d1 or on e1", "d1, on e1 or on e2": the squares in a sentence.
+   *
+   * @param repeated what is said again before every square after the first ("on " after "Place it on")
+   */
+  private static String joinSquares(List<Square> squares, String repeated, String conjunction) {
+    final StringBuilder joined = new StringBuilder(squares.get(0).getName());
+    for (int i = 1; i < squares.size(); i++) {
+      joined.append(i == squares.size() - 1 ? " " + conjunction + " " : ", ").append(repeated)
+          .append(squares.get(i).getName());
+    }
+    return joined.toString();
   }
 
   private ArbiterResponse handleArbiterResponse(ArbiterResponse response, Side side, boolean keepDrawOffer) {
@@ -1495,6 +1619,7 @@ public class GameSession {
     this.wrongClockPressPausedFor = null;
     this.pressWithoutMovePause = false;
     this.unclearPlacementPause = false;
+    this.bindingCalled = false;
     this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();
@@ -1567,6 +1692,7 @@ public class GameSession {
     this.whiteReady = false;
     this.blackReady = false;
     currentSequence.resetReleasedPieceRule();
+    bindingCalled = false; // a binding ends with the rule window
   }
 
   /**
@@ -1617,6 +1743,7 @@ public class GameSession {
     // the rule window (see enterWaitingForReady's rationale) to avoid deadlocks.
     if (!restorationFromReleasedPiece) {
       currentSequence.resetReleasedPieceRule();
+      bindingCalled = false; // a binding ends with the rule window
     }
     this.whiteReady = false;
     this.blackReady = false;
@@ -1652,13 +1779,27 @@ public class GameSession {
    */
   public synchronized List<BoardMark> getBoardMarks() {
     final List<BoardMark> red = marksOf(BoardMark.Color.RED);
-    if (red.isEmpty()) {
+    final List<BoardMark> bound = boundSquareMarks();
+    if (red.isEmpty() && bound.isEmpty()) {
       return boardMarks;
     }
     final List<BoardMark> marks = new ArrayList<>(marksOf(BoardMark.Color.GREEN));
+    bound.stream().filter(mark -> !marks.contains(mark)).forEach(marks::add);
     marks.removeIf(green -> red.stream().anyMatch(mark -> mark.square() == green.square()));
     marks.addAll(red);
     return List.copyOf(marks);
+  }
+
+  /**
+   * Free placement: the squares a piece is bound to by an unclear release, green like everything the player has to
+   * play - from the call that named them until the piece stands on one of them.
+   */
+  private List<BoardMark> boundSquareMarks() {
+    if (!bindingCalled) {
+      return List.of();
+    }
+    return misplacedBinding().map(binding -> binding.squares().stream().map(BoardMark::green).toList())
+        .orElse(List.of());
   }
 
   /** @return and clears whether a clock press ended the automatic restoration pause since the last call. */

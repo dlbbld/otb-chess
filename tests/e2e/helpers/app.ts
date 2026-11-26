@@ -1,4 +1,4 @@
-import { Browser, BrowserContext, Locator, Page, expect } from '@playwright/test';
+import { Browser, BrowserContext, Locator, Page, expect, test } from '@playwright/test';
 
 export type Side = 'white' | 'black';
 
@@ -12,7 +12,10 @@ export interface CreateOptions {
   autoResume?: boolean;
   /** The illegal move that loses the game (1..10, -1 = unlimited); the server default is 2. */
   maxIllegal?: number;
-  /** Free placement of the pieces (E-005): a piece stays where it is let go. Off unless set. */
+  /**
+   * Free placement of the pieces (E-005): a piece stays where it is let go. On unless set to false, as on the
+   * entry screen. The Playwright project `centred` runs its specs with the option off unless set to true.
+   */
   free?: boolean;
   /** With free placement: the unclear placement that loses the game (1..10, -1 = unlimited); default 3. */
   maxUnclear?: number;
@@ -27,7 +30,7 @@ export async function createGame(page: Page, opts: CreateOptions = {}): Promise<
   if (opts.fen) url += `&fen=${encodeURIComponent(opts.fen)}`;
   if (opts.autoResume === false) url += `&autoResumeAfterRestore=false`;
   if (opts.maxIllegal !== undefined) url += `&maxIllegal=${opts.maxIllegal}`;
-  if (opts.free) url += `&free=true`;
+  if (!(opts.free ?? test.info().project.name !== 'centred')) url += `&free=false`;
   if (opts.maxUnclear !== undefined) url += `&maxUnclear=${opts.maxUnclear}`;
   await page.goto(url);
 

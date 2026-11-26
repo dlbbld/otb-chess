@@ -45,8 +45,16 @@ tests/e2e/
   helpers/board.ts       # dragPiece(), pressClock(), expectPiece(), expectEmpty()
   helpers/sounds.ts      # entry-screen create/join, the observer on the audio output
   smoke.spec.ts          # create -> join -> white e2-e4 -> black sees it
-  free-placement.spec.ts # E-005: pieces stay where they are let go; the capture-first journey
+  free-placement.spec.ts # E-005: pieces stay where they are let go; capture-first; the binding
+  helpers/free.ts        # free placement: letting go of a piece at a point of a square
 ```
+
+The suite runs as two projects. `chromium` is what the players get: free placement of the pieces
+is on, as on the entry screen, and `dragPiece` lets go at the centre of a square. `centred` runs
+`smoke`, `rules`, `touch-move`, `released-piece-commitment` and `promotion` once more with the
+option off, because that game must stay exactly as it was. `createGame` picks the option from the
+project; a test that needs one of the two passes `free: true` or `free: false`. Run one project
+with `npx playwright test --project=chromium`.
 
 ## Notes
 

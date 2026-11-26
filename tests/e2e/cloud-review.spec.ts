@@ -157,7 +157,8 @@ test('an offer after the opponent\'s released move is still invalid when no offe
 });
 
 test('a very long turn of moving a pawn back and forth still gets a prompt ruling', async ({ browser }) => {
-  game = await startTwoPlayerGame(browser);
+  // The script below sends the frames of a game with centred pieces.
+  game = await startTwoPlayerGame(browser, { free: false });
   const { white, black } = game;
   // Touching the knight binds White to a knight move, so no pawn release completes the move and the
   // arbiter keeps weighing every release of the turn. 800 of them used to keep the server busy for

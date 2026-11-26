@@ -99,12 +99,62 @@ public class ArbiterEngine {
       }
       final Optional<TouchMoveObligation> obligation = ruling.obligation();
       for (final LegalMove move : matches) {
+        // A move that breaks the binding of an unclear release is not made (E-005).
+        if (ruling.binding().isPresent() && !ruling.binding().get().moves().contains(move)) {
+          continue;
+        }
         if (obligation.isEmpty() || TouchMoveEvaluator.satisfiesObligation(obligation.get(), move)) {
           return Optional.of(new FinalMoveCommitment(move, position));
         }
       }
     }
     return Optional.empty();
+  }
+
+  /**
+   * What a piece let go in an unclear placement binds the player to (free placement, E-005): the legal moves that
+   * end with the piece on one of the squares it was let go across.
+   *
+   * @param piece      the piece
+   * @param fromSquare the square it stood on
+   * @param squares    the squares it is bound to: those of the squares it was let go across that give a legal move
+   * @param moves      the moves it is bound to
+   * @param at         the square the piece counts on now, {@link Square#NONE} once it left the board
+   */
+  public record UnclearBinding(Piece piece, Square fromSquare, List<Square> squares, Set<LegalMove> moves,
+      Square at) {
+
+    /** @return whether the piece stands on one of the squares it is bound to */
+    public boolean isPieceOnBoundSquare() {
+      return squares.contains(at);
+    }
+  }
+
+  /** A piece that was released in a clear placement and commits the player (FIDE 4.7), and the square it is on. */
+  public record ReleasedPiece(Piece piece, Square square) {
+  }
+
+  /**
+   * The binding of the turn's first unclear release that binds, while it is in force: until a release in a clear
+   * placement honours it, from where on the released-piece rule of today decides.
+   * <ul>
+   * <li>The binding is what a clear release on each of the squares would have committed the player to at that
+   * moment, by the rules of today: so a king let go across f1 and g1 is bound to Kf1 and to castling, and a pawn let
+   * go across squares of the last rank or on the square of an en passant capture is bound to nothing.</li>
+   * <li>The square the piece came from among the squares: bound to nothing - the arbiter cannot tell a piece put
+   * back carelessly from a move.</li>
+   * <li>No square gives a legal move that honours the touch-move obligation in force: bound to nothing.</li>
+   * <li>The first binding stands: a second unclear release on other squares changes nothing.</li>
+   * </ul>
+   */
+  public Optional<UnclearBinding> findUnclearBinding(Board board, ActionSequence sequence) {
+    return findReleaseRuling(board, sequence).binding();
+  }
+
+  /** The piece of the first release that commits the player (FIDE 4.7) and the square it was released on. */
+  public Optional<ReleasedPiece> findReleasedPiece(Board board, ActionSequence sequence) {
+    return findReleaseRuling(board, sequence).lock().filter(lock -> lock.square() != Square.NONE)
+        .map(lock -> new ReleasedPiece(lock.piece(), lock.square()));
   }
 
   /** Evaluate against a latched final move without consulting later touch obligations. */
@@ -496,9 +546,11 @@ public class ArbiterEngine {
    * @param obligation               the touch-move obligation that binds the turn, see {@link #findBindingObligation}
    * @param overruledReleasePosition the board right after the first release that was part of a legal move but broke
    *                                 the touch-move obligation in force - such a release commits to nothing
+   * @param binding                  the binding of an unclear release that is in force, see
+   *                                 {@link #findUnclearBinding}
    */
   private record ReleaseRuling(Optional<ReleasedPieceLock> lock, Optional<TouchMoveObligation> obligation,
-      Optional<BitboardPosition> overruledReleasePosition) {
+      Optional<BitboardPosition> overruledReleasePosition, Optional<UnclearBinding> binding) {
   }
 
   /**
@@ -535,6 +587,9 @@ public class ArbiterEngine {
     private ReleasedPieceLock lock;
     private Optional<TouchMoveObligation> obligationAtRelease = Optional.empty();
     private BitboardPosition overruledReleasePosition;
+    /** The first unclear release that binds (free placement), and where its piece counts now. */
+    private UnclearBinding binding;
+    private Square boundAt = Square.NONE;
 
     ReleaseReplay(Board board, ActionSequence sequence) {
       this.board = board;
@@ -564,6 +619,13 @@ public class ArbiterEngine {
 
       final BitboardPosition beforeEvent = position;
       position = applyEvent(position, event);
+      if (binding != null) {
+        boundAt = followBoundPiece(boundAt, binding.piece(), event);
+      }
+      if (lock == null && binding == null && !event.releasedOn().isEmpty()) {
+        bind(event, beforeEvent);
+        return true;
+      }
       if (lock != null || !isReleaseOnBoard(event)) {
         return true;
       }
@@ -574,15 +636,20 @@ public class ArbiterEngine {
       final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(prefix, board);
       final Set<LegalMove> honouringMoves = new HashSet<>();
       final Set<BitboardPosition> honouringPositions = new HashSet<>();
+      boolean honoursObligation = false;
       for (final LegalMove move : commitment.committedMoves()) {
         if (obligation.isEmpty() || TouchMoveEvaluator.satisfiesObligation(obligation.get(), move)) {
-          honouringMoves.add(move);
-          honouringPositions.add(board.getBitboardPosition().afterMove(move.moveSpecification(),
-              board.getSideToMove()));
+          honoursObligation = true;
+          // A clear release that breaks the binding of an unclear release commits to nothing (E-005).
+          if (binding == null || binding.moves().contains(move)) {
+            honouringMoves.add(move);
+            honouringPositions.add(board.getBitboardPosition().afterMove(move.moveSpecification(),
+                board.getSideToMove()));
+          }
         }
       }
       if (honouringMoves.isEmpty()) {
-        if (overruledReleasePosition == null) {
+        if (!honoursObligation && overruledReleasePosition == null) {
           overruledReleasePosition = position;
         }
         return true;
@@ -602,13 +669,80 @@ public class ArbiterEngine {
       return prefix;
     }
 
+    /**
+     * The piece of {@code event} was let go in an unclear placement and nothing binds the player yet: it binds to
+     * what a clear release on each of the squares it lies on would commit to now.
+     */
+    private void bind(BoardEvent event, BitboardPosition beforeEvent) {
+      final Piece piece = event.piece();
+      final Square from = event.square();
+      if (piece == Piece.NONE || piece.getSide() != board.getSideToMove() || from == Square.NONE
+          || event.releasedOn().contains(from)) {
+        return;
+      }
+      final Optional<TouchMoveObligation> obligation = TouchMoveEvaluator.findObligation(prefix, board);
+      final List<Square> squares = new ArrayList<>();
+      final Set<LegalMove> moves = new HashSet<>();
+      for (final Square square : event.releasedOn()) {
+        final Piece occupant = beforeEvent.get(square);
+        final BoardEvent release = occupant == Piece.NONE
+            ? BoardEvent.dragMove(from, square, piece, event.timestampMs())
+            : BoardEvent.dragCapture(from, square, piece, occupant, event.timestampMs());
+        // What the release would commit to, and the move it would complete when the piece did not come straight
+        // from the square it stood on at the start of the turn.
+        final Set<LegalMove> candidates = new HashSet<>(
+            findCommitmentForRelease(board, release, beforeEvent).committedMoves());
+        candidates.addAll(PositionComparator.findMatchingMoves(board, applyEvent(beforeEvent, release)));
+        boolean binds = false;
+        for (final LegalMove move : candidates) {
+          if (obligation.isEmpty() || TouchMoveEvaluator.satisfiesObligation(obligation.get(), move)) {
+            moves.add(move);
+            binds = true;
+          }
+        }
+        if (binds) {
+          squares.add(square);
+        }
+      }
+      if (!squares.isEmpty()) {
+        binding = new UnclearBinding(piece, from, List.copyOf(squares), Set.copyOf(moves), from);
+        boundAt = from;
+      }
+    }
+
     ReleaseRuling ruling() {
       if (lock != null) {
-        return new ReleaseRuling(Optional.of(lock), obligationAtRelease, Optional.empty());
+        return new ReleaseRuling(Optional.of(lock), obligationAtRelease, Optional.empty(), Optional.empty());
       }
+      final Optional<UnclearBinding> inForce = binding == null ? Optional.empty()
+          : Optional.of(new UnclearBinding(binding.piece(), binding.fromSquare(), binding.squares(),
+              binding.moves(), boundAt));
       return new ReleaseRuling(Optional.empty(), TouchMoveEvaluator.findObligation(prefix, board),
-          Optional.ofNullable(overruledReleasePosition));
+          Optional.ofNullable(overruledReleasePosition), inForce);
     }
+  }
+
+  /**
+   * Where the bound piece counts after {@code event}: followed from square to square, off the board once it is
+   * taken off or something is put on it, and back when a piece of its kind is set down from the side.
+   */
+  private static Square followBoundPiece(Square at, Piece piece, BoardEvent event) {
+    return switch (event.type()) {
+      case CLICK -> at;
+      case DRAG_MOVE, DRAG_CAPTURE -> {
+        if (at != Square.NONE && event.square() == at) {
+          yield event.targetSquare();
+        }
+        yield event.targetSquare() == at ? Square.NONE : at;
+      }
+      case REMOVE -> event.square() == at ? Square.NONE : at;
+      case RESTORE_TO_EMPTY, RESTORE_TO_OCCUPIED -> {
+        if (at == Square.NONE && event.piece() == piece) {
+          yield event.targetSquare();
+        }
+        yield event.targetSquare() == at ? Square.NONE : at;
+      }
+    };
   }
 
   private static boolean displacesReleasedPiece(BoardEvent event, ReleasedPieceLock lock) {

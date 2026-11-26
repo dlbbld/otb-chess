@@ -6,7 +6,7 @@
 
 	<groupId>io.github.dlbbld</groupId>
 	<artifactId>otb-chess</artifactId>
-	<version>0.5.1</version>
+	<version>0.6.0-beta</version>
 	<url>https://github.com/dlbbld/otb-chess</url>
 	<inceptionYear>2026</inceptionYear>
 

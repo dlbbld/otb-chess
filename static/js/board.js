@@ -162,7 +162,7 @@ class ChessBoard {
       // A piece in a hand - the player's or the opponent's - is not on the board meanwhile.
       if (p.held || p.id === this.opponentDragId) continue;
       const el = document.createElement('div');
-      el.className = 'free-piece';
+      el.className = 'piece free-piece';
       el.innerHTML = getPieceSvg(p.piece);
       el.dataset.id = p.id;
       el.dataset.piece = p.piece;
@@ -755,6 +755,15 @@ class ChessBoard {
       this.clearOpponentDragVisuals();
       const result = this.applyRelease(event.id, event.piece, event.x, event.y);
       if (result.changed && !result.offBoard) this.piecePlaced();
+      // A piece touched and left where it lies: the square under it flashes, as in every game.
+      if (!result.changed && !result.offBoard) {
+        const under = OtbPlacement.measure(event.x, event.y, this.placementRadius).square;
+        const el = under && this.squares[under] ? this.squares[under].element : null;
+        if (el) {
+          el.classList.add('opponent-touch');
+          setTimeout(() => el.classList.remove('opponent-touch'), 1200);
+        }
+      }
     }
   }
 

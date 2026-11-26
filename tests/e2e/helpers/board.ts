@@ -8,7 +8,11 @@ export function squareLocator(page: Page, square: Square): Locator {
 }
 
 export function pieceLocator(page: Page, square: Square): Locator {
-  return page.locator(`#board .square[data-square="${square}"] .piece`);
+  // Centred pieces are children of their square; with free placement they lie in one layer over
+  // the board and a piece in a clear placement carries the square it is on.
+  return page.locator(
+    `#board .square[data-square="${square}"] .piece, #board .free-piece[data-square="${square}"]`,
+  );
 }
 
 /**

@@ -210,7 +210,8 @@ test('a player who reconnects while the opponent is away sees the countdown and 
 // ----- the board events of one turn are limited -----
 
 test('a turn records no more than 500 piece movements; the move is still ruled on', async ({ browser }) => {
-  game = await startTwoPlayerGame(browser);
+  // The script below sends the frames of a game with centred pieces.
+  game = await startTwoPlayerGame(browser, { free: false });
   const { white, black } = game;
   // Touching the knight binds White to a knight move; then the pawn goes back and forth 509 times.
   await clickSquare(white, 'g1');

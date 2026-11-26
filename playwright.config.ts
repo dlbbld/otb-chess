@@ -34,7 +34,15 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
+    // What the players get: free placement of the pieces is on, as on the entry screen.
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // The game with centred pieces (the option off) must stay exactly as it was: the core of the
+    // suite runs once more with it. helpers/app.ts switches the option off for this project.
+    {
+      name: 'centred',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /(smoke|rules|touch-move|released-piece-commitment|promotion)\.spec\.ts$/,
+    },
   ],
   webServer: {
     command: 'java -jar target/otb-chess.jar',

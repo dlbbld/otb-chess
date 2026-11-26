@@ -20,13 +20,20 @@ For example, the PR title is `Released Move Finality Guard`, its body begins wit
 
 The Maven project version and Git tag also contain only `VERSION`.
 
+**Between releases** the Maven project version is the next version with the suffix `-beta`, for
+example `0.6.0-beta`. The pages show it below the board as `v0.6.0 beta`, so a board of the version
+being built cannot be mistaken for the released one. Step 2 below removes the suffix for the
+release; the first commit of the next development sets the next version with `-beta` again, together
+with its two pins (step 5).
+
 ## Prepare the release branch
 
 1. Start from the released `main`, then make and verify the intended changes on a development
    branch. A branch that predates the last release instead merges the released `main` into itself,
    resolves the conflicts, and re-runs both suites before the release preparation below.
-2. Set the Maven project version in `pom.xml`. That is the only place to edit: the app reads its
-   own version from `version.properties`, which Maven filters from the project version.
+2. Set the Maven project version in `pom.xml` to `VERSION`, without the `-beta` suffix of
+   development. That is the only place to edit: the app reads its own version from
+   `version.properties`, which Maven filters from the project version.
 3. Add a dated changelog entry headed `VERSION — NAME — DATE`, and point the README's
    current-release link to it. The anchor drops the dots and the em dash, and doubles the
    separators, for example `CHANGELOG.md#016--touch-move-and-release-guards--2026-09-22`. Check
@@ -69,6 +76,7 @@ The Maven project version and Git tag also contain only `VERSION`.
    keeps the branch from being deleted.
 6. Deleting the release branch is not part of this procedure. It is a manual task after the
    release, done by hand when the branch is no longer needed.
-7. Start the next development branch from the newly released `main`. When it replaces the default
+7. Start the next development branch from the newly released `main`, and set the Maven project
+   version to the next version with `-beta` in its first commit. When it replaces the default
    testing branch of `start.bat`, change that default in `start.bat`, `TestWindowsLauncher`, the
    README, this file, `CLAUDE.md` and `AGENTS.md` in the same commit.

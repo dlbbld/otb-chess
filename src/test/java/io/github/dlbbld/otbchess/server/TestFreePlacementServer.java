@@ -512,7 +512,7 @@ class TestFreePlacementServer {
     unlimited.setMaxUnclearPlacements(GameSession.UNLIMITED_UNCLEAR_PLACEMENTS);
     unlimited.startGame();
     final List<PlacedPiece> knight = List.of(
-        new PlacedPiece(1, Piece.WHITE_KNIGHT, x("g3") - 512, y("g3"), Square.G1, Square.G1, false));
+        new PlacedPiece(1, Piece.WHITE_KNIGHT, x("g3") - 512, y("g3"), Square.G1, Square.G1, false, List.of(Square.F3, Square.G3)));
     for (int press = 1; press <= 12; press++) {
       assertEquals("It is not clear on which square your knight is. Place your pieces more carefully.",
           unlimited.pressClockButton(Side.WHITE, unlimited.getPositionBeforeTurn(), knight).renderedPlayerMessage());
@@ -572,6 +572,139 @@ class TestFreePlacementServer {
     assertFalse(room.getSession().getDrawOfferManager().isDrawOffered(), "the offer is not made");
     assertEquals(0, black.count("drawOffered"));
     assertEquals(heard, white.count("clockPressHeard"), "no lever went down for the offer");
+  }
+
+  // ===== The binding of an own piece let go unclearly =====
+
+  /** King e2, rook a1: the rook reaches every square of the first rank. */
+  private static final String ROOK = "4k3/8/8/8/8/8/4K3/R7 w - - 0 1";
+
+  private void startWithRook() throws Exception {
+    final JsonObject create = createMessage();
+    create.addProperty("fen", ROOK);
+    start(create);
+    setLong("wrongClockPauseMs", 30);
+  }
+
+  private static String marks(Client client) {
+    final StringBuilder marks = new StringBuilder();
+    client.last("boardMarks").getAsJsonArray("marks").forEach(mark -> marks
+        .append(mark.getAsJsonObject().get("color").getAsString()).append(' ')
+        .append(mark.getAsJsonObject().get("square").getAsString()).append(' '));
+    return marks.toString().trim();
+  }
+
+  private void awaitRestart(long resumedBefore) throws InterruptedException {
+    await("the arbiter restarts the clock", () -> white.count("gameResumed") > resumedBefore);
+    assertEquals(Side.WHITE, clockRunsFor());
+  }
+
+  @Test
+  void theRookLetGoAcrossTwoSquaresIsBoundToThemAndSentThereUntilItStandsOnOne() throws Exception {
+    startWithRook();
+    final int rook = idOn("a1");
+
+    // Let go on the line between d1 and e1: no ruling yet, the clock runs, nothing is circled.
+    release(white, rook, x("e1") - 512, y("e1"));
+    assertEquals(0, white.count(CALL));
+    assertEquals(0, white.count("boardMarks"));
+    assertEquals(Side.WHITE, clockRunsFor());
+    assertEquals(Square.A1, piece(rook).square(), "it still counts on a1");
+
+    // The clock press: the call names the two squares, counts once, and circles them on both boards.
+    long resumed = white.count("gameResumed");
+    press(white);
+    assertTrue(white.lastMessage(CALL).startsWith("It is not clear on which square your rook is. Place it on d1 or"
+        + " on e1, and place your pieces more carefully."), white.lastMessage(CALL));
+    assertEquals(1, unclearCount(Side.WHITE));
+    assertEquals("green d1 green e1", marks(white));
+    assertEquals("green d1 green e1", marks(black));
+    awaitRestart(resumed);
+
+    // Placed clearly on b1, a square it is not bound to: Rb1 is not made, the arbiter names the squares again,
+    // and nothing is counted.
+    release(white, rook, x("b1"), y("b1"));
+    resumed = white.count("gameResumed");
+    press(white);
+    assertTrue(white.lastMessage(CALL).startsWith("Your rook was released on d1 and e1. Place it on d1 or on e1."),
+        white.lastMessage(CALL));
+    assertTrue(black.lastMessage("opponentInfo").startsWith("Your opponent's rook was released on d1 and e1. It has"
+        + " to be placed on one of them."), black.lastMessage("opponentInfo"));
+    assertEquals(1, unclearCount(Side.WHITE), "the second ruling does not count");
+    assertEquals(0, white.count("move_accepted"));
+    assertEquals(Side.WHITE, room.getSession().getHavingMove());
+    assertEquals(Square.B1, piece(rook).square(), "the rook stays where the player put it");
+    awaitRestart(resumed);
+
+    // Taken to d1: the circles go on both boards, and the move is accepted.
+    release(white, rook, x("d1"), y("d1"));
+    assertEquals("", marks(white));
+    assertEquals("", marks(black));
+    press(white);
+    assertEquals(1, white.count("move_accepted"));
+    assertTrue(room.getSession().exportPgn().contains("Rd1"), room.getSession().exportPgn());
+    assertEquals(Side.BLACK, room.getSession().getHavingMove());
+  }
+
+  @Test
+  void theBoundRookPlacedClearlyOnOneOfItsSquaresBeforeTheClockPressIsAnOrdinaryMove() throws Exception {
+    startWithRook();
+    final int rook = idOn("a1");
+    release(white, rook, x("e1") - 512, y("e1"));
+    release(white, rook, x("e1"), y("e1"));
+    press(white);
+    assertEquals(0, white.count(CALL));
+    assertEquals(0, unclearCount(Side.WHITE));
+    assertEquals(1, white.count("move_accepted"));
+    assertTrue(room.getSession().exportPgn().contains("Re1"), room.getSession().exportPgn());
+  }
+
+  @Test
+  void aPieceLetGoAcrossTheBorderOfItsOwnSquareIsBoundToNothing() throws Exception {
+    start(createMessage());
+    setLong("wrongClockPauseMs", 30);
+    final int pawn = idOn("e2");
+    release(white, pawn, x("e2"), y("e3") - 512); // across e2 and e3
+    final long resumed = white.count("gameResumed");
+    press(white);
+    assertTrue(white.lastMessage(CALL).startsWith("It is not clear on which square your pawn is. Place your pieces"
+        + " more carefully."), white.lastMessage(CALL));
+    assertEquals(0, white.count("boardMarks"));
+    awaitRestart(resumed);
+    release(white, pawn, x("e4"), y("e4"));
+    press(white);
+    assertEquals(1, white.count("move_accepted"));
+  }
+
+  @Test
+  void aDrawOfferWithTheBoundRookOnAnotherSquareGetsTheCallAndIsNotMade() throws Exception {
+    startWithRook();
+    final int rook = idOn("a1");
+    release(white, rook, x("e1") - 512, y("e1"));
+    release(white, rook, x("b1"), y("b1"));
+    send(white, "offerDraw");
+    assertTrue(white.lastMessage(CALL).startsWith("Your rook was released on d1 and e1."), white.lastMessage(CALL));
+    assertEquals("green d1 green e1", marks(white));
+    assertFalse(room.getSession().getDrawOfferManager().isDrawOffered(), "the offer is not made");
+    assertEquals(0, black.count("drawOffered"));
+    assertEquals(0, unclearCount(Side.WHITE));
+  }
+
+  @Test
+  void aPageThatComesBackIsShownTheCirclesOfTheBoundSquares() throws Exception {
+    startWithRook();
+    release(white, idOn("a1"), x("e1") - 512, y("e1"));
+    final long resumed = white.count("gameResumed");
+    press(white);
+    awaitRestart(resumed);
+
+    final Client back = new Client();
+    final JsonObject resume = new JsonObject();
+    resume.addProperty("type", "resume");
+    resume.addProperty("gameId", room.getGameId());
+    resume.addProperty("token", room.getToken(Side.BLACK));
+    server.onMessage(back.socket, resume.toString());
+    assertEquals("green d1 green e1", marks(back));
   }
 
   // ===== The frames =====

@@ -5,7 +5,7 @@ import {
   expectGameResult,
   SCORE_DRAW,
 } from './helpers/app';
-import { dragPiece, pressClock } from './helpers/board';
+import { dragPiece, pieceLocator, pressClock } from './helpers/board';
 
 // The test server runs with short windows (playwright.config.ts):
 // OTB_DISCONNECT_GRACE_MS=1500 (info message), OTB_ABANDON_MS=6000 (adjudication).
@@ -129,7 +129,7 @@ test('after the abandonment adjudication the leaver cannot reconnect (reported b
   await expect(returned.locator('#arbiterMessage')).toHaveText('You left the game and lose.');
   await expectGameResult(returned, '1-0');
   await expect(returned.locator('#board .piece')).toHaveCount(32);
-  await expect(returned.locator('#board .square[data-square="e4"] .piece')).toHaveCount(1);
+  await expect(pieceLocator(returned, 'e4')).toHaveCount(1);
   await expect(returned.locator('#rematchBtn')).toBeHidden();
   await expect(returned.locator('#resignBtn')).toBeDisabled();
   await expect(returned.locator('#arbiterButtons')).toContainText('Back to lobby');

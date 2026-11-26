@@ -793,6 +793,8 @@ public class GameWebSocketServer extends WebSocketServer {
     }
     ruleOnBoardEvent(conn, room, side, release.event(), mirror, ruledPosition);
     announceHalfRemovedPiece(room, side, release.id());
+    // The circles of the squares a piece is bound to go when it stands on one of them.
+    sendBoardMarksIfChanged(room);
   }
 
   /**
@@ -1159,23 +1161,27 @@ public class GameWebSocketServer extends WebSocketServer {
     final Side side = room.getSide(conn);
     final boolean opponentOfferPending = isOpponentOfferPending(room, side);
 
-    // Free placement: an offer made with a piece in an unclear placement is ruled on like a clock press with
-    // one - the arbiter makes the call, it counts, and the offer is not made.
+    // Free placement: an offer made while the arbiter has a call to make about a placement - a piece lies unclear,
+    // or a bound piece is not on a square it is bound to - is ruled on like a clock press: the arbiter makes the
+    // call and the offer is not made.
     if (room.isFreePlacement() && side == room.getSession().getHavingMove()
-        && room.getPlacements().hasUnclearPiece()
         && !room.getSession().getDrawOfferManager().canAccept(side)) {
-      final ArbiterResponse response = room.getSession().offerDrawWithUnclearPlacement(side,
+      final Optional<ArbiterResponse> placementCall = room.getSession().offerDrawWithPlacementCall(side,
           room.getPlacements().unclearPieces());
-      final boolean call = response.type() == ArbiterResponseType.UNCLEAR_PLACEMENT;
-      final boolean restartsByItself = call && room.getSession().isPressWithoutMovePause();
-      sendArbiterResponse(room, side, response, restartsByItself ? PAUSED_SHORTLY : "");
-      sendOpponentArbiterNotification(room, side, response, restartsByItself ? OPPONENT_PAUSED_SHORTLY : "");
-      if (call) {
-        announceUnclearPlacementPause(room, side, response, restartsByItself,
-            room.getSession().isWaitingForReady());
+      if (placementCall.isPresent()) {
+        final ArbiterResponse response = placementCall.get();
+        final boolean call = response.type() == ArbiterResponseType.UNCLEAR_PLACEMENT;
+        final boolean restartsByItself = call && room.getSession().isPressWithoutMovePause();
+        sendArbiterResponse(room, side, response, restartsByItself ? PAUSED_SHORTLY : "");
+        sendOpponentArbiterNotification(room, side, response, restartsByItself ? OPPONENT_PAUSED_SHORTLY : "");
+        sendBoardMarksIfChanged(room);
+        if (call) {
+          announceUnclearPlacementPause(room, side, response, restartsByItself,
+              room.getSession().isWaitingForReady());
+        }
+        checkGameEnded(room);
+        return;
       }
-      checkGameEnded(room);
-      return;
     }
 
     // Parse the boardState (used by the correct-time validation path; optional/tolerant here). In a game with

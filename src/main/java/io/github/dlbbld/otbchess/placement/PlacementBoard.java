@@ -26,7 +26,8 @@ import io.github.dlbbld.otbchess.placement.PlacementMeasure.Measured;
  * <li>A piece in a clear placement counts on the square it lies on.</li>
  * <li>A piece let go in an unclear placement keeps counting on the square it stood on before, as a piece that was
  * touched. It is "still on the board" there until it is placed clearly or taken off. So the rules never see a
- * square as empty only because its piece lies across a border.</li>
+ * square as empty only because its piece lies across a border. The event of an own piece also carries the squares
+ * it was let go across; what they bind the player to is decided by the rules.</li>
  * <li>A piece counts on no square when it came from the side and was let go unclearly, or when another piece was
  * placed clearly on the square it counted on - for the rules that was its capture, although it still lies there.</li>
  * </ul>
@@ -49,8 +50,10 @@ public final class PlacementBoard {
    *               the side and has not stood clearly since. A piece that lies unclear keeps it until it is placed
    *               clearly or taken off, also when it no longer counts on that square.
    * @param clear  whether it lies in a clear placement
+   * @param liesOn the squares its inner circle lies on: its square for a clear placement, up to four otherwise
    */
-  public record PlacedPiece(int id, Piece piece, int x, int y, Square square, Square origin, boolean clear) {
+  public record PlacedPiece(int id, Piece piece, int x, int y, Square square, Square origin, boolean clear,
+      List<Square> liesOn) {
   }
 
   /**
@@ -84,8 +87,9 @@ public final class PlacementBoard {
       this.clear = clear;
     }
 
-    private PlacedPiece view() {
-      return new PlacedPiece(id, piece, x, y, square, origin, clear);
+    private PlacedPiece view(int radius) {
+      return new PlacedPiece(id, piece, x, y, square, origin, clear,
+          PlacementMeasure.measure(x, y, radius).squares());
     }
   }
 
@@ -117,7 +121,7 @@ public final class PlacementBoard {
 
   /** @return the pieces on the board, the one drawn on top last */
   public synchronized List<PlacedPiece> pieces() {
-    return entries.stream().map(Entry::view).toList();
+    return entries.stream().map(entry -> entry.view(radius)).toList();
   }
 
   /** @return the position the rules look at: every piece on the square it counts on */
@@ -137,7 +141,7 @@ public final class PlacementBoard {
   }
 
   public synchronized List<PlacedPiece> unclearPieces() {
-    return entries.stream().filter(entry -> !entry.clear).map(Entry::view).toList();
+    return entries.stream().filter(entry -> !entry.clear).map(entry -> entry.view(radius)).toList();
   }
 
   /** @return whether the pieces stand, all in clear placements, exactly as in this position */
@@ -153,7 +157,8 @@ public final class PlacementBoard {
   public synchronized Optional<PlacedPiece> halfRemovedPiece(Side mover) {
     return entries.stream().filter(entry -> !entry.clear && entry.origin != Square.NONE
         && entry.piece.getSide() != mover
-        && PlacementMeasure.measure(entry.x, entry.y, radius).liesOn(entry.origin)).map(Entry::view).findFirst();
+        && PlacementMeasure.measure(entry.x, entry.y, radius).liesOn(entry.origin)).map(entry -> entry.view(radius))
+        .findFirst();
   }
 
   public synchronized boolean isOnBoard(int id) {
@@ -219,9 +224,14 @@ public final class PlacementBoard {
         return new Release(Optional.of(BoardEvent.dragMove(from, measured.square(), piece, now)), entry.id, piece, x,
             y, false, 0);
       }
-      // It keeps counting on its square. Lifting it was a touch, once.
-      final Optional<BoardEvent> event = wasClear ? Optional.of(BoardEvent.click(from, piece, now))
-          : Optional.empty();
+      // It keeps counting on its square. An own piece is touched and says where it was let go, every time: the
+      // first such release that can bind the player does (E-005). Lifting an opponent's piece was a touch, once.
+      final Optional<BoardEvent> event;
+      if (piece.getSide() == mover) {
+        event = Optional.of(BoardEvent.releaseUnclear(from, piece, measured.squares(), now));
+      } else {
+        event = wasClear ? Optional.of(BoardEvent.click(from, piece, now)) : Optional.empty();
+      }
       return new Release(event, entry.id, piece, x, y, false, 0);
     }
 

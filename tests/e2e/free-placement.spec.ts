@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { startTwoPlayerGame, TwoPlayerGame, clickRestore } from './helpers/app';
+import { startTwoPlayerGame, TwoPlayerGame, clickRestore, expectGameResult } from './helpers/app';
 import { dragPiece, pressClock, removePiece, expectPiece, expectEmpty } from './helpers/board';
 import {
   freePiece, unclearPiece, pointOn, carry, releaseAt, dragFree, takeOff, placements,
@@ -295,7 +295,7 @@ test('at the rim the centre decides: just inside the piece is on the board, just
   });
 
 test('with the option off the capture that starts with the victim works as before', async ({ browser }) => {
-  game = await startTwoPlayerGame(browser);
+  game = await startTwoPlayerGame(browser, { free: false });
   const { white, black } = game;
   await dragPiece(white, 'e2', 'e4');
   await pressClock(white);
@@ -315,16 +315,180 @@ test('with the option off the capture that starts with the victim works as befor
   await expectEmpty(black, 'e4');
 });
 
-test('the entry screen offers free placement with its limit, off by default', async ({ page }) => {
+test('the entry screen offers free placement with its limit, on by default', async ({ page }) => {
   await page.goto('/');
   const option = page.locator('#freePlacement');
-  await expect(option).not.toBeChecked();
-  await expect(page.locator('#maxUnclearPlacementsRow')).toBeHidden();
-  await option.check();
+  await expect(option).toBeChecked();
   await expect(page.locator('#maxUnclearPlacementsRow')).toBeVisible();
   await expect(page.locator('#maxUnclearPlacements')).toHaveValue('3');
   await page.locator('#maxUnclearPlacements').selectOption('5');
   await page.locator('#createGameBtn').click();
-  await expect(page).toHaveURL(/free=true&maxUnclear=5/);
+  await expect(page).toHaveURL(/maxUnclear=5/);
+  await expect(page).not.toHaveURL(/free=false/);
   await expect(page.locator('#board .free-piece')).toHaveCount(32);
 });
+
+test('the entry screen with free placement switched off starts a game with centred pieces', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#freePlacement').uncheck();
+  await expect(page.locator('#maxUnclearPlacementsRow')).toBeHidden();
+  await page.locator('#createGameBtn').click();
+  await expect(page).toHaveURL(/free=false/);
+  await expect(page.locator('#board .piece')).toHaveCount(32);
+  await expect(page.locator('#board .free-piece')).toHaveCount(0);
+});
+
+// ----- The binding of an own piece let go across a border (Q1 to Q3) -----
+
+/** King e2, rook a1: the rook reaches every square of the first rank. */
+const ROOK = '4k3/8/8/8/8/8/4K3/R7 w - - 0 1';
+const PAUSED = ' The game is paused and will continue shortly.';
+const RESTARTED = ' The clock has restarted.';
+
+/** The point on the line between two neighbouring squares, as this player sees the board. */
+async function between(page: Page, first: string, second: string) {
+  const a = await pointOn(page, first);
+  const b = await pointOn(page, second);
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+/** The squares circled in green on this board, in the order of the board. */
+async function greenCircles(page: Page): Promise<string[]> {
+  return page.locator('#board .square.mark-green').evaluateAll(
+    (squares) => squares.map((square) => (square as HTMLElement).dataset.square!).sort());
+}
+
+async function expectGreenCircles(white: Page, black: Page, squares: string[]): Promise<void> {
+  for (const page of [white, black]) {
+    await expect.poll(() => greenCircles(page)).toEqual(squares);
+  }
+}
+
+test('a rook let go across d1 and e1 is bound to them: called, sent there from b1 without counting, then moved',
+  async ({ browser }) => {
+    game = await startTwoPlayerGame(browser, { fen: ROOK });
+    const { white, black } = game;
+
+    // Let go on the line: both boards show it there, the arbiter is silent, the clock runs.
+    await releaseAt(white, freePiece(white, 'a1'), await between(white, 'd1', 'e1'));
+    for (const page of [white, black]) {
+      await expect(unclearPiece(page, 'd1 e1')).toHaveAttribute('data-piece', 'WHITE_ROOK');
+    }
+    await expectGreenCircles(white, black, []);
+    await expectWhiteClockRuns(white, black);
+
+    // The clock press: the call names the two squares and circles them on both boards.
+    const call = 'It is not clear on which square your rook is. Place it on d1 or on e1, and place your pieces'
+      + ' more carefully.';
+    await pressClock(white);
+    await expect(white.locator('#arbiterMessage')).toHaveText(call + PAUSED);
+    await expect(black.locator('#opponentInfoPanel')).toContainText(
+      'Your opponent pressed the clock while a piece was not clearly on a square.');
+    await expectGreenCircles(white, black, ['d1', 'e1']);
+    await expect(white.locator('#arbiterMessage')).toHaveText(call + RESTARTED, { timeout: 15_000 });
+
+    // Placed clearly on b1, where it is not bound to: Rb1 is not made. The arbiter names the squares again.
+    await releaseAt(white, unclearPiece(white, 'd1 e1'), await pointOn(white, 'b1'));
+    await expect(freePiece(black, 'b1')).toHaveAttribute('data-piece', 'WHITE_ROOK');
+    const released = 'Your rook was released on d1 and e1. Place it on d1 or on e1.';
+    await pressClock(white);
+    await expect(white.locator('#arbiterMessage')).toHaveText(released + PAUSED);
+    await expect(black.locator('#opponentInfoPanel')).toContainText(
+      "Your opponent's rook was released on d1 and e1. It has to be placed on one of them.");
+    await expect(white.locator('#chessClock')).toHaveClass(/paused/);
+    await expect(white.locator('#arbiterButtons button')).toHaveCount(0); // nothing is restored
+    for (const page of [white, black]) {
+      await expect(freePiece(page, 'b1')).toHaveAttribute('data-piece', 'WHITE_ROOK');
+    }
+    await expectGreenCircles(white, black, ['d1', 'e1']);
+    await expect(white.locator('#arbiterMessage')).toHaveText(released + RESTARTED, { timeout: 15_000 });
+    await expectWhiteClockRuns(white, black);
+
+    // Taken to d1: the circles go on both boards and the move is accepted.
+    await dragFree(white, 'b1', 'd1');
+    await expectGreenCircles(white, black, []);
+    await pressClock(white);
+    await expect(white.locator('#arbiterMessage')).toHaveText("Move accepted. Opponent's turn.");
+    await expect(black.locator('#arbiterMessage')).toHaveText('Your turn.');
+    for (const page of [white, black]) {
+      await expect(freePiece(page, 'd1')).toHaveAttribute('data-piece', 'WHITE_ROOK');
+    }
+    await expectSamePlacements(white, black);
+  });
+
+test('let go a second time across other squares, the rook stays bound to the first ones', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser, { fen: ROOK });
+  const { white, black } = game;
+  await releaseAt(white, freePiece(white, 'a1'), await between(white, 'd1', 'e1'));
+  await releaseAt(white, unclearPiece(white, 'd1 e1'), await between(white, 'f1', 'g1'));
+  await expect(unclearPiece(black, 'f1 g1')).toHaveCount(1);
+
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'It is not clear on which square your rook is. It was released on d1 and e1. Place it on d1 or on e1.'
+    + ' Place your pieces more carefully.' + PAUSED);
+  await expectGreenCircles(white, black, ['d1', 'e1']);
+});
+
+test('only the square that gives a legal move is named', async ({ browser }) => {
+  // The king stands on e1: the rook let go across d1 and e1 can only go to d1.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/8/8/8/8/8/8/R3K3 w - - 0 1' });
+  const { white, black } = game;
+  await releaseAt(white, freePiece(white, 'a1'), await between(white, 'd1', 'e1'));
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toHaveText(
+    'It is not clear on which square your rook is. Place it on d1, and place your pieces more carefully.'
+    + PAUSED);
+  await expectGreenCircles(white, black, ['d1']);
+});
+
+test('a piece that can reach none of the squares is bound to nothing', async ({ browser }) => {
+  // The bishop from c1 let go across c4 and d4 can reach neither: no square is named, any bishop move remains.
+  game = await startTwoPlayerGame(browser, { fen: '4k3/p7/8/8/8/8/4K3/2B5 w - - 0 1' });
+  const { white, black } = game;
+  await releaseAt(white, freePiece(white, 'c1'), await between(white, 'c4', 'd4'));
+  const call = 'It is not clear on which square your bishop is. Place your pieces more carefully.';
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toHaveText(call + PAUSED);
+  await expectGreenCircles(white, black, []);
+  await expect(white.locator('#arbiterMessage')).toHaveText(call + RESTARTED, { timeout: 15_000 });
+  await releaseAt(white, unclearPiece(white, 'c4 d4'), await pointOn(white, 'e3'));
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toHaveText("Move accepted. Opponent's turn.");
+  await expect(freePiece(black, 'e3')).toHaveAttribute('data-piece', 'WHITE_BISHOP');
+});
+
+test('a pawn let go across the border of its own square is only touched', async ({ browser }) => {
+  game = await startTwoPlayerGame(browser);
+  const { white, black } = game;
+  await releaseAt(white, freePiece(white, 'e2'), await between(white, 'e2', 'e3'));
+  await expect(unclearPiece(black, 'e2 e3')).toHaveAttribute('data-piece', 'WHITE_PAWN');
+  const call = 'It is not clear on which square your pawn is. Place your pieces more carefully.';
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toHaveText(call + PAUSED);
+  await expectGreenCircles(white, black, []);
+  await expect(white.locator('#arbiterMessage')).toHaveText(call + RESTARTED, { timeout: 15_000 });
+
+  // Any move of the pawn remains: e2-e4, not only e2-e3.
+  await releaseAt(white, unclearPiece(white, 'e2 e3'), await pointOn(white, 'e4'));
+  await pressClock(white);
+  await expect(white.locator('#arbiterMessage')).toHaveText("Move accepted. Opponent's turn.");
+  await expect(freePiece(black, 'e4')).toHaveAttribute('data-piece', 'WHITE_PAWN');
+});
+
+test('checkmate ends the game when the piece is let go clearly, not while it lies across a border',
+  async ({ browser }) => {
+    // Qg7 is mate.
+    game = await startTwoPlayerGame(browser, { fen: '7k/1Q6/6K1/8/8/8/8/R7 w - - 0 1' });
+    const { white, black } = game;
+    await releaseAt(white, freePiece(white, 'b7'), await between(white, 'f7', 'g7'));
+    await expect(unclearPiece(black, 'f7 g7')).toHaveAttribute('data-piece', 'WHITE_QUEEN');
+    await expectWhiteClockRuns(white, black);
+    await expect(white.locator('#gameResultPanel')).toBeHidden();
+
+    await releaseAt(white, unclearPiece(white, 'f7 g7'), await pointOn(white, 'g7'));
+    for (const page of [white, black]) {
+      await expectGameResult(page, '1-0');
+      await expect(page.locator('#gameResultReason')).toContainText('checkmate');
+    }
+  });

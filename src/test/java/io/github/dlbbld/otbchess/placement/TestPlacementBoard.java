@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -138,16 +140,31 @@ class TestPlacementBoard {
     final int knight = idOn("g1");
     final Release release = releaseOnLeftBorderOf(knight, "g3"); // across f3 and g3
     assertEvent(release, BoardEventType.CLICK, "g1", null, Piece.WHITE_KNIGHT, Piece.NONE);
+    assertEquals(List.of(Square.F3, Square.G3), release.event().orElseThrow().releasedOn(),
+        "the touch says where the piece was let go: the rules decide what that binds it to");
+    assertEquals(List.of(Square.F3, Square.G3), piece(knight).liesOn());
     assertTrue(board.hasUnclearPiece());
     assertEquals(start, board.countedPosition(), "the rules still see the knight on g1");
     assertFalse(board.showsClearly(start));
 
-    // Let go unclearly again: nothing new for the rules.
-    assertTrue(board.release(Side.WHITE, knight, x("f3") + 400, y("f3")).event().isEmpty());
+    // Let go unclearly again, elsewhere: again a touch with the squares it lies on now.
+    final Release again = board.release(Side.WHITE, knight, x("h3") - 512, y("h3") + 512);
+    assertEvent(again, BoardEventType.CLICK, "g1", null, Piece.WHITE_KNIGHT, Piece.NONE);
+    assertEquals(List.of(Square.G3, Square.G4, Square.H3, Square.H4), again.event().orElseThrow().releasedOn());
 
     // Placed clearly: the move from the square it counted on.
     assertEvent(releaseOn(knight, "f3"), BoardEventType.DRAG_MOVE, "g1", "f3", Piece.WHITE_KNIGHT, Piece.NONE);
+    assertEquals(List.of(Square.F3), piece(knight).liesOn());
     assertFalse(board.hasUnclearPiece());
+  }
+
+  @Test
+  void anOpponentsPieceLetGoAcrossABorderIsATouchWithoutSquares() {
+    final int victim = idOn("d5");
+    final Release release = releaseOnLeftBorderOf(victim, "e5");
+    assertEvent(release, BoardEventType.CLICK, "d5", null, Piece.BLACK_PAWN, Piece.NONE);
+    assertTrue(release.event().orElseThrow().releasedOn().isEmpty(), "only an own piece can be bound");
+    assertTrue(board.release(Side.WHITE, victim, x("e5") - 500, y("d5")).event().isEmpty(), "touched once");
   }
 
   @Test

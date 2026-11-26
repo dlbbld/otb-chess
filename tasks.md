@@ -29,13 +29,22 @@ merged `fixes-and-improvements`.
   the call at the clock press with its ladder, pause and locked board; no restoration complete and no game
   ended while a piece lies unclear; reload and rematch. Section 8 of the plan says what differs from the plan
   and what is not built.
-- [ ] Next case: the binding of an own piece let go unclearly (Q1 to Q3 of the plan) with the arbiter naming
-  the bound squares, the ruling for a bound piece on another square, and the green circles. Until then such a
-  piece is only touched, and the call names no square.
+- [x] The binding of an own piece let go unclearly (Q1 to Q3 of the plan, 2026-11-26): the piece is bound to
+  the legal moves that end on the squares it was let go across; the call at the clock press names the bound
+  squares and circles them in green on both boards; a bound piece placed clearly on another square is sent to
+  its squares at every clock press without counting, and that move is not made and ends no game; a draw offer
+  is ruled on like a clock press. The binding is computed in `ArbiterEngine` next to the released-piece rule;
+  no new event type was needed. Section 8 of the plan has the wording of the calls and the known gaps.
+- [x] Free placement **on by default** (owner, 2026-11-26): the entry screen has the checkbox ticked, a game
+  URL without `free=false` is a game with free placement, and the browser suite runs with it. A second
+  Playwright project `centred` runs `smoke`, `rules`, `touch-move`, `released-piece-commitment` and `promotion`
+  with the option off.
+- [x] The version in development is `0.6.0-beta`, shown below the board as `v0.6.0 beta` (owner, 2026-11-26);
+  `RELEASING.md` says how the suffix comes and goes.
 - [ ] J'adoube: the button, the adjustment and its undo, the ladder for the opponent's time, adjusting without
   J'adoube.
 - [ ] A free-placement mode of `RuleFuzzer`; `SPECIFICATION.md`, `MANUAL.md`, `fide-deviations.md`,
-  `CHANGELOG.md`; the option on by default once the rulings and J'adoube work together.
+  `CHANGELOG.md`.
 
 ## 0.5.1 — Quick Restart
 

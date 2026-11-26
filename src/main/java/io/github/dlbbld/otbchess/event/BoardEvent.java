@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package io.github.dlbbld.otbchess.event;
 
+import java.util.List;
+
 import io.github.dlbbld.ashlarchess.board.enums.Piece;
 import io.github.dlbbld.ashlarchess.board.enums.Square;
 
@@ -16,9 +18,29 @@ import io.github.dlbbld.ashlarchess.board.enums.Square;
  * @param displacedPiece the piece displaced from the target square (for DRAG_CAPTURE, RESTORE_TO_OCCUPIED); Piece.NONE
  *                       otherwise
  * @param timestampMs    the timestamp of the event in milliseconds
+ * @param releasedOn     free placement (E-005) only: the squares the piece was let go across, when it was let go in
+ *                       an unclear placement. Such a release is a {@code CLICK} - the piece was touched and still
+ *                       counts on its square - that also says where it lies. Empty for every other event.
  */
 public record BoardEvent(BoardEventType type, Square square, Square targetSquare, Piece piece, Piece displacedPiece,
-    long timestampMs) {
+    long timestampMs, List<Square> releasedOn) {
+
+  public BoardEvent {
+    releasedOn = List.copyOf(releasedOn);
+  }
+
+  public BoardEvent(BoardEventType type, Square square, Square targetSquare, Piece piece, Piece displacedPiece,
+      long timestampMs) {
+    this(type, square, targetSquare, piece, displacedPiece, timestampMs, List.of());
+  }
+
+  /**
+   * A piece let go across the border of squares (free placement, E-005): it is touched, it stays on the square it
+   * counted on, and the squares it lies on are what it may be bound to.
+   */
+  public static BoardEvent releaseUnclear(Square square, Piece piece, List<Square> releasedOn, long timestampMs) {
+    return new BoardEvent(BoardEventType.CLICK, square, Square.NONE, piece, Piece.NONE, timestampMs, releasedOn);
+  }
 
   public static BoardEvent click(Square square, Piece piece, long timestampMs) {
     return new BoardEvent(BoardEventType.CLICK, square, Square.NONE, piece, Piece.NONE, timestampMs);

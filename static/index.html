@@ -68,9 +68,9 @@
         <label><input type="radio" name="autoResumeAfterRestore" value="false"> No</label>
       </div>
 
-      <!-- Free placement (E-005). Off by default while the feature is being built. -->
-      <label><input type="checkbox" id="freePlacement"> Free placement of the pieces</label>
-      <div id="maxUnclearPlacementsRow" style="display:none;">
+      <!-- Free placement (E-005), on by default. Without it the pieces are centred on their squares. -->
+      <label><input type="checkbox" id="freePlacement" checked> Free placement of the pieces</label>
+      <div id="maxUnclearPlacementsRow">
         <label>Number of unclear placements causing game loss:</label>
         <select id="maxUnclearPlacements">
           <option value="1">1</option>
@@ -216,8 +216,9 @@
         + '&maxIllegal=' + encodeURIComponent(maxIllegal)
         + '&autoResumeAfterRestore=' + encodeURIComponent(autoResumeAfterRestore);
       if (document.getElementById('freePlacement').checked) {
-        url += '&free=true&maxUnclear='
-          + encodeURIComponent(document.getElementById('maxUnclearPlacements').value);
+        url += '&maxUnclear=' + encodeURIComponent(document.getElementById('maxUnclearPlacements').value);
+      } else {
+        url += '&free=false';
       }
       if (fen) {
         url += '&fen=' + encodeURIComponent(fen);

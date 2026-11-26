@@ -26,6 +26,7 @@ test('expiry before a third moved-opponent-piece offense draws against a lone ki
     }));
     const id = await createGame(white, {
       timeMs: 10_000, autoResume: false, fen: '4k3/8/8/8/8/8/8/R3K3 w - - 0 1',
+      free: false, // the frames watched above are those of a game with centred pieces
     });
     await joinGame(black, id);
     await expectGameStarted(white);

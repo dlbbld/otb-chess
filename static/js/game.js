@@ -68,8 +68,9 @@ class Game {
       const maxIllegalMoves = parseInt(params.get('maxIllegal') || '2');
       const autoResumeAfterRestore = params.get('autoResumeAfterRestore') !== 'false';
       const fen = params.get('fen') || '';
-      // Free placement of the pieces (E-005) and its limit: 1..10, -1 = unlimited, missing = 3.
-      const freePlacement = params.get('free') === 'true';
+      // Free placement of the pieces (E-005) unless the creator switched it off, and its limit:
+      // 1..10, -1 = unlimited, missing = 3.
+      const freePlacement = params.get('free') !== 'false';
       const maxUnclearPlacements = parseInt(params.get('maxUnclear') || '3');
       this.ws.createGame(this.side, initialTimeMs, incrementMs, maxIllegalMoves,
           autoResumeAfterRestore, fen, freePlacement, maxUnclearPlacements);
