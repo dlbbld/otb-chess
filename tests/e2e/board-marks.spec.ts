@@ -23,7 +23,7 @@ const WHITE_IN_CHECK = 'r3k2r/pppppppp/8/8/8/5n2/PPPPP1PP/R3K2R w KQkq - 0 1';
 /** The circled squares of a board, as "square:colour", in alphabetical order. */
 const marks = (page: Page) => page.evaluate(() =>
   [...document.querySelectorAll('#board .square')]
-    .flatMap((sq) => ['green', 'red', 'blue'] // 'blue' was a third colour for a day; it must not come back
+    .flatMap((sq) => ['green', 'red', 'blue'] // blue is only for a piece let go across a border (free-placement.spec.ts): none here
       .filter((colour) => sq.classList.contains(`mark-${colour}`))
       .map((colour) => `${(sq as HTMLElement).dataset.square}:${colour}`))
     .sort());

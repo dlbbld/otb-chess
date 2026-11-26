@@ -37,7 +37,7 @@ The call says "your bishop", and a binding to "the legal moves that end on these
 **Decided**:
 
 - The inner circle still lies on the piece's own square: it is touched and lies unclear. At the clock press the arbiter makes the call for "your opponent's bishop"; the only way out is to put it back clearly on its square or to capture it. It counts on the ladder for unclear placements.
-- The inner circle no longer lies on its own square: the piece was moved. Ruled on at once as today, with the position restored and centred.
+- The inner circle no longer lies on its own square: the piece was moved. Ruled on at once as today, with the position restored: the piece that is put back is centred.
 
 #### Capture-first clarification from the review
 
@@ -138,7 +138,7 @@ In `GameSession.ruleOnClockPress`, after the checks of today (game running, the 
 | J'adoube in the opponent's time | a press of the button while not on move | admonition, warning, loss | 3 |
 | Adjusting without J'adoube | a piece shifted on its square after the move is made | admonition, warning, loss | 3 |
 
-**Circles** *(proposal)*: the bound squares are circled in green from the call until the piece stands on one of them. Green is the colour for what the player has to play.
+**Circles**: the bound squares are circled in **blue** from the call until the piece stands on one of them (decided by the owner on 2026-11-26; the proposal was green). Blue is the colour of a piece let go across a border; green stays the colour of touch-move and of the move that was already made.
 
 ### 2.5 Other moments that read the board
 
@@ -147,7 +147,7 @@ E-005 orders only the clock press. *(All proposals.)*
 - **Automatic end of the game** (`evaluateForAutoEnd`): not while a piece lies unclear, and not for a move that breaks a binding.
 - **Draw offer together with a move**: ruled on like a clock press. With an unclear piece the call is made, it counts, and the offer is dropped without a word, as for any offer with an invalid move today.
 - **The move owed after a rejected claim**: the unclear call comes first, then the check of today.
-- **Restoring a position by hand**: a piece let go unclear is simply not yet on its square. No call, no step on a ladder; the position counts as restored when every piece stands clearly where it belongs. **Revert** sets the position centred.
+- **Restoring a position by hand**: a piece let go unclear is simply not yet on its square. No call, no step on a ladder; the position counts as restored when every piece stands clearly where it belongs. **Revert** puts back, centred, only the pieces that do not stand clearly on their square of the position; every other piece stays exactly where it lies (decided by the owner on 2026-11-26: the arbiter moves only what has to be put back).
 - **Claims**: they do not read the pieces on the board. Unchanged.
 
 ### 2.6 J'adoube
@@ -243,7 +243,7 @@ By the project's policy every change of behaviour has Java tests and browser tes
 - A capture by a clear release; an unclear release over an occupied square removes nothing and the pieces overlap.
 - Start from the normal position, play 1.e4 d5 and replay White's capture with real mouse events while observing both boards. Hold the black pawn halfway, verify silence, release on the d5/e5 boundary, and verify the instruction, Black's notice, both clocks' turn indicators and an empty captured-pawn tray. Reload Black's board while the pawn straddles the line. Finish exd5 by taking the same pawn off first and placing White's pawn on d5. Verify one captured black pawn, acceptance and Black to move on both boards. Repeat the unresolved clock press and correction, and check the ordinary off-board-first capture with the option disabled. Include a rim drop with the centre just inside and just outside.
 - Checkmate ends the game on a clear release and not on an unclear one.
-- Revert centres the pieces.
+- Revert centres the pieces it puts back and leaves the others where they lie.
 - J'adoube: the journeys of E-005 one by one, including the adjustment that is undone and the three ladders.
 - Entry screen: both options; with free placement off there is no J'adoube button and a piece is centred.
 - **The existing suite** runs with free placement on, because that is what players get; its drags go from centre to centre and are clear. A second Playwright project runs a part of it with the option off (`smoke`, `rules`, `touch-move`, `released-piece-commitment`, `promotion`) *(proposal)*.
@@ -279,7 +279,7 @@ As in E-005: playing by touch on a phone, and any change to the rulings that exi
 
 ## 8. State of the implementation
 
-**Built on 2026-11-26**: the first playable case (capture-first), then the binding of an own piece let go unclearly (Q1 to Q3) with the second ruling at the clock press and the green circles, then J'adoube with its two ladders. Free placement is a game option on the entry screen and **on by default** since the binding was built (the owner's decision of 2026-11-26, ahead of the order of the review, to make testing easier). The version in development is shown as `v0.6.0 beta`.
+**Built on 2026-11-26**: the first playable case (capture-first), then the binding of an own piece let go unclearly (Q1 to Q3) with the second ruling at the clock press and the circles (blue since the owner's decision of the same day), then J'adoube with its two ladders. Free placement is a game option on the entry screen and **on by default** since the binding was built (the owner's decision of 2026-11-26, ahead of the order of the review, to make testing easier). The version in development is shown as `v0.6.0 beta`.
 
 | Part | Where |
 |---|---|
@@ -287,7 +287,8 @@ As in E-005: playing by touch on a phone, and any change to the rulings that exi
 | The placements and the layer (2.2) | `PlacementBoard`, kept by `GameRoom`; `GameWebSocketServer.handleFreeBoardEvent` |
 | The binding of an unclear release (2.3) | `ArbiterEngine.findUnclearBinding` (in `ReleaseReplay`), `BoardEvent.releasedOn` |
 | The two calls at the clock press, the ladder and the pause (2.4) | `GameSession.ruleOnPlacement`; option `maxUnclearPlacements` |
-| The circles of the bound squares | `GameSession.getBoardMarks` |
+| The circles of the bound squares | `GameSession.getBoardMarks`, `BoardMark.Color.BLUE` |
+| A restored position (2.5) | `PlacementBoard.arrange` |
 | The half-removed victim (Q4, capture-first) | `PlacementBoard.halfRemovedPiece`, message `placementNotice` |
 | J'adoube (2.6) | `GameSession.pressJadoube`, `useJadoube`, `ruleOnAdjustingWithoutJadoube`; `PlacementBoard.adjust`; messages `jadoube`, `jadoubeWrongTime`, `adjustmentUndone` |
 | The page (2.8) | `board.js` (layer of pieces), `game.js`, entry screen |

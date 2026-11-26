@@ -1913,30 +1913,31 @@ public class GameSession {
   /**
    * @return the squares the arbiter currently points at, for both boards, one circle per square; empty when there are
    *         none. On the square where an illegal move of the touched piece started, the red circle covers the green
-   *         one until the position is restored.
+   *         one until the position is restored. A blue circle covers a green one, and a red one covers both.
    */
   public synchronized List<BoardMark> getBoardMarks() {
     final List<BoardMark> red = marksOf(BoardMark.Color.RED);
-    final List<BoardMark> bound = boundSquareMarks();
-    if (red.isEmpty() && bound.isEmpty()) {
+    final List<BoardMark> blue = boundSquareMarks();
+    if (red.isEmpty() && blue.isEmpty()) {
       return boardMarks;
     }
     final List<BoardMark> marks = new ArrayList<>(marksOf(BoardMark.Color.GREEN));
-    bound.stream().filter(mark -> !marks.contains(mark)).forEach(marks::add);
-    marks.removeIf(green -> red.stream().anyMatch(mark -> mark.square() == green.square()));
+    marks.removeIf(green -> blue.stream().anyMatch(mark -> mark.square() == green.square()));
+    marks.addAll(blue);
+    marks.removeIf(covered -> red.stream().anyMatch(mark -> mark.square() == covered.square()));
     marks.addAll(red);
     return List.copyOf(marks);
   }
 
   /**
-   * Free placement: the squares a piece is bound to by an unclear release, green like everything the player has to
-   * play - from the call that named them until the piece stands on one of them.
+   * Free placement: the squares a piece is bound to by an unclear release, in blue - from the call that named them
+   * until the piece stands on one of them.
    */
   private List<BoardMark> boundSquareMarks() {
     if (!bindingCalled) {
       return List.of();
     }
-    return misplacedBinding().map(binding -> binding.squares().stream().map(BoardMark::green).toList())
+    return misplacedBinding().map(binding -> binding.squares().stream().map(BoardMark::blue).toList())
         .orElse(List.of());
   }
 

@@ -1004,13 +1004,14 @@ public class GameWebSocketServer extends WebSocketServer {
   }
 
   /**
-   * A position the arbiter sets up is centred (E-005). The pieces stay where they lie only when they already show
-   * exactly this position, every one in a clear placement - a move that was accepted, a position restored by hand.
+   * Puts the pieces as in a position the arbiter restores (E-005): only the pieces that do not stand clearly on
+   * their square of it are put there, centred. The others stay where they lie, so a position that is already
+   * shown - a move that was accepted, a position restored by hand - is left alone.
    */
-  private static void centreUnlessShown(GameRoom room, BitboardPosition position) {
+  private static void arrangePlacements(GameRoom room, BitboardPosition position) {
     final PlacementBoard placements = room.getPlacements();
-    if (placements != null && !placements.showsClearly(position)) {
-      placements.reset(position);
+    if (placements != null) {
+      placements.arrange(position);
     }
     room.setHalfRemovedPieceId(0);
   }
@@ -1846,7 +1847,7 @@ public class GameWebSocketServer extends WebSocketServer {
       return; // no restoration is pending (any more)
     }
     room.setPhysicalPosition(restorePosition);
-    centreUnlessShown(room, restorePosition);
+    arrangePlacements(room, restorePosition);
 
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "positionRestored");
@@ -2570,7 +2571,7 @@ public class GameWebSocketServer extends WebSocketServer {
     if (response.type() == ArbiterResponseType.MOVE_ACCEPTED) {
       final var position = room.getSession().getBoard().getBitboardPosition();
       room.setPhysicalPosition(position);
-      centreUnlessShown(room, position);
+      arrangePlacements(room, position);
       final var havingMove = room.getSession().getHavingMove();
 
       final JsonObject opponentMsg = new JsonObject();
@@ -2621,7 +2622,7 @@ public class GameWebSocketServer extends WebSocketServer {
     final var havingMove = room.getSession().getHavingMove();
     final JsonObject msg = new JsonObject();
     msg.addProperty("type", "boardUpdate");
-    centreUnlessShown(room, position);
+    arrangePlacements(room, position);
     addBoard(msg, room, position);
     msg.addProperty("havingMove", havingMove.name().toLowerCase());
     room.sendToBoth(GSON.toJson(msg));

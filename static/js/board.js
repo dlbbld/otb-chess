@@ -24,7 +24,7 @@ function getPieceSvg(piece) {
 
 class ChessBoard {
   // The colours of the arbiter's circles (see setMarks).
-  static MARK_COLOURS = ['green', 'red'];
+  static MARK_COLOURS = ['green', 'red', 'blue'];
 
   constructor(boardElement, side) {
     this.boardEl = boardElement;
@@ -37,7 +37,7 @@ class ChessBoard {
     this.eventCallback = null;
     this.placedCallback = null;
     this.enabled = false;
-    // Squares the arbiter points at: squareName -> 'green' | 'red' (see setMarks).
+    // Squares the arbiter points at: squareName -> 'green' | 'red' | 'blue' (see setMarks).
     this.marks = {};
     // Free placement (E-005): the pieces lie where they were let go, in a layer over the squares.
     // Off until the server sends placements (setPlacements); then this.squares holds no pieces.
@@ -263,8 +263,8 @@ class ChessBoard {
   /**
    * Circles the squares of the arbiter's ruling, as the server sent them: green for a piece the
    * player must move or capture and for the start and end square of a move that was already made,
-   * red for the start and end square of an illegal move. Replaces
-   * the circles shown before; an empty list removes them. The class sits on the square, so the
+   * red for the start and end square of an illegal move, blue for the squares a piece let go
+   * across a border has to be placed on. Replaces the circles shown before; an empty list removes them. The class sits on the square, so the
    * circle follows the square when the board is flipped and stays when its piece is redrawn.
    */
   setMarks(marks) {

@@ -84,8 +84,8 @@ class TestUnclearBindingRulings {
     assertEquals(Side.WHITE, session.getClock().getRunningFor());
   }
 
-  private static List<BoardMark> green(String... names) {
-    return List.of(names).stream().map(name -> BoardMark.green(sq(name))).toList();
+  private static List<BoardMark> blue(String... names) {
+    return List.of(names).stream().map(name -> BoardMark.blue(sq(name))).toList();
   }
 
   // ===== The call for a piece that lies unclear names the squares it is bound to =====
@@ -98,7 +98,7 @@ class TestUnclearBindingRulings {
     assertEquals("It is not clear on which square your rook is. Place it on d1 or on e1, and place your pieces more"
         + " carefully.", call.renderedPlayerMessage());
     assertEquals(1, session.getUnclearPlacementCount(Side.WHITE));
-    assertEquals(green("d1", "e1"), session.getBoardMarks(), "the squares to choose from are circled");
+    assertEquals(blue("d1", "e1"), session.getBoardMarks(), "the squares to choose from are circled");
     restartClock();
   }
 
@@ -108,7 +108,7 @@ class TestUnclearBindingRulings {
     final ArbiterResponse call = pressUnclear(letGoAcross("a1", Piece.WHITE_ROOK, "d1", "e1"));
     assertEquals("It is not clear on which square your rook is. Place it on d1, and place your pieces more"
         + " carefully.", call.renderedPlayerMessage());
-    assertEquals(green("d1"), session.getBoardMarks());
+    assertEquals(blue("d1"), session.getBoardMarks());
   }
 
   @Test
@@ -145,7 +145,7 @@ class TestUnclearBindingRulings {
     final List<PlacedPiece> rook = letGoAcross("a1", Piece.WHITE_ROOK, "f1", "g1");
     assertEquals("It is not clear on which square your rook is. It was released on d1 and e1. Place it on d1 or on"
         + " e1. Place your pieces more carefully.", pressUnclear(rook).renderedPlayerMessage());
-    assertEquals(green("d1", "e1"), session.getBoardMarks());
+    assertEquals(blue("d1", "e1"), session.getBoardMarks());
   }
 
   @Test
@@ -187,7 +187,7 @@ class TestUnclearBindingRulings {
       assertEquals(ROOK_RELEASED, call.renderedPlayerMessage());
       assertEquals(Optional.of("Your opponent's rook was released on d1 and e1. It has to be placed on one of"
           + " them."), call.renderedOpponentMessage());
-      assertEquals(green("d1", "e1"), session.getBoardMarks());
+      assertEquals(blue("d1", "e1"), session.getBoardMarks());
       restartClock();
     }
     assertEquals(0, session.getUnclearPlacementCount(Side.WHITE), "it does not count, like a released piece");

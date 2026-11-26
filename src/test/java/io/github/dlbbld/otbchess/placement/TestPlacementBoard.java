@@ -261,6 +261,84 @@ class TestPlacementBoard {
     assertTrue(board.halfRemovedPiece(Side.WHITE).isEmpty());
   }
 
+  // ===== A position the arbiter restores: only the pieces that are put back are centred =====
+
+  @Test
+  void restoringLeavesAPieceOffTheCentreWhereItLiesAndCentresTheOnePutBack() {
+    final int knight = idOn("g1");
+    board.release(Side.WHITE, knight, x("g1") + 150, y("g1") - 120);
+    final int pawn = idOn("a2");
+    releaseOn(pawn, "a4");
+
+    board.arrange(start);
+
+    assertTrue(board.showsClearly(start));
+    assertEquals(x("g1") + 150, piece(knight).x(), "nobody moved the knight");
+    assertEquals(y("g1") - 120, piece(knight).y());
+    final PlacedPiece back = piece(idOn("a2"));
+    assertEquals(x("a2"), back.x(), "the arbiter puts the pawn back, centred");
+    assertEquals(y("a2"), back.y());
+    assertEquals(32, board.pieces().stream().map(PlacedPiece::id).distinct().count());
+  }
+
+  @Test
+  void restoringAShownPositionMovesNothing() {
+    board.release(Side.WHITE, idOn("g1"), x("g1") + 150, y("g1") - 120);
+    board.release(Side.WHITE, idOn("d5"), x("d5") - 200, y("d5") + 90);
+    final List<PlacedPiece> before = board.pieces();
+
+    board.arrange(start);
+
+    assertEquals(before, board.pieces());
+  }
+
+  @Test
+  void restoringCentresAPieceThatLiesAcrossABorder() {
+    final int pawn = idOn("d5");
+    releaseOnLeftBorderOf(pawn, "e5");
+
+    board.arrange(start);
+
+    assertTrue(board.showsClearly(start));
+    assertTrue(board.halfRemovedPiece(Side.WHITE).isEmpty());
+    final PlacedPiece back = piece(idOn("d5"));
+    assertEquals(x("d5"), back.x());
+    assertEquals(y("d5"), back.y());
+  }
+
+  @Test
+  void restoringPutsBackCentredAPieceThatWasTakenOffAlsoWhenItStoodOffTheCentre() {
+    final int pawn = idOn("a2");
+    board.release(Side.WHITE, pawn, x("a2") + 100, y("a2") + 100);
+    assertTrue(board.release(Side.WHITE, pawn, -200, -200).offBoard());
+
+    board.arrange(start);
+
+    assertTrue(board.showsClearly(start));
+    final PlacedPiece back = piece(idOn("a2"));
+    assertEquals(x("a2"), back.x());
+    assertEquals(y("a2"), back.y());
+  }
+
+  @Test
+  void restoringACaptureCentresBothPiecesAndLeavesTheRest() {
+    final int bishop = idOn("f1");
+    board.release(Side.WHITE, bishop, x("f1") - 120, y("f1") + 60);
+    final int capturer = idOn("e4");
+    board.release(Side.WHITE, capturer, x("d5") + 130, y("d5"));
+    assertEquals(31, board.pieces().size());
+
+    board.arrange(start);
+
+    assertTrue(board.showsClearly(start));
+    assertEquals(32, board.pieces().size());
+    assertEquals(Piece.WHITE_PAWN, piece(idOn("e4")).piece());
+    assertEquals(x("e4"), piece(idOn("e4")).x());
+    assertEquals(Piece.BLACK_PAWN, piece(idOn("d5")).piece());
+    assertEquals(x("d5"), piece(idOn("d5")).x(), "not where the capturing pawn was let go");
+    assertEquals(x("f1") - 120, piece(bishop).x());
+  }
+
   // ===== J'adoube: the adjustment, and a piece shifted on its square =====
 
   @Test

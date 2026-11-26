@@ -118,13 +118,32 @@ public final class PlacementBoard {
     return radius;
   }
 
-  /** Sets up a position the arbiter gives: every piece centred on its square, numbered anew. */
+  /** Sets up the position of a new game: every piece centred on its square, numbered anew. */
   public synchronized void reset(BitboardPosition position) {
     entries.clear();
     int id = 1;
     for (final Square square : Square.REAL) {
       final Piece piece = position.get(square);
       if (piece != Piece.NONE) {
+        entries.add(new Entry(id++, piece, PlacementMeasure.centreOfFile(square),
+            PlacementMeasure.centreOfRank(square), square, true));
+      }
+    }
+  }
+
+  /**
+   * Puts the pieces as in a position the arbiter restores (E-005). A piece that stands in a clear placement on a
+   * square where the position has this piece stays exactly where it lies, also off the centre: nobody moves it.
+   * Every other piece of the position is put on its square by the arbiter, centred - one that was moved away, lies
+   * across a border or was taken off. What the position does not have leaves the board.
+   */
+  public synchronized void arrange(BitboardPosition position) {
+    entries.removeIf(
+        entry -> !entry.clear || entry.square == Square.NONE || position.get(entry.square) != entry.piece);
+    int id = entries.stream().mapToInt(entry -> entry.id).max().orElse(0) + 1;
+    for (final Square square : Square.REAL) {
+      final Piece piece = position.get(square);
+      if (piece != Piece.NONE && entries.stream().noneMatch(entry -> entry.square == square)) {
         entries.add(new Entry(id++, piece, PlacementMeasure.centreOfFile(square),
             PlacementMeasure.centreOfRank(square), square, true));
       }

@@ -38,9 +38,10 @@
 /* The arbiter's circles (see ChessBoard.setMarks), drawn like the circles of Lichess: a ring of
    1/16 of the square's width just inside its edge, over the piece. Green: the piece that must be
    moved or captured, and where the move started and ended that was already made. Red: where an
-   illegal move started and ended. */
+   illegal move started and ended. Blue: where a piece let go across a border has to be placed. */
 .square.mark-green::after,
-.square.mark-red::after {
+.square.mark-red::after,
+.square.mark-blue::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -55,6 +56,10 @@
 
 .square.mark-red::after {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='none' stroke='%23882020' stroke-width='4' opacity='0.9'/%3E%3C/svg%3E");
+}
+
+.square.mark-blue::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='none' stroke='%23003088' stroke-width='4' opacity='0.9'/%3E%3C/svg%3E");
 }
 
 .square .piece {

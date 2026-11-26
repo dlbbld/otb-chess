@@ -272,6 +272,43 @@ test('capture-first: the victim carried off its square is a moved opponent piece
     await expectSamePlacements(white, black);
   });
 
+test('the Revert centres only the piece that is put back: pieces let go off the centre stay where they lie',
+  async ({ browser }) => {
+    game = await startTwoPlayerGame(browser, { free: true });
+    const { white, black } = game;
+    // 1.e4 d5, both pawns let go off the centre of their square.
+    await dragFree(white, 'e2', 'e4', { dx: 0.2, dy: -0.15 });
+    await pressClock(white);
+    await expect(black.locator('#arbiterMessage')).toHaveText('Your turn.');
+    await dragFree(black, 'd7', 'd5', { dx: 0.18, dy: 0.12 });
+    await pressClock(black);
+    await expect(white.locator('#arbiterMessage')).toHaveText('Your turn.');
+    const before = await placements(white);
+    const offCentre = before.filter((p) => p.x % 1024 !== 512 || p.y % 1024 !== 512);
+    expect(offCentre.map((p) => p.piece).sort()).toEqual(['BLACK_PAWN', 'WHITE_PAWN']);
+
+    // White moves Black's pawn from a7 to a6: the position has to be restored.
+    await dragFree(white, 'a7', 'a6', { dx: 0.1 });
+    await expect(white.locator('#arbiterMessage')).toContainText("You moved an opponent's piece.");
+    await clickRestore(white);
+    await expect(white.locator('#arbiterMessage')).toContainText('Game continues', { timeout: 15_000 });
+
+    for (const page of [white, black]) {
+      await expect(freePiece(page, 'a7')).toHaveAttribute('data-piece', 'BLACK_PAWN');
+      await expect(freePiece(page, 'a6')).toHaveCount(0);
+      const after = await placements(page);
+      for (const piece of offCentre) {
+        expect(after.find((p) => p.id === piece.id), `${piece.piece} stays where it was let go`).toEqual(piece);
+      }
+      // Every other piece stands on the centre of its square, the pawn on a7 among them.
+      const others = after.filter((p) => !offCentre.some((piece) => piece.id === p.id));
+      expect(others).toHaveLength(30);
+      expect(others.filter((p) => p.x % 1024 !== 512 || p.y % 1024 !== 512)).toEqual([]);
+      expect(others.filter((p) => p.piece === 'BLACK_PAWN' && p.x === 512 && p.y === 6656)).toHaveLength(1);
+    }
+    await expectSamePlacements(white, black);
+  });
+
 test('at the rim the centre decides: just inside the piece is on the board, just outside it is removed',
   async ({ browser }) => {
     game = await startTwoPlayerGame(browser, { free: true });
@@ -352,15 +389,15 @@ async function between(page: Page, first: string, second: string) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-/** The squares circled in green on this board, in the order of the board. */
-async function greenCircles(page: Page): Promise<string[]> {
-  return page.locator('#board .square.mark-green').evaluateAll(
+/** The squares circled in blue on this board, in the order of the board. */
+async function blueCircles(page: Page): Promise<string[]> {
+  return page.locator('#board .square.mark-blue').evaluateAll(
     (squares) => squares.map((square) => (square as HTMLElement).dataset.square!).sort());
 }
 
-async function expectGreenCircles(white: Page, black: Page, squares: string[]): Promise<void> {
+async function expectBlueCircles(white: Page, black: Page, squares: string[]): Promise<void> {
   for (const page of [white, black]) {
-    await expect.poll(() => greenCircles(page)).toEqual(squares);
+    await expect.poll(() => blueCircles(page)).toEqual(squares);
   }
 }
 
@@ -374,7 +411,7 @@ test('a rook let go across d1 and e1 is bound to them: called, sent there from b
     for (const page of [white, black]) {
       await expect(unclearPiece(page, 'd1 e1')).toHaveAttribute('data-piece', 'WHITE_ROOK');
     }
-    await expectGreenCircles(white, black, []);
+    await expectBlueCircles(white, black, []);
     await expectWhiteClockRuns(white, black);
 
     // The clock press: the call names the two squares and circles them on both boards.
@@ -384,7 +421,7 @@ test('a rook let go across d1 and e1 is bound to them: called, sent there from b
     await expect(white.locator('#arbiterMessage')).toHaveText(call + PAUSED);
     await expect(black.locator('#opponentInfoPanel')).toContainText(
       'Your opponent pressed the clock while a piece was not clearly on a square.');
-    await expectGreenCircles(white, black, ['d1', 'e1']);
+    await expectBlueCircles(white, black, ['d1', 'e1']);
     await expect(white.locator('#arbiterMessage')).toHaveText(call + RESTARTED, { timeout: 15_000 });
 
     // Placed clearly on b1, where it is not bound to: Rb1 is not made. The arbiter names the squares again.
@@ -400,13 +437,13 @@ test('a rook let go across d1 and e1 is bound to them: called, sent there from b
     for (const page of [white, black]) {
       await expect(freePiece(page, 'b1')).toHaveAttribute('data-piece', 'WHITE_ROOK');
     }
-    await expectGreenCircles(white, black, ['d1', 'e1']);
+    await expectBlueCircles(white, black, ['d1', 'e1']);
     await expect(white.locator('#arbiterMessage')).toHaveText(released + RESTARTED, { timeout: 15_000 });
     await expectWhiteClockRuns(white, black);
 
     // Taken to d1: the circles go on both boards and the move is accepted.
     await dragFree(white, 'b1', 'd1');
-    await expectGreenCircles(white, black, []);
+    await expectBlueCircles(white, black, []);
     await pressClock(white);
     await expect(white.locator('#arbiterMessage')).toHaveText("Move accepted. Opponent's turn.");
     await expect(black.locator('#arbiterMessage')).toHaveText('Your turn.');
@@ -427,7 +464,7 @@ test('let go a second time across other squares, the rook stays bound to the fir
   await expect(white.locator('#arbiterMessage')).toHaveText(
     'It is not clear on which square your rook is. It was released on d1 and e1. Place it on d1 or on e1.'
     + ' Place your pieces more carefully.' + PAUSED);
-  await expectGreenCircles(white, black, ['d1', 'e1']);
+  await expectBlueCircles(white, black, ['d1', 'e1']);
 });
 
 test('only the square that gives a legal move is named', async ({ browser }) => {
@@ -439,7 +476,7 @@ test('only the square that gives a legal move is named', async ({ browser }) => 
   await expect(white.locator('#arbiterMessage')).toHaveText(
     'It is not clear on which square your rook is. Place it on d1, and place your pieces more carefully.'
     + PAUSED);
-  await expectGreenCircles(white, black, ['d1']);
+  await expectBlueCircles(white, black, ['d1']);
 });
 
 test('a piece that can reach none of the squares is bound to nothing', async ({ browser }) => {
@@ -450,7 +487,7 @@ test('a piece that can reach none of the squares is bound to nothing', async ({ 
   const call = 'It is not clear on which square your bishop is. Place your pieces more carefully.';
   await pressClock(white);
   await expect(white.locator('#arbiterMessage')).toHaveText(call + PAUSED);
-  await expectGreenCircles(white, black, []);
+  await expectBlueCircles(white, black, []);
   await expect(white.locator('#arbiterMessage')).toHaveText(call + RESTARTED, { timeout: 15_000 });
   await releaseAt(white, unclearPiece(white, 'c4 d4'), await pointOn(white, 'e3'));
   await pressClock(white);
@@ -466,7 +503,7 @@ test('a pawn let go across the border of its own square is only touched', async 
   const call = 'It is not clear on which square your pawn is. Place your pieces more carefully.';
   await pressClock(white);
   await expect(white.locator('#arbiterMessage')).toHaveText(call + PAUSED);
-  await expectGreenCircles(white, black, []);
+  await expectBlueCircles(white, black, []);
   await expect(white.locator('#arbiterMessage')).toHaveText(call + RESTARTED, { timeout: 15_000 });
 
   // Any move of the pawn remains: e2-e4, not only e2-e3.

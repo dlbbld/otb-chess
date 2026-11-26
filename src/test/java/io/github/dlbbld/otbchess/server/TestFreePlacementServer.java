@@ -414,7 +414,7 @@ class TestFreePlacementServer {
     assertEquals(0, unclearCount(Side.WHITE));
     assertEquals(0, white.count(CALL));
 
-    // Revert: the arbiter sets the position up, centred.
+    // Revert: the arbiter puts the pawn back, centred.
     send(white, "restorePosition");
     final JsonObject restored = white.last("positionRestored");
     assertEquals(32, restored.getAsJsonArray("placements").size());
@@ -422,6 +422,39 @@ class TestFreePlacementServer {
     final PlacedPiece pawn = piece(idOn("d5"));
     assertEquals(x("d5"), pawn.x());
     assertEquals(y("d5"), pawn.y());
+  }
+
+  @Test
+  void theRevertCentresOnlyThePiecePutBackAndLeavesThePiecesOffTheCentre() throws Exception {
+    start(createMessage());
+    final int whitePawn = idOn("e2");
+    release(white, whitePawn, x("e4") + 200, y("e4") - 150);
+    press(white);
+    final int blackPawn = idOn("d7");
+    release(black, blackPawn, x("d5") - 180, y("d5") + 120);
+    press(black);
+    assertEquals(1, black.count("move_accepted"));
+
+    // White moves a black pawn: the position has to be restored.
+    final int moved = idOn("a7");
+    release(white, moved, x("a6") + 60, y("a6"));
+    assertTrue(white.lastMessage("restoreRequired").contains("You moved an opponent's piece."),
+        white.types().toString());
+
+    send(white, "restorePosition");
+    final JsonObject restored = white.last("positionRestored");
+    assertEquals(32, restored.getAsJsonArray("placements").size());
+    assertTrue(room.getPlacements().showsClearly(room.getSession().getPositionBeforeTurn()));
+    assertEquals(x("e4") + 200, piece(whitePawn).x(), "the pawn on e4 stays where it was let go");
+    assertEquals(y("e4") - 150, piece(whitePawn).y());
+    assertEquals(x("d5") - 180, piece(blackPawn).x(), "and so does the pawn on d5");
+    assertEquals(y("d5") + 120, piece(blackPawn).y());
+    final PlacedPiece back = piece(idOn("a7"));
+    assertEquals(x("a7"), back.x(), "the pawn put back on a7 is centred");
+    assertEquals(y("a7"), back.y());
+    final JsonObject sent = restored.getAsJsonArray("placements").asList().stream().map(JsonElement::getAsJsonObject)
+        .filter(placed -> placed.get("id").getAsInt() == whitePawn).findFirst().orElseThrow();
+    assertEquals(x("e4") + 200, sent.get("x").getAsInt(), "the pages are told the same");
   }
 
   @Test
@@ -617,8 +650,8 @@ class TestFreePlacementServer {
     assertTrue(white.lastMessage(CALL).startsWith("It is not clear on which square your rook is. Place it on d1 or"
         + " on e1, and place your pieces more carefully."), white.lastMessage(CALL));
     assertEquals(1, unclearCount(Side.WHITE));
-    assertEquals("green d1 green e1", marks(white));
-    assertEquals("green d1 green e1", marks(black));
+    assertEquals("blue d1 blue e1", marks(white));
+    assertEquals("blue d1 blue e1", marks(black));
     awaitRestart(resumed);
 
     // Placed clearly on b1, a square it is not bound to: Rb1 is not made, the arbiter names the squares again,
@@ -684,7 +717,7 @@ class TestFreePlacementServer {
     release(white, rook, x("b1"), y("b1"));
     send(white, "offerDraw");
     assertTrue(white.lastMessage(CALL).startsWith("Your rook was released on d1 and e1."), white.lastMessage(CALL));
-    assertEquals("green d1 green e1", marks(white));
+    assertEquals("blue d1 blue e1", marks(white));
     assertFalse(room.getSession().getDrawOfferManager().isDrawOffered(), "the offer is not made");
     assertEquals(0, black.count("drawOffered"));
     assertEquals(0, unclearCount(Side.WHITE));
@@ -704,7 +737,7 @@ class TestFreePlacementServer {
     resume.addProperty("gameId", room.getGameId());
     resume.addProperty("token", room.getToken(Side.BLACK));
     server.onMessage(back.socket, resume.toString());
-    assertEquals("green d1 green e1", marks(back));
+    assertEquals("blue d1 blue e1", marks(back));
   }
 
   // ===== J'adoube =====

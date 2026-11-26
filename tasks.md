@@ -47,6 +47,14 @@ merged `fixes-and-improvements`.
   without penalty. Unused, it ends with the clock press or a ruling that pauses the game. In the opponent's time:
   admonition, warning, loss of the game. A piece shifted on its square after the move is made, without
   J'adoube: the call at once, the pause, the same three steps on a ladder of its own.
+- [x] The Revert centres only the pieces it puts back (owner, 2026-11-26): a piece that stands clearly on its
+  square of the restored position stays where it lies, also off the centre. Before, every piece was centred.
+- [x] Blue circles for the squares a piece let go across a border has to be placed on (owner, 2026-11-26).
+  They were green. Green stays for touch-move and for the move that was already made, so the decision of
+  2026-11-25 against a third colour holds for those and no longer for the board marks as a whole.
+- [ ] A border around the board (owner, 2026-11-26): a piece can be let go half on a square and half on the
+  border and is then displaced, not removed; a piece wholly on the border is removed. Not started. The width is
+  open (the assessment given: half a square) and the owner wants a plan and a review with Codex first.
 - [ ] A free-placement mode of `RuleFuzzer`; `SPECIFICATION.md`, `MANUAL.md`, `fide-deviations.md`,
   `CHANGELOG.md`.
 
