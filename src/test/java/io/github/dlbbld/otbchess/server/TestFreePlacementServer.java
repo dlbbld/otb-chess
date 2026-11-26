@@ -707,6 +707,248 @@ class TestFreePlacementServer {
     assertEquals("green d1 green e1", marks(back));
   }
 
+  // ===== J'adoube =====
+
+  private static final String NO_ADJUSTING = "You cannot adjust pieces without saying J'adoube.";
+
+  private static boolean armed(Client client) {
+    return client.last("jadoube").get("armed").getAsBoolean();
+  }
+
+  private JsonObject lastMirror(Client client) {
+    return client.last("opponentBoardEvent").getAsJsonObject("event");
+  }
+
+  @Test
+  void jadoubeInTheOwnTimeAdjustsOnePieceWithoutTouchingIt() throws Exception {
+    start(createMessage());
+    send(white, "jadoube");
+    for (final Client client : List.of(white, black)) {
+      assertEquals("White: J'adoube.", client.lastMessage("jadoube"));
+      assertTrue(armed(client));
+      assertEquals("white", client.last("jadoube").get("by").getAsString());
+    }
+
+    final int knight = idOn("g1");
+    release(white, knight, x("g1") + 200, y("g1") - 100);
+    assertEquals(x("g1") + 200, piece(knight).x(), "the knight lies where it was set down");
+    assertEquals(y("g1") - 100, piece(knight).y());
+    assertTrue(lastMirror(black).get("adjusted").getAsBoolean());
+    assertEquals(x("g1") + 200, lastMirror(black).get("x").getAsInt());
+    assertFalse(armed(white), "one J'adoube, one piece: the button is enabled again");
+    assertFalse(armed(black));
+    assertFalse(room.getSession().isJadoubeArmed());
+
+    // The knight was not touched: a pawn move is accepted.
+    releaseOn(white, "e2", "e4");
+    press(white);
+    assertEquals(1, white.count("move_accepted"), white.types().toString());
+    assertEquals(0, white.count("touch_move_violation"));
+  }
+
+  @Test
+  void withoutJadoubeTheSameShiftBeforeTheMoveIsATouch() throws Exception {
+    start(createMessage());
+    release(white, idOn("g1"), x("g1") + 200, y("g1") - 100);
+    assertEquals(0, white.count(CALL), "before the move is made it is a touch, not an adjustment");
+    releaseOn(white, "e2", "e4");
+    press(white);
+    assertEquals(1, white.count("touch_move_violation"), white.types().toString());
+    assertEquals(0, white.count("move_accepted"));
+  }
+
+  @Test
+  void anOpponentsPieceCanBeAdjustedWithJadoubeAndIsNotTouched() throws Exception {
+    startAfterE4D5();
+    send(white, "jadoube");
+    final int pawn = idOn("d5");
+    release(white, pawn, x("d5") - 150, y("d5") + 100);
+    assertEquals(x("d5") - 150, piece(pawn).x());
+    assertEquals(0, room.getHalfRemovedPieceId());
+    // Touched, the pawn would have to be captured (exd5 is possible). Adjusted, any move remains.
+    releaseOn(white, "g1", "f3");
+    press(white);
+    assertEquals(2, white.count("move_accepted"), white.types().toString());
+  }
+
+  @Test
+  void anAdjustmentThatLeavesTheSquareIsUndoneWithoutPenaltyAndWithoutAMove() throws Exception {
+    start(createMessage());
+    send(white, "jadoube");
+    final int knight = idOn("g1");
+    final long synced = white.count("placementsSync");
+    release(white, knight, x("f3"), y("f3")); // carried to f3: no move can be made this way
+    assertEquals(x("g1"), piece(knight).x(), "the knight lies again where it lay");
+    assertEquals(y("g1"), piece(knight).y());
+    assertEquals(synced + 1, white.count("placementsSync"), "the page is sent the pieces");
+    assertEquals("The adjustment is undone: an adjusted piece stays on its square.",
+        white.lastMessage("adjustmentUndone"));
+    assertEquals(x("g1"), lastMirror(black).get("x").getAsInt(), "the opponent's board puts it back as well");
+    assertTrue(lastMirror(black).get("adjusted").getAsBoolean());
+    assertFalse(armed(white), "J'adoube is used up");
+    assertFalse(room.getSession().hasReleasedPieceCommitment(), "Nf3 is not made");
+
+    releaseOn(white, "e2", "e4");
+    press(white);
+    assertEquals(1, white.count("move_accepted"), "and the knight is not touched");
+  }
+
+  @Test
+  void aPieceThatLiesUnclearCannotBeAdjusted() throws Exception {
+    start(createMessage());
+    final int knight = idOn("g1");
+    release(white, knight, x("g3") - 512, y("g3")); // across f3 and g3
+    send(white, "jadoube");
+    release(white, knight, x("f3"), y("f3"));
+    assertEquals("The adjustment is undone: a piece that is not clearly on a square cannot be adjusted.",
+        white.lastMessage("adjustmentUndone"));
+    assertFalse(piece(knight).clear(), "it still lies across the border");
+    assertEquals(x("g3") - 512, piece(knight).x());
+  }
+
+  @Test
+  void aPieceFromTheSideIsHandledAsAlwaysAndLeavesJadoubeSaid() throws Exception {
+    start(createMessage());
+    send(white, "jadoube");
+    final JsonObject event = new JsonObject();
+    event.addProperty("eventType", "RELEASE");
+    event.addProperty("id", 40);
+    event.addProperty("x", x("a3"));
+    event.addProperty("y", y("a3"));
+    event.addProperty("fromSide", "WHITE_QUEEN");
+    final JsonObject message = new JsonObject();
+    message.addProperty("type", "boardEvent");
+    message.add("event", event);
+    server.onMessage(white.socket, message.toString());
+    assertEquals(33, room.getPlacements().pieces().size(), "the queen is on the board");
+    assertTrue(room.getSession().isJadoubeArmed());
+    assertTrue(armed(white));
+  }
+
+  @Test
+  void aJadoubeThatWasNotUsedEndsWithTheClockPress() throws Exception {
+    start(createMessage());
+    releaseOn(white, "e2", "e4");
+    send(white, "jadoube"); // after the move is made, before the clock press
+    assertTrue(armed(black));
+    press(white);
+    assertEquals(1, white.count("move_accepted"));
+    assertFalse(armed(white));
+    assertFalse(armed(black));
+    assertFalse(room.getSession().isJadoubeArmed());
+  }
+
+  @Test
+  void jadoubeInTheOpponentsTimeIsAdmonishedWarnedAndThenLosesTheGame() throws Exception {
+    start(createMessage());
+    send(black, "jadoube");
+    assertEquals("You can only adjust pieces in your own time.", black.lastMessage("jadoubeWrongTime"));
+    assertEquals("Your opponent said J'adoube in your time.", white.lastMessage("opponentInfo"));
+    assertEquals(0, white.count("jadoube"), "nothing is armed");
+    assertEquals(Side.WHITE, clockRunsFor(), "no pause");
+
+    send(black, "jadoube");
+    assertEquals("You can only adjust pieces in your own time. Warning: the next time you lose the game.",
+        black.lastMessage("jadoubeWrongTime"));
+    assertTrue(white.lastMessage("opponentInfo").contains("has been warned"), white.lastMessage("opponentInfo"));
+
+    send(black, "jadoube");
+    assertEquals(GameResultType.JADOUBE_WRONG_TIME_GAME_LOST, room.getSession().getResult().type());
+    for (final Client client : List.of(white, black)) {
+      assertEquals("JADOUBE_WRONG_TIME_GAME_LOST", client.last("gameEnded").get("resultType").getAsString());
+      assertEquals("white", client.last("gameEnded").get("winner").getAsString());
+      assertEquals("black", client.last("gameEnded").get("actor").getAsString());
+    }
+  }
+
+  @Test
+  void afterTheMoveIsMadeAPieceShiftedWithoutJadoubeIsCalledAtOnceAndTheMoveStands() throws Exception {
+    start(createMessage());
+    setLong("wrongClockPauseMs", 30);
+    releaseOn(white, "e2", "e4");
+    final int pawn = idOn("e4");
+    final long resumed = white.count("gameResumed");
+    release(white, pawn, x("e4") + 150, y("e4") + 100);
+    assertEquals(NO_ADJUSTING + " The game is paused and will continue shortly.", white.lastMessage(CALL));
+    assertTrue(black.lastMessage("opponentInfo").startsWith("Your opponent adjusted a piece without saying"
+        + " J'adoube."), black.lastMessage("opponentInfo"));
+    assertEquals(1, room.getSession().getAdjustedWithoutJadoubeCount(Side.WHITE));
+    assertEquals(0, unclearCount(Side.WHITE), "a ladder of its own");
+    assertEquals(Side.NONE, clockRunsFor(), "the game is paused for the call");
+    assertEquals(x("e4") + 150, piece(pawn).x(), "the pawn stays where it was shifted to");
+    assertEquals(x("e4") + 150, lastMirror(black).get("x").getAsInt());
+    awaitRestart(resumed);
+
+    press(white);
+    assertEquals(1, white.count("move_accepted"), "the move stands");
+    assertTrue(room.getSession().exportPgn().contains("e4"), room.getSession().exportPgn());
+  }
+
+  @Test
+  void theThirdAdjustmentWithoutJadoubeLosesTheGameWhateverPieceIsShifted() throws Exception {
+    start(createMessage());
+    setLong("wrongClockPauseMs", 30);
+    releaseOn(white, "e2", "e4");
+    long resumed = white.count("gameResumed");
+    release(white, idOn("e4"), x("e4") + 150, y("e4")); // the piece that was moved
+    awaitRestart(resumed);
+    resumed = white.count("gameResumed");
+    release(white, idOn("g1"), x("g1") - 150, y("g1")); // another own piece
+    assertEquals(NO_ADJUSTING + " Warning: the next time you lose the game. The game is paused and will continue"
+        + " shortly.", white.lastMessage(CALL));
+    awaitRestart(resumed);
+    release(white, idOn("e7"), x("e7"), y("e7") - 150); // a piece of the opponent
+    assertEquals(GameResultType.ADJUSTED_WITHOUT_JADOUBE_GAME_LOST, room.getSession().getResult().type());
+    for (final Client client : List.of(white, black)) {
+      assertEquals("ADJUSTED_WITHOUT_JADOUBE_GAME_LOST",
+          client.last("gameEnded").get("resultType").getAsString());
+      assertEquals("black", client.last("gameEnded").get("winner").getAsString());
+      assertEquals("white", client.last("gameEnded").get("actor").getAsString());
+    }
+  }
+
+  @Test
+  void afterTheMoveIsMadeAClickAndAnAdjustmentWithJadoubeAreNotCalled() throws Exception {
+    start(createMessage());
+    releaseOn(white, "e2", "e4");
+    final int pawn = idOn("e4");
+    release(white, pawn, x("e4"), y("e4")); // a click: set down exactly where it stands
+    assertEquals(0, white.count(CALL));
+    send(white, "jadoube");
+    release(white, pawn, x("e4") + 150, y("e4") + 100);
+    assertEquals(0, white.count(CALL));
+    assertEquals(0, room.getSession().getAdjustedWithoutJadoubeCount(Side.WHITE));
+    assertEquals(x("e4") + 150, piece(pawn).x());
+    press(white);
+    assertEquals(1, white.count("move_accepted"));
+  }
+
+  @Test
+  void aGameWithCentredPiecesHasNoJadoube() throws Exception {
+    final JsonObject create = createMessage();
+    create.remove("freePlacement");
+    start(create);
+    send(white, "jadoube");
+    send(black, "jadoube");
+    assertEquals(0, white.count("jadoube"));
+    assertEquals(0, black.count("jadoubeWrongTime"));
+    assertEquals(0, room.getSession().getJadoubeWrongTimeCount(Side.BLACK));
+  }
+
+  @Test
+  void aPageThatComesBackIsToldThatJadoubeIsSaid() throws Exception {
+    start(createMessage());
+    send(white, "jadoube");
+    final Client back = new Client();
+    final JsonObject resume = new JsonObject();
+    resume.addProperty("type", "resume");
+    resume.addProperty("gameId", room.getGameId());
+    resume.addProperty("token", room.getToken(Side.WHITE));
+    server.onMessage(back.socket, resume.toString());
+    assertTrue(armed(back));
+    assertEquals("white", back.last("jadoube").get("by").getAsString());
+  }
+
   // ===== The frames =====
 
   @Test

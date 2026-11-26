@@ -45,6 +45,8 @@ public class GameRoom {
   private final int maxUnclearPlacements;
   // The piece the player to move was last told to take off or put back (a half-removed opponent's piece), or 0.
   private int halfRemovedPieceId;
+  // Whether both pages were last told that the player to move has said J'adoube and not yet adjusted a piece.
+  private boolean announcedJadoubeArmed;
   // Wall-clock creation time, used to reap rooms that were created but never joined.
   private final long createdAtMs = System.currentTimeMillis();
 
@@ -353,9 +355,23 @@ public class GameRoom {
       placements.reset(physicalPosition);
     }
     halfRemovedPieceId = 0;
+    announcedJadoubeArmed = false;
     gameEndAnnounced = false;
     announcedBoardMarks = List.of();
     drawOfferMessage = "Your opponent offers a draw.";
+  }
+
+  /**
+   * @return whether J'adoube is armed, when that differs from what both pages were last told - it is then
+   *         remembered as told; empty when nothing changed
+   */
+  public synchronized Optional<Boolean> takeChangedJadoubeArmed() {
+    final boolean armed = session.isJadoubeArmed();
+    if (armed == announcedJadoubeArmed) {
+      return Optional.empty();
+    }
+    announcedJadoubeArmed = armed;
+    return Optional.of(armed);
   }
 
   /**

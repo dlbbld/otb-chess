@@ -1,6 +1,6 @@
 # E-005 — Implementation plan: free placement of the pieces and J'adoube
 
-**Status**: Reviewed draft of 2026-11-25. The capture-first clarification and the proposed delivery order are included below. The first playable case (capture-first) and the binding of an own piece are built since 2026-11-26, and the option is on by default; section 8 says what exists and where it differs from this plan. Written against `jadoube` with the released `main` (0.5.1) merged in. The owner decided the four rulings of section 1 on 2026-11-25; the details marked *(proposal)* in section 2 are not confirmed.
+**Status**: Reviewed draft of 2026-11-25. The capture-first clarification and the proposed delivery order are included below. The first playable case (capture-first), the binding of an own piece and J'adoube are built since 2026-11-26, and the option is on by default; section 8 says what exists and where it differs from this plan. Written against `jadoube` with the released `main` (0.5.1) merged in. The owner decided the four rulings of section 1 on 2026-11-25; the details marked *(proposal)* in section 2 are not confirmed.
 
 **What this is**: the plan for the requirement [E-005](enhancements.md#e-005--free-placement-of-the-pieces-and-jadoube). E-005 says what the players get; this says how it is built, in which order, and how it is tested. Where E-005 left a ruling open, section 1 records the owner's decision. Where it leaves a detail open, section 2 proposes one and marks it *(proposal)*.
 
@@ -279,7 +279,7 @@ As in E-005: playing by touch on a phone, and any change to the rulings that exi
 
 ## 8. State of the implementation
 
-**Built on 2026-11-26**: the first playable case (capture-first), and then the binding of an own piece let go unclearly (Q1 to Q3) with the second ruling at the clock press and the green circles. Free placement is a game option on the entry screen and **on by default** since the binding was built (the owner's decision of 2026-11-26, ahead of the order of the review, to make testing easier). The version in development is shown as `v0.6.0 beta`.
+**Built on 2026-11-26**: the first playable case (capture-first), then the binding of an own piece let go unclearly (Q1 to Q3) with the second ruling at the clock press and the green circles, then J'adoube with its two ladders. Free placement is a game option on the entry screen and **on by default** since the binding was built (the owner's decision of 2026-11-26, ahead of the order of the review, to make testing easier). The version in development is shown as `v0.6.0 beta`.
 
 | Part | Where |
 |---|---|
@@ -289,8 +289,9 @@ As in E-005: playing by touch on a phone, and any change to the rulings that exi
 | The two calls at the clock press, the ladder and the pause (2.4) | `GameSession.ruleOnPlacement`; option `maxUnclearPlacements` |
 | The circles of the bound squares | `GameSession.getBoardMarks` |
 | The half-removed victim (Q4, capture-first) | `PlacementBoard.halfRemovedPiece`, message `placementNotice` |
+| J'adoube (2.6) | `GameSession.pressJadoube`, `useJadoube`, `ruleOnAdjustingWithoutJadoube`; `PlacementBoard.adjust`; messages `jadoube`, `jadoubeWrongTime`, `adjustmentUndone` |
 | The page (2.8) | `board.js` (layer of pieces), `game.js`, entry screen |
-| Tests | `TestPlacementMeasure`, `TestPlacementBoard`, `TestUnclearBinding`, `TestUnclearBindingRulings`, `TestFreePlacementServer`, `tests/e2e/free-placement.spec.ts` |
+| Tests | `TestPlacementMeasure`, `TestPlacementBoard`, `TestUnclearBinding`, `TestUnclearBindingRulings`, `TestJadoube`, `TestFreePlacementServer`, `tests/e2e/free-placement.spec.ts`, `tests/e2e/jadoube.spec.ts` |
 
 **Where the code differs from sections 2.2 to 2.4**
 
@@ -301,6 +302,15 @@ As in E-005: playing by touch on a phone, and any change to the rulings that exi
 - **An opponent's piece carried wholly off its square and let go unclearly** is given to the rules as moved to the square its centre is on, so the ruling of A-007 follows at once.
 - **The pause for a call** uses the mechanism of the pause after a clock press without a move, with the board locked in addition. Both calls about a placement use it and share the response type `UNCLEAR_PLACEMENT`; only the first counts. A release that reaches the server in the pause is not applied, and the page is sent where the pieces lie (`placementsSync`).
 - **The page sends no position** in a game with free placement: `clockPress` and `offerDraw` are ruled on the server's own record.
+
+**J'adoube as built** (2.6, with these details)
+
+- **No message of its own for the adjustment.** The page sends the release as always; the server knows that J'adoube is said and treats the next piece of the board that is let go as the adjusted one. A new message is only the button (`jadoube`).
+- **The button on both pages.** While J'adoube is said and not used, the button is disabled for both players, so the opponent cannot step on the ladder for the opponent's time in that moment. The pages are told when it ends (`jadoube` with `armed: false`): used, the clock press, or a ruling that pauses the game.
+- **Undone**: the player reads *"The adjustment is undone: an adjusted piece stays on its square."*, or for a piece that lay unclear *"… a piece that is not clearly on a square cannot be adjusted."* The opponent's board puts the piece back without a word.
+- **Adjusting without J'adoube** is seen by the placement layer: a piece that stood clearly on a square and is set down clearly on the same square at another spot (`Release.shifted`). It is still recorded as a touch, as today, and once the move is made the call follows at once. The call uses the pause for a call about a placement.
+- **The texts of the two ladders**: *"You can only adjust pieces in your own time."* and *"You cannot adjust pieces without saying J'adoube."*, the second time with *"Warning: the next time you lose the game."*; the opponent reads *"Your opponent said J'adoube in your time."* and *"Your opponent adjusted a piece without saying J'adoube."*
+- **In a pause** the button does nothing for either player, and costs the opponent no step.
 
 **The wording of the calls** *(the writer's, where E-005 gives no text)*
 
@@ -317,4 +327,4 @@ As in E-005: playing by touch on a phone, and any change to the rulings that exi
 - A page that is reloaded inside the short pause for a call has a usable board until the clock restarts; the server refuses what it does and sends the placements back.
 - Three browser tests that send the frames of the centred game by script (`cloud-review`, `final-pass`, `midplay-expiry`) run with the option off.
 
-**Not built**: J'adoube (2.6), adjusting without J'adoube, the free-placement mode of `RuleFuzzer`, and the documents of section 5.
+**Not built**: the free-placement mode of `RuleFuzzer`, and the documents of section 5.

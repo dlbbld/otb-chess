@@ -63,9 +63,21 @@ public final class PlacementBoard {
    * @param id         the number of the piece
    * @param offBoard   the piece left the board
    * @param capturedId the number of the piece that this release put to the side, or 0
+   * @param shifted    the piece stood clearly on a square and was set down clearly on the same square at another
+   *                   spot: for the rules a touch, and once the move is made an adjustment without J'adoube
    */
   public record Release(Optional<BoardEvent> event, int id, Piece piece, int x, int y, boolean offBoard,
-      int capturedId) {
+      int capturedId, boolean shifted) {
+  }
+
+  /**
+   * What became of an adjustment with J'adoube.
+   *
+   * @param accepted   whether the piece was adjusted; otherwise it lies where it lay
+   * @param x          where the piece lies now
+   * @param wasUnclear the piece lay in an unclear placement and therefore could not be adjusted
+   */
+  public record Adjustment(boolean accepted, int id, Piece piece, int x, int y, boolean wasUnclear) {
   }
 
   private static final class Entry {
@@ -192,10 +204,36 @@ public final class PlacementBoard {
     return settle(mover, entry, x, y);
   }
 
+  /**
+   * The player to move said J'adoube and let go of this piece. It is adjusted when it stood clearly on a square
+   * and is let go clearly on the same square; otherwise it lies where it lay - on another square, across a border
+   * or off the board nothing is moved, and a piece that lay unclear cannot be adjusted. Nothing is touched.
+   *
+   * @throws IllegalArgumentException when no piece on the board has this number
+   */
+  public synchronized Adjustment adjust(int id, int x, int y) {
+    final Entry entry = find(id);
+    if (entry == null) {
+      throw new IllegalArgumentException("no piece " + id + " on the board");
+    }
+    final Measured measured = PlacementMeasure.measure(x, y, radius);
+    if (!entry.clear || measured.kind() != Kind.CLEAR || measured.square() != entry.square) {
+      return new Adjustment(false, entry.id, entry.piece, entry.x, entry.y, !entry.clear);
+    }
+    // The piece set down last lies on top.
+    entries.remove(entry);
+    entries.add(entry);
+    entry.x = x;
+    entry.y = y;
+    return new Adjustment(true, entry.id, entry.piece, x, y, false);
+  }
+
   private Release settle(Side mover, Entry entry, int x, int y) {
     final long now = System.currentTimeMillis();
     final Square from = entry.square;
     final boolean wasClear = entry.clear;
+    final int oldX = entry.x;
+    final int oldY = entry.y;
     final Piece piece = entry.piece;
     final Measured measured = PlacementMeasure.measure(x, y, radius);
 
@@ -204,7 +242,7 @@ public final class PlacementBoard {
       // A piece that counted on no square was off the board for the rules already.
       final Optional<BoardEvent> event = from == Square.NONE ? Optional.empty()
           : Optional.of(BoardEvent.remove(from, piece, now));
-      return new Release(event, entry.id, piece, x, y, true, 0);
+      return new Release(event, entry.id, piece, x, y, true, 0, false);
     }
 
     // The piece set down last lies on top.
@@ -216,13 +254,13 @@ public final class PlacementBoard {
     if (measured.kind() == Kind.UNCLEAR) {
       entry.clear = false;
       if (from == Square.NONE) {
-        return new Release(Optional.empty(), entry.id, piece, x, y, false, 0);
+        return new Release(Optional.empty(), entry.id, piece, x, y, false, 0, false);
       }
       if (piece.getSide() != mover && !measured.liesOn(from)) {
         // An opponent's piece carried off its square is a moved piece, wherever it was let go.
         entry.square = Square.NONE;
         return new Release(Optional.of(BoardEvent.dragMove(from, measured.square(), piece, now)), entry.id, piece, x,
-            y, false, 0);
+            y, false, 0, false);
       }
       // It keeps counting on its square. An own piece is touched and says where it was let go, every time: the
       // first such release that can bind the player does (E-005). Lifting an opponent's piece was a touch, once.
@@ -232,7 +270,7 @@ public final class PlacementBoard {
       } else {
         event = wasClear ? Optional.of(BoardEvent.click(from, piece, now)) : Optional.empty();
       }
-      return new Release(event, entry.id, piece, x, y, false, 0);
+      return new Release(event, entry.id, piece, x, y, false, 0, false);
     }
 
     final Square target = measured.square();
@@ -242,7 +280,7 @@ public final class PlacementBoard {
       // Back on its own square: a touch if it stood there clearly, nothing new if it lay unclear.
       final Optional<BoardEvent> event = wasClear ? Optional.of(BoardEvent.click(from, piece, now))
           : Optional.empty();
-      return new Release(event, entry.id, piece, x, y, false, 0);
+      return new Release(event, entry.id, piece, x, y, false, 0, wasClear && (x != oldX || y != oldY));
     }
 
     // The piece that counts on the target square, if any. A clear one leaves the board as today; one that lies
@@ -268,7 +306,7 @@ public final class PlacementBoard {
       event = occupant == null ? BoardEvent.dragMove(from, target, piece, now)
           : BoardEvent.dragCapture(from, target, piece, displaced, now);
     }
-    return new Release(Optional.of(event), entry.id, piece, x, y, false, capturedId);
+    return new Release(Optional.of(event), entry.id, piece, x, y, false, capturedId, false);
   }
 
   private Entry find(int id) {

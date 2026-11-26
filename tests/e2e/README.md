@@ -47,6 +47,7 @@ tests/e2e/
   smoke.spec.ts          # create -> join -> white e2-e4 -> black sees it
   free-placement.spec.ts # E-005: pieces stay where they are let go; capture-first; the binding
   helpers/free.ts        # free placement: letting go of a piece at a point of a square
+  jadoube.spec.ts        # E-005: J'adoube, in the own and in the opponent's time, and adjusting without it
 ```
 
 The suite runs as two projects. `chromium` is what the players get: free placement of the pieces

@@ -356,6 +356,7 @@ public class GameSession {
     }
     // From here on the arbiter rules on the move: the lever was up and went down.
     clockPressRegistered = true;
+    jadoubeArmed = false; // a J'adoube that was not used ends with the clock press
 
     // Free placement: a piece that lies unclear, or a bound piece that is not on a square it is bound to, comes
     // before everything else - there is no move to rule on.
@@ -585,6 +586,7 @@ public class GameSession {
 
   /** The pause for a call about a placement: the clock stops and the board is locked until it restarts. */
   private void pauseForPlacementCall() {
+    jadoubeArmed = false;
     clock.stopClock();
     wrongClockPressPausedFor = null; // this call supersedes an admonishment pause
     unclearPlacementPause = true;
@@ -671,6 +673,141 @@ public class GameSession {
           .append(squares.get(i).getName());
     }
     return joined.toString();
+  }
+
+  // ===== Free placement (E-005): J'adoube =====
+
+  /** The step of the two J'adoube ladders that loses the game: admonition, warning, loss. */
+  public static final int JADOUBE_LADDER_LIMIT = 3;
+
+  // The player to move has said J'adoube: the next piece of the board they pick up is adjusted, not touched.
+  private boolean jadoubeArmed;
+  private final Map<Side, Integer> jadoubeWrongTimeCounts = new EnumMap<>(Side.class);
+  private final Map<Side, Integer> adjustedWithoutJadoubeCounts = new EnumMap<>(Side.class);
+
+  /** What a press of the J'adoube button did. */
+  public enum JadoubeKind {
+    /** Nothing: the game is paused or over, or J'adoube is said already. */
+    IGNORED,
+    /** Said in the own time: the next piece picked up is adjusted. Both players are told. */
+    ARMED,
+    /** Pressed in the opponent's time: nothing is armed, the arbiter admonishes or warns. */
+    WRONG_TIME,
+    /** Pressed in the opponent's time for the third time: the game is lost. */
+    WRONG_TIME_GAME_LOST
+  }
+
+  /**
+   * @param message      what the player who pressed is told; for {@link JadoubeKind#ARMED} what both are told
+   * @param opponentInfo what the opponent is told, when it differs
+   */
+  public record JadoubeOutcome(JadoubeKind kind, String message, String opponentInfo) {
+
+    private static final JadoubeOutcome IGNORED = new JadoubeOutcome(JadoubeKind.IGNORED, null, null);
+  }
+
+  /**
+   * The J'adoube button. In the own time it arms one adjustment (FIDE 4.2.1): the next piece of the board the
+   * player picks up, an own one or one of the opponent, is adjusted and not touched. In the opponent's time nothing
+   * is armed and the press is a step on a ladder of its own. While the game is paused the button does nothing.
+   */
+  public synchronized JadoubeOutcome pressJadoube(Side side) {
+    if (state != GameState.IN_PROGRESS || checkFlagFall().isPresent() || isPausedForARuling()) {
+      return JadoubeOutcome.IGNORED;
+    }
+    if (side != board.getSideToMove()) {
+      final int count = jadoubeWrongTimeCounts.merge(side, 1, Integer::sum);
+      if (count >= JADOUBE_LADDER_LIMIT) {
+        terminationActor = side;
+        endGame(new GameResult(GameResultType.JADOUBE_WRONG_TIME_GAME_LOST, side.getOppositeSide(),
+            sideName(side) + " loses the game by repeatedly saying J'adoube in the opponent's time."));
+        return new JadoubeOutcome(JadoubeKind.WRONG_TIME_GAME_LOST, null, null);
+      }
+      final boolean warned = count == JADOUBE_LADDER_LIMIT - 1;
+      return new JadoubeOutcome(JadoubeKind.WRONG_TIME,
+          "You can only adjust pieces in your own time." + (warned ? LADDER_WARNING : ""),
+          "Your opponent said J'adoube in your time" + (warned ? OPPONENT_LADDER_WARNING : "."));
+    }
+    if (jadoubeArmed) {
+      return JadoubeOutcome.IGNORED;
+    }
+    jadoubeArmed = true;
+    return new JadoubeOutcome(JadoubeKind.ARMED, sideName(side) + ": J'adoube.", null);
+  }
+
+  private static final String LADDER_WARNING = " Warning: the next time you lose the game.";
+  private static final String OPPONENT_LADDER_WARNING = " and has been warned: the next time loses them the game.";
+
+  /** The game stands still for a ruling: a restoration, the question whether both are ready, a stopped clock. */
+  private boolean isPausedForARuling() {
+    return waitingForRestoration || waitingForReady || restorationResumePending
+        || clock.getRunningFor() == Side.NONE;
+  }
+
+  /**
+   * @return whether the player to move has said J'adoube and not yet adjusted a piece. A J'adoube that was not
+   *         used ends with the clock press and with any ruling that pauses the game.
+   */
+  public synchronized boolean isJadoubeArmed() {
+    if (jadoubeArmed && (state != GameState.IN_PROGRESS || isPausedForARuling())) {
+      jadoubeArmed = false;
+    }
+    return jadoubeArmed;
+  }
+
+  /**
+   * The player to move picks up a piece of the board: with J'adoube said, that piece is the one adjusted, and
+   * J'adoube is used up - one J'adoube, one piece.
+   *
+   * @return whether the piece is adjusted rather than handled as in every game
+   */
+  public synchronized boolean useJadoube(Side side) {
+    if (side != board.getSideToMove() || !isJadoubeArmed()) {
+      return false;
+    }
+    jadoubeArmed = false;
+    return true;
+  }
+
+  public synchronized int getJadoubeWrongTimeCount(Side side) {
+    return jadoubeWrongTimeCounts.getOrDefault(side, 0);
+  }
+
+  public synchronized int getAdjustedWithoutJadoubeCount(Side side) {
+    return adjustedWithoutJadoubeCounts.getOrDefault(side, 0);
+  }
+
+  /** @return whether the player to move has made their move: a legal move is completed, only the clock is left */
+  public synchronized boolean isMoveMade() {
+    return state == GameState.IN_PROGRESS && finalMoveCommitment != null;
+  }
+
+  /**
+   * The player has made their move and then shifted a piece on its square without saying J'adoube - the piece
+   * they moved, another own one, or one of the opponent. The arbiter intervenes at once: the game is paused for
+   * the call and then goes on; the move stands and the piece stays where it was shifted to. A ladder of its own,
+   * per player for the whole game: admonition, warning, loss of the game. Before the move is made the same
+   * handling is a touch, as in every game, and not ruled on here.
+   *
+   * @return the call, or empty when there is none to make
+   */
+  public synchronized Optional<ArbiterResponse> ruleOnAdjustingWithoutJadoube(Side side) {
+    if (state != GameState.IN_PROGRESS || side != board.getSideToMove() || finalMoveCommitment == null
+        || isPausedForARuling() || checkFlagFall().isPresent()) {
+      return Optional.empty();
+    }
+    final String call = "You cannot adjust pieces without saying J'adoube.";
+    final int count = adjustedWithoutJadoubeCounts.merge(side, 1, Integer::sum);
+    if (count >= JADOUBE_LADDER_LIMIT) {
+      terminationActor = side;
+      endGame(new GameResult(GameResultType.ADJUSTED_WITHOUT_JADOUBE_GAME_LOST, side.getOppositeSide(),
+          sideName(side) + " loses the game by repeatedly adjusting pieces without saying J'adoube."));
+      return Optional.of(ArbiterResponse.unclearPlacementGameLost(call));
+    }
+    pauseForPlacementCall();
+    final boolean warned = count == JADOUBE_LADDER_LIMIT - 1;
+    return Optional.of(ArbiterResponse.unclearPlacement(call + (warned ? LADDER_WARNING : ""),
+        "Your opponent adjusted a piece without saying J'adoube" + (warned ? OPPONENT_LADDER_WARNING : ".")));
   }
 
   private ArbiterResponse handleArbiterResponse(ArbiterResponse response, Side side, boolean keepDrawOffer) {
@@ -1620,6 +1757,7 @@ public class GameSession {
     this.pressWithoutMovePause = false;
     this.unclearPlacementPause = false;
     this.bindingCalled = false;
+    this.jadoubeArmed = false;
     this.finalMoveCommitment = null;
     this.currentSequence = new ActionSequence(board.getSideToMove());
     this.positionBeforeTurn = board.getBitboardPosition();

@@ -756,7 +756,8 @@ class ChessBoard {
       const result = this.applyRelease(event.id, event.piece, event.x, event.y);
       if (result.changed && !result.offBoard) this.piecePlaced();
       // A piece touched and left where it lies: the square under it flashes, as in every game.
-      if (!result.changed && !result.offBoard) {
+      // An adjustment with J'adoube is no touch.
+      if (!result.changed && !result.offBoard && !event.adjusted) {
         const under = OtbPlacement.measure(event.x, event.y, this.placementRadius).square;
         const el = under && this.squares[under] ? this.squares[under].element : null;
         if (el) {

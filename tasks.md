@@ -41,8 +41,12 @@ merged `fixes-and-improvements`.
   with the option off.
 - [x] The version in development is `0.6.0-beta`, shown below the board as `v0.6.0 beta` (owner, 2026-11-26);
   `RELEASING.md` says how the suffix comes and goes.
-- [ ] J'adoube: the button, the adjustment and its undo, the ladder for the opponent's time, adjusting without
-  J'adoube.
+- [x] J'adoube (2026-11-26): the button in the row of game actions, only in a game with free placement. In the
+  own time both players read *"White: J'adoube."* and the next piece of the board that is picked up, an own one
+  or one of the opponent, is adjusted on its square without being touched; let go anywhere else it is put back
+  without penalty. Unused, it ends with the clock press or a ruling that pauses the game. In the opponent's time:
+  admonition, warning, loss of the game. A piece shifted on its square after the move is made, without
+  J'adoube: the call at once, the pause, the same three steps on a ladder of its own.
 - [ ] A free-placement mode of `RuleFuzzer`; `SPECIFICATION.md`, `MANUAL.md`, `fide-deviations.md`,
   `CHANGELOG.md`.
 

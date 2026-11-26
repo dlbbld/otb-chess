@@ -16,6 +16,11 @@ class Game {
     // FIDE 9.4: touching any piece this turn forfeits the right to claim. Mirrors the server's
     // action-sequence check so a doomed claim goes straight to the arbiter (no SAN prompt).
     this.touchedThisTurn = false;
+    // Free placement (E-005): J'adoube is said and not yet used (by either player); this player
+    // said it; and the piece in this player's hand is the one being adjusted.
+    this.jadoubeSaid = false;
+    this.jadoubeArmed = false;
+    this.adjusting = false;
     this.pendingClaimWithMoveType = null;
     this.gameActive = false;
     this.sideAreaPieces = [];
@@ -575,6 +580,30 @@ class Game {
       this.placementNotice = null;
     });
 
+    // J'adoube (E-005). Said in the own time, both players are told and the button is disabled
+    // until the adjustment is over; "armed: false" says that it is over or ended unused.
+    this.ws.on('jadoube', (data) => {
+      this.jadoubeSaid = !!data.armed;
+      this.jadoubeArmed = !!data.armed && data.by === this.side;
+      if (!data.armed) this.adjusting = false;
+      this.updateButtons();
+      if (data.message) {
+        if (data.by === this.side) this.showArbiterMessage(data.message, 'info');
+        else this.showOpponentInfo(data.message);
+      }
+    });
+
+    // The button was pressed in the opponent's time: nothing is armed, the arbiter admonishes.
+    this.ws.on('jadoubeWrongTime', (data) => {
+      this.showArbiterMessage(data.message, 'error');
+    });
+
+    // The adjusted piece was let go on another square or across a border: it is put back (the
+    // pieces follow in placementsSync), without penalty.
+    this.ws.on('adjustmentUndone', (data) => {
+      this.showArbiterMessage(data.message, 'info');
+    });
+
     // The server did not take a release (the board was locked, or the frame was not valid): the
     // pieces go back to where they lie for the server.
     this.ws.on('placementsSync', (data) => {
@@ -832,6 +861,9 @@ class Game {
     this.ws.on('rematchStarted', (data) => {
       this.gameId = data.gameId;
       this.side = data.side;
+      this.jadoubeSaid = false;
+      this.jadoubeArmed = false;
+      this.adjusting = false;
       // The circles of the finished game do not belong on the new board.
       this.board.setMarks([]);
       // The seats swapped: orient the board absolutely for the NEW colour (flip() only toggles).
@@ -996,6 +1028,20 @@ class Game {
           + ' lose the game.'
         : 'Your opponent has repeatedly pressed the clock with a piece that was not clearly on a'
           + ' square, and so has lost the game.');
+    } else if (data.resultType === 'JADOUBE_WRONG_TIME_GAME_LOST') {
+      // Third J'adoube in the opponent's time despite the warning (E-005).
+      this.showArbiterMessage(data.actor === this.side
+        ? 'You have been warned that you will lose the game when you say J\'adoube in your opponent\'s'
+          + ' time again. As you have said it again, you lose the game.'
+        : 'Your opponent has, despite the warnings, repeatedly said J\'adoube in your time, and so has'
+          + ' lost the game.');
+    } else if (data.resultType === 'ADJUSTED_WITHOUT_JADOUBE_GAME_LOST') {
+      // Third adjustment without J'adoube despite the warning (E-005).
+      this.showArbiterMessage(data.actor === this.side
+        ? 'You have been warned that you will lose the game when you adjust a piece without saying'
+          + ' J\'adoube again. As you have done it again, you lose the game.'
+        : 'Your opponent has, despite the warnings, repeatedly adjusted pieces without saying J\'adoube,'
+          + ' and so has lost the game.');
     } else if (data.resultType === 'MOVED_OPPONENT_PIECE_GAME_LOST') {
       // Third moved opponent piece despite the warning (see A-007).
       this.showArbiterMessage(data.actor === this.side
@@ -1069,6 +1115,10 @@ class Game {
     document.getElementById('offerDrawBtn').addEventListener('click', () => {
       if (!this.gameActive) return;
       this.ws.sendOfferDraw(this.board.getBoardState());
+    });
+
+    document.getElementById('jadoubeBtn').addEventListener('click', () => {
+      this.ws.send({ type: 'jadoube' });
     });
 
     document.getElementById('resignBtn').addEventListener('click', () => {
@@ -1183,9 +1233,20 @@ class Game {
   }
 
   onBoardEvent(event) {
-    // Any board interaction counts as a touch (FIDE 9.4) — the right to claim is gone for this
+    // With J'adoube said, the piece of the board that is picked up next is adjusted, not touched
+    // (FIDE 4.2.1): from the press of the mouse button until the release. A piece from the side
+    // (number 0) is handled as always and leaves J'adoube said.
+    if (this.jadoubeArmed && event.eventType === 'DRAG_START' && event.id > 0) {
+      this.adjusting = true;
+    }
+    const adjusting = this.adjusting;
+    if (adjusting && event.eventType === 'RELEASE') {
+      this.adjusting = false;
+      this.jadoubeArmed = false;
+    }
+    // Any other board interaction counts as a touch (FIDE 9.4) — the right to claim is gone for this
     // move, so claim presses from here on skip the SAN prompt and go straight to the arbiter.
-    this.touchedThisTurn = true;
+    if (!adjusting) this.touchedThisTurn = true;
     // Send the current physical board state with every event so the server can detect
     // game-ending moves (checkmate/stalemate/etc.) without waiting for a clock press.
     this.ws.sendBoardEvent(event, this.board.getBoardState());
@@ -1485,6 +1546,11 @@ class Game {
     document.getElementById('offerDrawBtn').disabled = !this.gameActive;
     document.getElementById('resignBtn').disabled = !this.gameActive;
     document.getElementById('requestPieceBtn').disabled = !this.gameActive;
+    // J'adoube exists only in a game with free placement. It can always be pressed - also in the
+    // opponent's time, where the arbiter answers - except while one is said and not yet used.
+    const jadoubeBtn = document.getElementById('jadoubeBtn');
+    jadoubeBtn.style.display = this.board.free ? '' : 'none';
+    jadoubeBtn.disabled = !this.gameActive || this.jadoubeSaid;
     // Claim buttons stay enabled for the whole game (teaching philosophy: faults are allowed
     // and the arbiter escalates — see A-003/A-004 in docs/fide-deviations.md). They only die
     // with the game itself.

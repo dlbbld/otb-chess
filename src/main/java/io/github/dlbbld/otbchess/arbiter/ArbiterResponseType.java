@@ -25,9 +25,12 @@ public enum ArbiterResponseType {
   // Mid-play intervention: player changed the position without making a legal move
   POSITION_CHANGE,
 
-  // Free placement (E-005): the clock was pressed while a piece lay in an unclear placement
+  // Free placement (E-005): a call of the arbiter about a placement, for which he stops the clock and locks the
+  // board until it restarts, and after which nothing is restored - the clock was pressed while a piece lay in an
+  // unclear placement, a bound piece stands on a square it is not bound to, or a piece was adjusted without
+  // J'adoube
   UNCLEAR_PLACEMENT,
 
-  // Free placement (E-005): the unclear placement that reached the limit - game lost
+  // Free placement (E-005): the call that reached the limit of its ladder - game lost
   UNCLEAR_PLACEMENT_GAME_LOST
 }

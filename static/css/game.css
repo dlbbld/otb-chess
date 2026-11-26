@@ -684,6 +684,11 @@ body:has(.game-layout) {
   transform-origin: 50% 56%;
 }
 
+.icon-jadoube {
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
 .icon-stop {
   color: #8f2f29;
 }

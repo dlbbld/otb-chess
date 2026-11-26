@@ -260,4 +260,65 @@ class TestPlacementBoard {
     assertTrue(board.showsClearly(start));
     assertTrue(board.halfRemovedPiece(Side.WHITE).isEmpty());
   }
+
+  // ===== J'adoube: the adjustment, and a piece shifted on its square =====
+
+  @Test
+  void aPieceSetDownOnItsSquareAtAnotherSpotIsShiftedAndAClickIsNot() {
+    final int knight = idOn("g1");
+    final Release click = releaseOn(knight, "g1");
+    assertEvent(click, BoardEventType.CLICK, "g1", null, Piece.WHITE_KNIGHT, Piece.NONE);
+    assertFalse(click.shifted(), "set down exactly where it stood");
+
+    final Release shifted = board.release(Side.WHITE, knight, x("g1") + 200, y("g1") - 100);
+    assertEvent(shifted, BoardEventType.CLICK, "g1", null, Piece.WHITE_KNIGHT, Piece.NONE);
+    assertTrue(shifted.shifted());
+
+    assertFalse(releaseOn(knight, "f3").shifted(), "a move to another square");
+    assertFalse(releaseOnLeftBorderOf(idOn("f2"), "g2").shifted(), "let go across a border");
+    final int pawn = idOn("d2");
+    board.release(Side.WHITE, pawn, x("d2") - 500, y("d2"));
+    assertFalse(releaseOn(pawn, "d2").shifted(), "an unclear piece placed clearly is finished, not adjusted");
+  }
+
+  @Test
+  void anAdjustmentMovesThePieceOnItsSquareAndIsNoEvent() {
+    final int knight = idOn("g1");
+    final PlacementBoard.Adjustment adjusted = board.adjust(knight, x("g1") + 200, y("g1") - 100);
+    assertTrue(adjusted.accepted());
+    assertEquals(x("g1") + 200, piece(knight).x());
+    assertEquals(y("g1") - 100, piece(knight).y());
+    assertTrue(piece(knight).clear());
+    assertEquals(knight, board.pieces().get(board.pieces().size() - 1).id(), "set down last, it lies on top");
+    assertTrue(board.showsClearly(start), "nothing changed for the rules");
+
+    // An opponent's piece can be adjusted as well.
+    assertTrue(board.adjust(idOn("d5"), x("d5") - 150, y("d5")).accepted());
+  }
+
+  @Test
+  void anAdjustmentThatLeavesTheSquareIsUndone() {
+    final int knight = idOn("g1");
+    for (final int[] to : new int[][] { { x("f3"), y("f3") }, { x("g1") - 500, y("g1") }, { -300, y("g1") } }) {
+      final PlacementBoard.Adjustment undone = board.adjust(knight, to[0], to[1]);
+      assertFalse(undone.accepted());
+      assertFalse(undone.wasUnclear());
+      assertEquals(x("g1"), undone.x(), "it lies where it lay");
+      assertEquals(y("g1"), undone.y());
+      assertEquals(x("g1"), piece(knight).x());
+    }
+    assertEquals(32, board.pieces().size());
+    assertTrue(board.showsClearly(start));
+  }
+
+  @Test
+  void aPieceThatLiesUnclearCannotBeAdjusted() {
+    final int knight = idOn("g1");
+    releaseOnLeftBorderOf(knight, "g3");
+    final PlacementBoard.Adjustment undone = board.adjust(knight, x("g1"), y("g1"));
+    assertFalse(undone.accepted());
+    assertTrue(undone.wasUnclear());
+    assertEquals(x("g3") - 512, piece(knight).x(), "it lies where it lay, across the border");
+    assertThrows(IllegalArgumentException.class, () -> board.adjust(999, 0, 0), "an unknown number");
+  }
 }

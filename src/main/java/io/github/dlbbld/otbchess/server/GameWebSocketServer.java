@@ -276,6 +276,7 @@ public class GameWebSocketServer extends WebSocketServer {
         case "restorePosition" -> handleRestorePosition(conn);
         case "readyToContinue" -> handleReadyToContinue(conn);
         case "opponentClockPressed" -> handleOpponentClockPressed(conn);
+        case "jadoube" -> handleJadoube(conn);
         case "keepalive" -> handleKeepalive(conn);
         case "resume" -> handleResume(conn, json);
         default -> {
@@ -283,6 +284,8 @@ public class GameWebSocketServer extends WebSocketServer {
           recordViolation(conn);
         }
       }
+      // Whatever was done may have ended a J'adoube that was said and not used: the pages enable the button again.
+      sendJadoubeStateIfChanged(conn);
     } catch (final Exception e) {
       sendInternalError(conn, e, "onMessage");
     }
@@ -292,7 +295,7 @@ public class GameWebSocketServer extends WebSocketServer {
   // they stay meaningful after the result.
   private static final Set<String> GAMEPLAY_MESSAGE_TYPES = Set.of("boardEvent", "clockPress", "offerDraw",
       "acceptDraw", "rejectDraw", "claimDraw", "cancelDrawClaim", "resign", "claimVictory", "restorePosition",
-      "readyToContinue", "opponentClockPressed");
+      "readyToContinue", "opponentClockPressed", "jadoube");
 
   /**
    * A gameplay action that was still in flight when the game ended. Both players have the result by then, so the
@@ -754,6 +757,13 @@ public class GameWebSocketServer extends WebSocketServer {
       return;
     }
 
+    // With J'adoube said, the piece of the board that is picked up next is adjusted, not handled. A piece from the
+    // side is handled as in every game, and J'adoube stays said.
+    if (fromSidePiece == null && session.useJadoube(side)) {
+      adjustPiece(conn, room, side, id, x, y);
+      return;
+    }
+
     final PlacementBoard.Release release;
     try {
       release = fromSidePiece == null ? placements.release(side, id, x, y)
@@ -791,10 +801,132 @@ public class GameWebSocketServer extends WebSocketServer {
       }
       return;
     }
+    // Whether the move was made before this release: only then a piece shifted on its square was adjusted.
+    final boolean moveWasMade = session.isMoveMade();
     ruleOnBoardEvent(conn, room, side, release.event(), mirror, ruledPosition);
     announceHalfRemovedPiece(room, side, release.id());
     // The circles of the squares a piece is bound to go when it stands on one of them.
     sendBoardMarksIfChanged(room);
+    if (release.shifted() && moveWasMade) {
+      ruleOnAdjustingWithoutJadoube(room, side);
+    }
+  }
+
+  /**
+   * The player to move has made their move and then shifted a piece on its square without saying J'adoube: the
+   * arbiter makes the call at once, pauses the game for it, and the piece stays where it was shifted to.
+   */
+  private void ruleOnAdjustingWithoutJadoube(GameRoom room, Side side) {
+    final GameSession session = room.getSession();
+    final Optional<ArbiterResponse> call = session.ruleOnAdjustingWithoutJadoube(side);
+    if (call.isEmpty()) {
+      return;
+    }
+    final ArbiterResponse response = call.get();
+    final boolean paused = response.type() == ArbiterResponseType.UNCLEAR_PLACEMENT;
+    final boolean restartsByItself = paused && session.isPressWithoutMovePause();
+    sendArbiterResponse(room, side, response, restartsByItself ? PAUSED_SHORTLY : "");
+    sendOpponentArbiterNotification(room, side, response, restartsByItself ? OPPONENT_PAUSED_SHORTLY : "");
+    if (paused) {
+      announceUnclearPlacementPause(room, side, response, restartsByItself, session.isWaitingForReady());
+    }
+    checkGameEnded(room);
+  }
+
+  /**
+   * The adjustment of a piece with J'adoube (FIDE 4.2.1): no event for the rules, nothing touched. A piece that
+   * stood clearly on a square and is let go clearly on the same square lies there from now on, on both boards. Let
+   * go anywhere else, or a piece that lay unclear, the adjustment is undone: the piece lies where it lay, without
+   * penalty. Either way J'adoube is used up.
+   */
+  private void adjustPiece(WebSocket conn, GameRoom room, Side side, int id, int x, int y) {
+    final PlacementBoard.Adjustment adjustment;
+    try {
+      adjustment = room.getPlacements().adjust(id, x, y);
+    } catch (final RuntimeException e) {
+      sendError(conn, "Malformed boardEvent.");
+      recordViolation(conn);
+      sendPlacements(room, side);
+      return;
+    }
+    // The opponent's board: the piece exactly where it lies now, set down without a touch.
+    final JsonObject mirror = new JsonObject();
+    mirror.addProperty("eventType", "RELEASE");
+    mirror.addProperty("id", adjustment.id());
+    mirror.addProperty("piece", adjustment.piece().name());
+    mirror.addProperty("x", adjustment.x());
+    mirror.addProperty("y", adjustment.y());
+    mirror.addProperty("offBoard", false);
+    mirror.addProperty("capturedId", 0);
+    mirror.addProperty("fromSide", false);
+    mirror.addProperty("adjusted", true);
+    forwardBoardEventToOpponent(room, side, mirror);
+    if (!adjustment.accepted()) {
+      sendPlacements(room, side); // the page moved the piece; it lies where it lay
+      final JsonObject undone = new JsonObject();
+      undone.addProperty("type", "adjustmentUndone");
+      undone.addProperty("message", adjustment.wasUnclear()
+          ? "The adjustment is undone: a piece that is not clearly on a square cannot be adjusted."
+          : "The adjustment is undone: an adjusted piece stays on its square.");
+      room.sendToSide(side, GSON.toJson(undone));
+    }
+  }
+
+  /**
+   * The J'adoube button. In the own time both players are told and the next piece picked up is adjusted; in the
+   * opponent's time the arbiter admonishes, warns, and on the third time the game is lost.
+   */
+  private void handleJadoube(WebSocket conn) {
+    final GameRoom room = getRoom(conn);
+    if (room == null || !room.isFreePlacement()) {
+      return;
+    }
+    final Side side = room.getSide(conn);
+    if (side == Side.NONE) {
+      return;
+    }
+    synchronized (room) {
+      final GameSession.JadoubeOutcome outcome = room.getSession().pressJadoube(side);
+      switch (outcome.kind()) {
+        case ARMED -> {
+          room.takeChangedJadoubeArmed();
+          room.sendToBoth(GSON.toJson(jadoubeMessage(true, side, outcome.message())));
+        }
+        case WRONG_TIME -> {
+          final JsonObject msg = new JsonObject();
+          msg.addProperty("type", "jadoubeWrongTime");
+          msg.addProperty("message", outcome.message());
+          send(conn, msg);
+          sendOpponentInfo(room, side.getOppositeSide(), outcome.opponentInfo(), false);
+        }
+        case WRONG_TIME_GAME_LOST -> sendGameEnded(room, room.getSession().getResult());
+        case IGNORED -> checkGameEnded(room); // the press may have met an expired clock
+      }
+    }
+  }
+
+  private static JsonObject jadoubeMessage(boolean armed, Side by, String message) {
+    final JsonObject msg = new JsonObject();
+    msg.addProperty("type", "jadoube");
+    msg.addProperty("armed", armed);
+    if (by != null) {
+      msg.addProperty("by", by.name().toLowerCase());
+    }
+    if (message != null) {
+      msg.addProperty("message", message);
+    }
+    return msg;
+  }
+
+  /** Tells both pages when J'adoube stopped being armed - used, or ended by a clock press or a ruling. */
+  private void sendJadoubeStateIfChanged(WebSocket conn) {
+    final String gameId = playerGameMap.get(conn);
+    final GameRoom room = gameId == null ? null : gameRooms.get(gameId);
+    if (room == null || !room.isFreePlacement()) {
+      return;
+    }
+    room.takeChangedJadoubeArmed()
+        .ifPresent(armed -> room.sendToBoth(GSON.toJson(jadoubeMessage(armed, null, null))));
   }
 
   /**
@@ -2132,6 +2264,10 @@ public class GameWebSocketServer extends WebSocketServer {
     }
     sendRecoveryState(room, side, true);
     sendRecoveryState(room, side.getOppositeSide(), false);
+    // A J'adoube that is said and not used: a page that comes back has its button enabled, so it is told.
+    if (room.isFreePlacement() && session.isJadoubeArmed()) {
+      room.sendToSide(side, GSON.toJson(jadoubeMessage(true, session.getHavingMove(), null)));
+    }
     // The arbiter's word on a half-removed piece stands as long as the piece lies there: a page that comes
     // back is told again.
     if (room.isFreePlacement() && room.getHalfRemovedPieceId() != 0 && session.getState() == GameState.IN_PROGRESS) {
@@ -2539,6 +2675,8 @@ public class GameWebSocketServer extends WebSocketServer {
         || result.type() == GameResultType.MOVED_OPPONENT_PIECE_GAME_LOST
         || result.type() == GameResultType.WRONG_TIME_OFFER_GAME_LOST
         || result.type() == GameResultType.UNCLEAR_PLACEMENT_GAME_LOST
+        || result.type() == GameResultType.JADOUBE_WRONG_TIME_GAME_LOST
+        || result.type() == GameResultType.ADJUSTED_WITHOUT_JADOUBE_GAME_LOST
         || result.winner() == Side.NONE && (result.type() == GameResultType.RESIGNATION
             || result.type() == GameResultType.FLAG_FALL || result.type() == GameResultType.DRAW_AGREEMENT)) {
       msg.addProperty("actor", room.getSession().getTerminationActor().name().toLowerCase());
