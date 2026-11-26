@@ -14,6 +14,12 @@ import io.github.dlbbld.ashlarchess.board.enums.Square;
  * unclear, and with the centre outside the board the piece is off the board.
  *
  * <p>
+ * The page draws a border around the 64 squares that is as wide as the radius of the inner circle. So a piece can
+ * hang over the squares by half its circle, lying unclear on the squares at the rim, and it is off the board exactly
+ * when its circle goes over the outer edge of the border: that is when its centre leaves the squares. The border
+ * therefore needs no measure of its own.
+ *
+ * <p>
  * Everything is whole-number arithmetic, so that the page ({@code static/js/placement.js}) computes exactly the same.
  * The two are held together by {@code tests/placement-samples.json}, which both read in their tests.
  */

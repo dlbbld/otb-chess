@@ -74,20 +74,6 @@ class ChessBoard {
         sq.className = 'square ' + (isLight ? 'light' : 'dark');
         sq.dataset.square = squareName;
 
-        // Coordinate labels
-        if (r === 7) {
-          const fileLabel = document.createElement('span');
-          fileLabel.className = 'coord file-label';
-          fileLabel.textContent = file;
-          sq.appendChild(fileLabel);
-        }
-        if (f === 0) {
-          const rankLabel = document.createElement('span');
-          rankLabel.className = 'coord rank-label';
-          rankLabel.textContent = rank;
-          sq.appendChild(rankLabel);
-        }
-
         if (this.marks[squareName]) {
           sq.classList.add('mark-' + this.marks[squareName]);
         }
@@ -96,6 +82,21 @@ class ChessBoard {
         const piece = savedState[squareName] || 'NONE';
         this.squares[squareName] = { piece: piece, element: sq };
       }
+    }
+
+    // The coordinates stand on the border of the board: the letters under the files, the numbers
+    // left of the ranks, as this player sees the board.
+    for (let i = 0; i < 8; i++) {
+      const fileLabel = document.createElement('span');
+      fileLabel.className = 'coord file-label';
+      fileLabel.textContent = fileOrder[i];
+      fileLabel.style.left = (i * 12.5) + '%';
+      this.boardEl.appendChild(fileLabel);
+      const rankLabel = document.createElement('span');
+      rankLabel.className = 'coord rank-label';
+      rankLabel.textContent = rankOrder[i];
+      rankLabel.style.top = (i * 12.5) + '%';
+      this.boardEl.appendChild(rankLabel);
     }
 
     this.layerEl = null;
@@ -142,6 +143,11 @@ class ChessBoard {
   setPlacements(placements, radius) {
     this.free = true;
     this.placementRadius = radius || this.placementRadius;
+    if (radius) {
+      // The border is as wide as the circle's radius (see board.css).
+      this.boardEl.style.setProperty('--board-rim',
+        (radius / OtbPlacement.UNITS * this.boardEl.clientWidth / 8) + 'px');
+    }
     this.placements = placements.map((p) => ({ id: p.id, piece: p.piece, x: p.x, y: p.y }));
     for (const sq of Object.values(this.squares)) sq.piece = 'NONE';
     this.renderAll();

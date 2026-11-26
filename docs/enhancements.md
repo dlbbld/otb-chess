@@ -181,7 +181,7 @@ Separate options for the opponent's sounds, a control during the game, a volume 
 - **Unclear placement**: the inner circle reaches over a border. The piece is on no square, and the move is not made.
 - **Squares to choose from** after an unclear placement: the squares the inner circle lies on. These are two across a border; near a corner three or four (three when the circle crosses both borders without reaching the fourth square); at the edge of the board fewer, down to one.
 - **The area of the piece** is the piece image, the same for every piece. The percentage is one number and can be tuned.
-- **At the edge of the board**: a piece released with its centre outside the board is taken off the board, as today. If the centre is on the board and the inner circle reaches over the edge, the placement is unclear, with only the squares on the board to choose from.
+- **At the edge of the board**: a piece released with its centre outside the board is taken off the board, as today. If the centre is on the board and the inner circle reaches over the edge, the placement is unclear, with only the squares on the board to choose from. The board is drawn with a border as wide as the radius of the inner circle (owner, 2026-11-26): the piece is off the board exactly when its circle goes over the outer edge of that border.
 
 There is nothing in between: a placement is clear or unclear. *(Reading: the inner circle replaces the lines at 80% and 60% and with them the "sloppy" placement that the arbiter only reminded of.)*
 

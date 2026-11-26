@@ -52,9 +52,13 @@ merged `fixes-and-improvements`.
 - [x] Blue circles for the squares a piece let go across a border has to be placed on (owner, 2026-11-26).
   They were green. Green stays for touch-move and for the move that was already made, so the decision of
   2026-11-25 against a third colour holds for those and no longer for the board marks as a whole.
-- [ ] A border around the board (owner, 2026-11-26): a piece can be let go half on a square and half on the
-  border and is then displaced, not removed; a piece wholly on the border is removed. Not started. The width is
-  open (the assessment given: half a square) and the owner wants a plan and a review with Codex first.
+- [x] A border around the board (owner, 2026-11-26; agreed with Codex the same day). It is as wide as half the
+  circle a piece stands on, that is the radius of the inner circle (226 of the 1024 units of a square, 14
+  pixels). A piece can hang over the squares by half its circle and then lies unclear on the square at the rim;
+  when the circle goes over the outer edge of the border the piece is off the board. With this width that is
+  exactly when the centre leaves the squares, so the rule and the measure did not change - only the page. The
+  file letters and rank numbers stand on the border (bottom and left, as the player sees the board), no longer
+  in the squares. The game with centred pieces has the same border; there a piece let go on it is off the board.
 - [ ] A free-placement mode of `RuleFuzzer`; `SPECIFICATION.md`, `MANUAL.md`, `fide-deviations.md`,
   `CHANGELOG.md`.
 

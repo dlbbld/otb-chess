@@ -322,6 +322,16 @@ As in E-005: playing by touch on a phone, and any change to the rulings that exi
 - Several unclear pieces: one sentence pair per piece, then the reminder once; the call counts once.
 - The second ruling, for the opponent: *"Your opponent's rook was released on d1 and e1. It has to be placed on one of them."*
 
+**The border of the board** (owner, 2026-11-26, agreed with Codex)
+
+- On a board on the table a piece can stand partly on the frame. The board therefore has a border around the 64 squares, in both games.
+- **Its width is the radius of the inner circle**: half the circle a piece stands on (226 units, 14 pixels of a square of 64). A piece is off the board when its circle goes over the outer edge of the border. With this width that is exactly when its centre leaves the squares - the edge rule of section 1 and of `PlacementMeasure`, unchanged. No rule, no message and no sample point changed.
+- A piece with part of its circle on the border lies unclear on the squares at the rim and is called at the clock press like every unclear placement (*"… Place it on a3, and place your pieces more carefully."*). No piece can stand wholly on the border: it is narrower than the circle.
+- The page sets the width from the radius the server sends (`ChessBoard.setPlacements`, `--board-rim` in `board.css`), so the two cannot drift apart; without free placement the style sheet's own value, the same, applies.
+- The file letters and the rank numbers stand on the border, under the files and left of the ranks as the player sees the board. A piece hanging over the border covers them.
+- With centred pieces a piece let go on the border is off the board, as outside the board before.
+- Tests: `TestPlacementMeasure` (the rule at the outer edge), `tests/e2e/board-rim.spec.ts`.
+
 **Known gaps**
 
 - A piece from the side (a promoted piece) let go unclearly counts on no square and is bound to nothing; the call names no square for it.

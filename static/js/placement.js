@@ -2,6 +2,8 @@
 // units with 1024 to a square, x along the files from a to h and y along the ranks from 1 to 8.
 // The inner circle around that centre decides: inside one square the placement is clear, across
 // a border it is unclear, and with the centre outside the board the piece is off the board.
+// The board is drawn with a border as wide as the circle's radius (board.css): the centre leaves
+// the squares exactly when the circle goes over the outer edge of that border.
 //
 // The server decides (PlacementMeasure.java); the page needs the same answer at once, for the
 // capture and the sound. Both compute in whole numbers and read tests/placement-samples.json in

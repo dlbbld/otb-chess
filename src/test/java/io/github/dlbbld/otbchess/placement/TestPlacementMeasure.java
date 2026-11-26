@@ -39,6 +39,37 @@ class TestPlacementMeasure {
     assertThrows(IllegalArgumentException.class, () -> PlacementMeasure.radiusFor(101));
   }
 
+  /**
+   * The board has a border as wide as the radius of the inner circle. A piece is on the board as long as its circle
+   * stays on the squares and the border; that is as long as its centre is on a square.
+   */
+  @Test
+  void aPieceIsOnTheBoardUntilItsCircleGoesOverTheOuterEdgeOfTheBorder() {
+    final int radius = PlacementMeasure.radiusFor(PlacementMeasure.DEFAULT_EXACTNESS_PERCENT);
+    final int a3 = 2 * PlacementMeasure.UNITS_PER_SQUARE + PlacementMeasure.UNITS_PER_SQUARE / 2;
+
+    // The centre on the edge of the squares: half the circle is on the border and reaches its outer edge.
+    final Measured half = PlacementMeasure.measure(0, a3, radius);
+    assertEquals(PlacementMeasure.Kind.UNCLEAR, half.kind());
+    assertEquals(List.of(Square.A3), half.squares(), "it lies on a3 and on the border, on no other square");
+
+    // One unit further the circle is over the outer edge: off the board.
+    assertEquals(PlacementMeasure.Kind.OFF_BOARD, PlacementMeasure.measure(-1, a3, radius).kind());
+    assertEquals(PlacementMeasure.Kind.OFF_BOARD, PlacementMeasure.measure(a3, -1, radius).kind());
+    assertEquals(PlacementMeasure.Kind.OFF_BOARD,
+        PlacementMeasure.measure(PlacementMeasure.BOARD_UNITS, a3, radius).kind());
+    assertEquals(PlacementMeasure.Kind.OFF_BOARD,
+        PlacementMeasure.measure(a3, PlacementMeasure.BOARD_UNITS, radius).kind());
+
+    // In a corner the piece hangs over two sides of the border and lies on the corner square only.
+    final Measured corner = PlacementMeasure.measure(0, 0, radius);
+    assertEquals(PlacementMeasure.Kind.UNCLEAR, corner.kind());
+    assertEquals(List.of(Square.A1), corner.squares());
+    final Measured farCorner = PlacementMeasure.measure(PlacementMeasure.BOARD_UNITS - 1,
+        PlacementMeasure.BOARD_UNITS - 1, radius);
+    assertEquals(List.of(Square.H8), farCorner.squares());
+  }
+
   @Test
   void theSamplePlacementsAreMeasuredAsWritten() throws Exception {
     final JsonObject file = JsonParser.parseString(Files.readString(SAMPLES)).getAsJsonObject();
